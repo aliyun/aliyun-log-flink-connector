@@ -40,3 +40,10 @@ DataStream<RawLogGroupList> logTestStream = env.addSource(
 上面是一个简单的消费示例,我们使用java.util.Properties作为配置工具,所有Consumer的配置都可以在ConfigConstants中找到.
 注意,flink stream的子任务数量和日志服务logStore中的shard数量是独立的,如果shard数量多于子任务数量,每个子任务不重复的消费多个shard,如果少于,
 那么部分子任务就会空闲,等到新的shard产生.
+#### 设置消费起始位置
+#### 设置消费监控
+#### 容灾和exactly once语义支持
+#### 设计原理
+#### 关联的日志服务 API
+
+### Log Producer
