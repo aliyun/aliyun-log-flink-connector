@@ -13,10 +13,12 @@ Flink log connector是阿里云日志服务提供的,用于对接flink的工具,
 ```
 ## 用法
 使用前,请参考[日志服务文档](https://help.aliyun.com/document_detail/54604.html),正确创建日志服务资源.
-如果使用子账号访问,请确认正确设置了logstore的RAM策略,参考文档[授权RAM子用户访问日志服务资源](https://help.aliyun.com/document_detail/47664.html).
+如果使用子账号访问,请确认正确设置了logStore的RAM策略,参考文档<[授权RAM子用户访问日志服务资源](https://help.aliyun.com/document_detail/47664.html)>.
 ### Log Consumer
-在Connector中, 类FlinkLogConsumer提供了订阅日志服务中某一个logStore的能力,实现了exactly语义,在使用时,用户无需关心logStore中shard数
-量的变化,consumer会自动感知.flink中每一个子任务负责消费logStore中部分shard,如果logStore中shard发生split或者merge,子任务消费的shard也会随之改变.
+在Connector中, 类FlinkLogConsumer提供了订阅日志服务中某一个logStore的能力,实现了exactly once语义,在使用时,用户无需关心logStore中shard数
+量的变化,consumer会自动感知.
+
+flink中每一个子任务负责消费logStore中部分shard,如果logStore中shard发生split或者merge,子任务消费的shard也会随之改变.
 
 ```
 Properties configProps = new Properties();
@@ -55,15 +57,15 @@ configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, "1512439000");
 ```
 
 #### 设置消费进度监控
-Flink log consumer支持可选的设置消费进度监控,所谓消费进度就是获取每一个shard实时的消费位置,这个位置使用时间戳表示,详细概念可以参考
+Flink log consumer支持设置消费进度监控,所谓消费进度就是获取每一个shard实时的消费位置,这个位置使用时间戳表示,详细概念可以参考
 文档[消费组-查看状态](https://help.aliyun.com/document_detail/43998.html),[消费组-监控报警
 ](https://help.aliyun.com/document_detail/55912.html).
 ```
 configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "your consumer group name");
 ```
-通过上面的代码就可以设置消费进度监控,注意上面代码是可选的,如果设置了,consumer会首先创建consumerGroup,如果已经存在,则什么都不错,consumer中的snapshot会自动同步到日志服务的consumerGroup中,用户可以在日志服务的控制台查看consumer的消费进度.
+通过上面的代码就可以设置消费进度监控,注意上面代码是可选的,如果设置了,consumer会首先创建consumerGroup,如果已经存在,则什么都不做,consumer中的snapshot会自动同步到日志服务的consumerGroup中,用户可以在日志服务的控制台查看consumer的消费进度.
 #### 容灾和exactly once语义支持
-当打开Flink的checkpointing功能时,Flink log consumer会周期性的将每个shard的消费进度保存起来,当作业失败时,flink会从恢复log consumer,并
+当打开Flink的checkpointing功能时,Flink log consumer会周期性的将每个shard的消费进度保存起来,当作业失败时,flink会恢复log consumer,并
 从保存的最新的checkpoint开始消费.
 
 写checkpoint的周期定义了当发生失败时,最多多少的数据会被回溯,也就是重新消费,使用代码如下:
@@ -93,6 +95,7 @@ Flink log consumer 会用到的阿里云日志服务接口如下:
      configProps.put(ConfigConstants.LOG_SHARDS_DISCOVERY_INTERVAL_MILLIS, "30000");
      ```
 * CreateConsumerGroup
+
     该接口调用只有当设置消费进度监控时才会发生,功能是创建consumerGroup,用于同步checkpoint.
 
 子用户使用Flink log consumer需要授权如下几个RAM Policy:
@@ -176,7 +179,7 @@ public class ProducerSample {
 }
 ```
 Producer初始化主要需要做两件事情:
-* 初始化配置参数Properties, 这一步和Consumer类似, producer有一些定制的参数,一般情况下使用默认值即可,特殊场景可以考虑定制:
+* 初始化配置参数Properties, 这一步和Consumer类似, Producer有一些定制的参数,一般情况下使用默认值即可,特殊场景可以考虑定制:
     ```
     // 用于发送数据的io线程的数量,默认是8
     ConfigConstants.LOG_SENDER_IO_THREAD_COUNT
@@ -212,7 +215,7 @@ logProducer.setCustomPartitioner(new LogPartitioner<String>() {
             }
         });
 ```
-注意LogPartitioner是可选的,不设置情况下, 数据会随机写入某一个shard,
+注意LogPartitioner是可选的,不设置情况下, 数据会随机写入某一个shard.
 
 #### Flink log producer RAM Policy
 Producer依赖日志服务的API写数据,如下:
