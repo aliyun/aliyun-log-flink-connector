@@ -7,9 +7,14 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.streaming.connectors.log.ConfigConstants;
 import org.apache.flink.streaming.connectors.log.FlinkLogProducer;
+import org.apache.flink.streaming.connectors.log.LogPartitioner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.security.provider.MD5;
 
+import java.math.BigInteger;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Properties;
 
 public class ProducerSample {
@@ -38,7 +43,20 @@ public class ProducerSample {
         configProps.put(ConfigConstants.LOG_LOGSTORE, sLogstore);
 
         FlinkLogProducer<String> logProducer = new FlinkLogProducer<String>(new SimpleLogSerializer(), configProps);
-
+        logProducer.setCustomPartitioner(new LogPartitioner<String>() {
+            @Override
+            public String getHashKey(String element) {
+                try {
+                    MessageDigest md = MessageDigest.getInstance("MD5");
+                    md.update(element.getBytes());
+                    String hash = new BigInteger(1, md.digest()).toString(16);
+                    while(hash.length() < 32) hash = "0" + hash;
+                    return hash;
+                } catch (NoSuchAlgorithmException e) {
+                }
+                return  "0000000000000000000000000000000000000000000000000000000000000000";
+            }
+        });
         simpleStringStream.addSink(logProducer);
 
         env.execute("flink log producer");

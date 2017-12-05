@@ -105,6 +105,7 @@ Flink log consumer 会用到的阿里云日志服务接口如下:
 
 ### Log Producer
 FlinkLogProducer 用于将数据写到阿里云日志服务中, 注意producer只支持Flink at-least-once语义,这就意味着在发生作业失败的情况下,写入日志服务中的数据有可能会重复,但是绝对不会丢失.
+
 用法示例如下,我们将模拟产生的字符串写入日志服务:
 ```
 // 将数据序列化成日志服务的数据格式
@@ -192,3 +193,36 @@ Producer初始化主要需要做两件事情:
 * 重载LogSerializationSchema,定义将数据序列化成RawLogGroup的方法.
 
     RawLogGroup是log的集合,每个字段的含义可以参考文档[日志数据模型](https://help.aliyun.com/document_detail/29054.html).
+
+如果用户需要使用日志服务的shardHashKey功能,指定数据写到某一个shard中,可以使用LogPartitioner产生数据的hashKey,用法例子如下:
+```
+FlinkLogProducer<String> logProducer = new FlinkLogProducer<String>(new SimpleLogSerializer(), configProps);
+logProducer.setCustomPartitioner(new LogPartitioner<String>() {
+            // 生成32位hash值
+            public String getHashKey(String element) {
+                try {
+                    MessageDigest md = MessageDigest.getInstance("MD5");
+                    md.update(element.getBytes());
+                    String hash = new BigInteger(1, md.digest()).toString(16);
+                    while(hash.length() < 32) hash = "0" + hash;
+                    return hash;
+                } catch (NoSuchAlgorithmException e) {
+                }
+                return  "0000000000000000000000000000000000000000000000000000000000000000";
+            }
+        });
+```
+注意LogPartitioner是可选的,不设置情况下, 数据会随机写入某一个shard,
+
+#### Flink log producer RAM Policy
+Producer依赖日志服务的API写数据,如下:
+
+* log:PostLogStoreLogs
+* log:ListShards
+
+当RAM子用户使用Producer时,需要对上述两个API进行授权:
+
+|接口|资源|
+|------|------|
+|log:PostLogStoreLogs| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}|
+|log:ListShards| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}|
