@@ -1,4 +1,4 @@
-# flink log connector
+# Flink log connector
 ## 介绍
 flink log connector是阿里云日志服务提供的,用于对接flink的工具,包括两部分,消费者(Consumer)和生产者(Producer).
 
@@ -41,8 +41,29 @@ DataStream<RawLogGroupList> logTestStream = env.addSource(
 注意,flink stream的子任务数量和日志服务logStore中的shard数量是独立的,如果shard数量多于子任务数量,每个子任务不重复的消费多个shard,如果少于,
 那么部分子任务就会空闲,等到新的shard产生.
 #### 设置消费起始位置
-#### 设置消费监控
+Flink log consumer支持设置shard的消费起始位置,通过设置属性ConfigConstants.LOG_CONSUMER_BEGIN_POSITION,就可以定制消费从shard的头尾或者某个特定时间开始消费,具体取值如下:
+
+* Consts.LOG_BEGIN_CURSOR: 表示从shard的头开始消费,也就是从shard中最旧的数据开始消费.
+* Consts.LOG_END_CURSOR: 表示从shard的尾开始,也就是从shard中最新的数据开始消费.
+* UnixTimestamp: 一个整型数值的字符串,用1970-01-01到现在的秒数表示, 含义是消费shard中这个时间点之后的数据.
+
+三种取值举例如下:
+```
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_END_CURSOR);
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, "1512439000");
+```
+
+#### 设置消费进度监控
+Flink log consumer支持可选的设置消费进度监控,所谓消费进度就是获取每一个shard实时的消费位置,这个位置使用时间戳表示,详细概念可以参考
+文档[消费组-查看状态](https://help.aliyun.com/document_detail/43998.html),[消费组-监控报警
+](https://help.aliyun.com/document_detail/55912.html).
+```
+configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "you consumer group name");
+```
+通过上面的代码就可以设置消费进度监控,注意上面代码是可选的,如果设置了,consumer会首先创建consumerGroup,如果已经存在,则什么都不错,consumer中的snapshot会自动同步到日志服务的consumerGroup中,用户可以在日志服务的控制台查看consumer的消费进度.
 #### 容灾和exactly once语义支持
+
 #### 设计原理
 #### 关联的日志服务 API
 
