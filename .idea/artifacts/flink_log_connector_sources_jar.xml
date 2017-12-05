@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="flink-log-connector-sources:jar">
+    <output-path>$USER_HOME$/Desktop/flink-log-connector</output-path>
+    <root id="archive" name="flink-log-connector-sources_jar.jar">
+      <element id="dir-copy" path="$PROJECT_DIR$/src/main/java" />
+    </root>
+  </artifact>
+</component>
