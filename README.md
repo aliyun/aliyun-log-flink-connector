@@ -1,6 +1,6 @@
 # Flink log connector
 ## 介绍
-flink log connector是阿里云日志服务提供的,用于对接flink的工具,包括两部分,消费者(Consumer)和生产者(Producer).
+Flink log connector是阿里云日志服务提供的,用于对接flink的工具,包括两部分,消费者(Consumer)和生产者(Producer).
 
 消费者用于从日志服务中读取数据,支持exactly once语义,支持shard负载均衡.
 生产者用于将数据写入日志服务,使用connector时,需要在项目中添加maven依赖:
@@ -63,8 +63,44 @@ configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "you consumer group name");
 ```
 通过上面的代码就可以设置消费进度监控,注意上面代码是可选的,如果设置了,consumer会首先创建consumerGroup,如果已经存在,则什么都不错,consumer中的snapshot会自动同步到日志服务的consumerGroup中,用户可以在日志服务的控制台查看consumer的消费进度.
 #### 容灾和exactly once语义支持
+当打开Flink的checkpointing功能时,Flink log consumer会周期性的将每个shard的消费进度保存起来,当作业失败时,flink会从恢复log consumer,并
+从保存的最新的checkpoint开始消费.
 
-#### 设计原理
+写checkpoint的周期定义了当发生失败时,最多多少的数据会被回溯,也就是重新消费,使用代码如下:
+```
+final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+// 开启flink exactly once语义
+env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+// 每5s保存一次checkpoint
+env.enableCheckpointing(5000);
+```
+更多Flink checkpoint的细节请参考Flink官方文档[Checkpoints](https://ci.apache.org/projects/flink/flink-docs-release-1.3/setup/checkpoints.html).
 #### 关联的日志服务 API
+Flink log consumer 会用到的阿里云日志服务接口如下:
+* GetCursorOrData
+
+    用于从shard中拉数据, 注意频繁的调用该接口可能会导致数据超过日志服务的shard quota, 可以通过ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS和ConfigConstants.LOG_MAX_NUMBER_PER_FETCH
+    控制接口调用的时间间隔和每次调用拉取的日志数量,shard的quota参考文章[shard简介](https://help.aliyun.com/document_detail/28976.html).
+    ```
+    configProps.put(ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS, "100");
+    configProps.put(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, "100");
+    ```
+* ListShards
+
+     用于获取logStore中所有的shard列表,获取shard状态等.如果您的shard经常发生分裂合并,可以通过调整接口的调用周期来及时发现shard的变化.
+     ```
+     // 设置每30s调用一次ListShards
+     configProps.put(ConfigConstants.LOG_SHARDS_DISCOVERY_INTERVAL_MILLIS, "30000");
+     ```
+* CreateConsumerGroup
+    该接口调用只有当设置消费进度监控时才会发生,功能是创建consumerGroup,用于同步checkpoint.
+
+子用户使用Flink log consumer需要授权如下几个RAM Policy:
+
+|接口|资源|
+|------|------|
+|log:GetCursorOrData| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}|
+|log:ListShards| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}|
+|log:CreateConsumerGroup| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}/consumergroup/*|
 
 ### Log Producer
