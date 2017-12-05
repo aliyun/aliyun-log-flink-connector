@@ -97,6 +97,9 @@ Flink log consumer 会用到的阿里云日志服务接口如下:
 * CreateConsumerGroup
 
     该接口调用只有当设置消费进度监控时才会发生,功能是创建consumerGroup,用于同步checkpoint.
+* ConsumerGroupUpdateCheckPoint
+
+    该接口用户将flink的snapshot同步到日志服务的consumerGroup中.
 
 子用户使用Flink log consumer需要授权如下几个RAM Policy:
 
@@ -105,6 +108,7 @@ Flink log consumer 会用到的阿里云日志服务接口如下:
 |log:GetCursorOrData| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}|
 |log:ListShards| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}|
 |log:CreateConsumerGroup| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}/consumergroup/*|
+|log:ConsumerGroupUpdateCheckPoint|acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}/consumergroup/${consumerGroupName}|
 
 ### Log Producer
 FlinkLogProducer 用于将数据写到阿里云日志服务中, 注意producer只支持Flink at-least-once语义,这就意味着在发生作业失败的情况下,写入日志服务中的数据有可能会重复,但是绝对不会丢失.
