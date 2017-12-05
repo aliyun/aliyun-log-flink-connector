@@ -16,12 +16,13 @@ import org.apache.flink.streaming.connectors.log.util.Consts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction {
+public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction{
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducer.class);
     private final Properties configProps;

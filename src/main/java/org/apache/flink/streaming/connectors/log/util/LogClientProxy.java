@@ -9,10 +9,11 @@ import org.apache.flink.streaming.connectors.log.model.LogstoreShardMeta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class LogClientProxy {
+public class LogClientProxy implements Serializable{
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
     private Client logClient;
     public LogClientProxy(String endpoint, String accessKeyId, String accessKey){

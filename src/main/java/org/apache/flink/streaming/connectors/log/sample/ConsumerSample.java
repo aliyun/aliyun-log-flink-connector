@@ -35,7 +35,7 @@ public class ConsumerSample {
         env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
         env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 
-        env.setStateBackend(new FsStateBackend("file:///Users/zhouzhou/Binary/flink-1.3.2/checkpoints/"));
+        env.setStateBackend(new FsStateBackend("file:///Users/zhouzhou/Binary/flink-1.3.2/testcheckpoints/"));
 
         RawLogGroupListDeserializer deserializer = new RawLogGroupListDeserializer();
         Properties configProps = new Properties();
@@ -44,11 +44,12 @@ public class ConsumerSample {
         configProps.put(ConfigConstants.LOG_ACCESSKEY, sAccessKey);
         configProps.put(ConfigConstants.LOG_PROJECT, sProject);
         configProps.put(ConfigConstants.LOG_LOGSTORE, sLogstore);
-        configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_END_CURSOR);
+        configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "consumergroup-flink");
         DataStream<RawLogGroupList> logTestStream = env.addSource(
                 new FlinkLogConsumer<RawLogGroupList>(deserializer, configProps)
         );
+
         logTestStream.writeAsText("/Users/zhouzhou/Binary/flink-1.3.2/data/newb.txt." + System.currentTimeMillis());
         env.execute("flink log connector");
     }
