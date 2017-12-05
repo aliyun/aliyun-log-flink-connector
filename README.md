@@ -59,7 +59,7 @@ Flink log consumer支持可选的设置消费进度监控,所谓消费进度就�
 文档[消费组-查看状态](https://help.aliyun.com/document_detail/43998.html),[消费组-监控报警
 ](https://help.aliyun.com/document_detail/55912.html).
 ```
-configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "you consumer group name");
+configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "your consumer group name");
 ```
 通过上面的代码就可以设置消费进度监控,注意上面代码是可选的,如果设置了,consumer会首先创建consumerGroup,如果已经存在,则什么都不错,consumer中的snapshot会自动同步到日志服务的consumerGroup中,用户可以在日志服务的控制台查看consumer的消费进度.
 #### 容灾和exactly once语义支持
@@ -104,3 +104,91 @@ Flink log consumer 会用到的阿里云日志服务接口如下:
 |log:CreateConsumerGroup| acs:log:${regionName}:${projectOwnerAliUid}:project/${projectName}/logstore/${logstoreName}/consumergroup/*|
 
 ### Log Producer
+FlinkLogProducer 用于将数据写到阿里云日志服务中, 注意producer只支持Flink at-least-once语义,这就意味着在发生作业失败的情况下,写入日志服务中的数据有可能会重复,但是绝对不会丢失.
+用法示例如下,我们将模拟产生的字符串写入日志服务:
+```
+// 将数据序列化成日志服务的数据格式
+class SimpleLogSerializer implements LogSerializationSchema<String> {
+
+    public RawLogGroup serialize(String element) {
+        RawLogGroup rlg = new RawLogGroup();
+        RawLog rl = new RawLog();
+        rl.setTime((int)(System.currentTimeMillis() / 1000));
+        rl.addContent("message", element);
+        rlg.addLog(rl);
+        return rlg;
+    }
+}
+public class ProducerSample {
+    public static String sEndpoint = "cn-hangzhou.log.aliyuncs.com";
+    public static String sAccessKeyId = "";
+    public static String sAccessKey = "";
+    public static String sProject = "ali-cn-hangzhou-sls-admin";
+    public static String sLogstore = "test-flink-producer";
+    private static final Logger LOG = LoggerFactory.getLogger(ConsumerSample.class);
+
+
+    public static void main(String[] args) throws Exception {
+
+        final ParameterTool params = ParameterTool.fromArgs(args);
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.getConfig().setGlobalJobParameters(params);
+        env.setParallelism(3);
+
+        DataStream<String> simpleStringStream = env.addSource(new EventsGenerator());
+
+        Properties configProps = new Properties();
+        // 设置访问日志服务的域名
+        configProps.put(ConfigConstants.LOG_ENDPOINT, sEndpoint);
+        // 设置访问日志服务的ak
+        configProps.put(ConfigConstants.LOG_ACCESSSKEYID, sAccessKeyId);
+        configProps.put(ConfigConstants.LOG_ACCESSKEY, sAccessKey);
+        // 设置日志写入的日志服务project
+        configProps.put(ConfigConstants.LOG_PROJECT, sProject);
+        // 设置日志写入的日志服务logStore
+        configProps.put(ConfigConstants.LOG_LOGSTORE, sLogstore);
+
+        FlinkLogProducer<String> logProducer = new FlinkLogProducer<String>(new SimpleLogSerializer(), configProps);
+
+        simpleStringStream.addSink(logProducer);
+
+        env.execute("flink log producer");
+    }
+    // 模拟产生日志
+    public static class EventsGenerator implements SourceFunction<String> {
+        private boolean running = true;
+
+        @Override
+        public void run(SourceContext<String> ctx) throws Exception {
+            long seq = 0;
+            while (running) {
+                Thread.sleep(10);
+                ctx.collect((seq++) + "-" + RandomStringUtils.randomAlphabetic(12));
+            }
+        }
+
+        @Override
+        public void cancel() {
+            running = false;
+        }
+    }
+}
+```
+Producer初始化主要需要做两件事情:
+* 初始化配置参数Properties, 这一步和Consumer类似, producer有一些定制的参数,一般情况下使用默认值即可,特殊场景可以考虑定制:
+    ```
+    // 用于发送数据的io线程的数量,默认是8
+    ConfigConstants.LOG_SENDER_IO_THREAD_COUNT
+    // 该值定义日志数据被缓存发送的时间,默认是3000
+    ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS
+    // 缓存发送的包中日志的数量,默认是4096
+    ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE
+    // 缓存发送的包的大小,默认是3Mb
+    ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE
+    // 作业可以使用的内存总的大小,默认是100Mb
+    ConfigConstants.LOG_MEM_POOL_BYTES
+    ```
+    上述参数不是必选参数,用户可以不设置,直接使用默认值.
+* 重载LogSerializationSchema,定义将数据序列化成RawLogGroup的方法.
+
+    RawLogGroup是log的集合,每个字段的含义可以参考文档[日志数据模型](https://help.aliyun.com/document_detail/29054.html).
