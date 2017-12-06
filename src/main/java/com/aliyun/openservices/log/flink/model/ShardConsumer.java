@@ -95,9 +95,15 @@ public class ShardConsumer<T> implements Runnable{
     private void deserializeRecordForCollectionAndUpdateState(List<LogGroupData> records, String nextCursor)
             throws IOException {
         final T value = deserializer.deserialize(records);
+        long timestamp = System.currentTimeMillis();
+        if(records.size() > 0){
+            if(records.get(0).GetFastLogGroup().getLogsCount() > 0) {
+                timestamp = records.get(0).GetFastLogGroup().getLogs(0).getTime() * 1000;
+            }
+        }
         fetcherRef.emitRecordAndUpdateState(
                 value,
-                System.currentTimeMillis(),
+                timestamp,
                 subscribedShardStateIndex,
                 nextCursor);
         lastConsumerCursor = nextCursor;
