@@ -8,7 +8,7 @@ Flink log connector是阿里云日志服务提供的,用于对接flink的工具,
 <dependency>
   <groupId>org.apache.flink</groupId>
   <artifactId>flink-log-connector</artifactId>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
 </dependency>
 ```
 ## 用法
