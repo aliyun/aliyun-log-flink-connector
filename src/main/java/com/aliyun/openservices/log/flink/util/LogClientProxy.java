@@ -18,7 +18,7 @@ public class LogClientProxy implements Serializable{
     private Client logClient;
     public LogClientProxy(String endpoint, String accessKeyId, String accessKey){
         this.logClient = new Client(endpoint, accessKeyId, accessKey);
-        this.logClient.setUserAgent("flink-log-connector-0.1.0");
+        this.logClient.setUserAgent("flink-log-connector-0.1.3");
     }
     public String getCursor(String project, String logstore, int shard, String position) throws LogException {
         String cursor = null;
@@ -31,7 +31,7 @@ public class LogClientProxy implements Serializable{
                     cursor = logClient.GetCursor(project, logstore, shard, com.aliyun.openservices.log.common.Consts.CursorMode.END).GetCursor();
                 }
                 else{
-                    int time = Integer.valueOf(position, 0);
+                    int time = Integer.valueOf(position);
                     cursor = logClient.GetCursor(project, logstore, shard, time).GetCursor();
                 }
                 break;
