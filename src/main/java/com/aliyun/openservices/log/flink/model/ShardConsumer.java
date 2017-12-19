@@ -41,7 +41,7 @@ public class ShardConsumer<T> implements Runnable{
     public void run() {
         try {
             LogstoreShardState state = fetcherRef.getShardState(subscribedShardStateIndex);
-            if(state.getShardMeta().getShardStatus().equals(Consts.READONLY_SHARD_STATUS) && state.getShardMeta().getEndCursor() == null){
+            if(state.getShardMeta().getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0 && state.getShardMeta().getEndCursor() == null){
                 String endCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), Consts.LOG_END_CURSOR);
                 state.getShardMeta().setEndCursor(endCursor);
             }
@@ -56,6 +56,8 @@ public class ShardConsumer<T> implements Runnable{
                         getLogResponse = logClient.getLogs(logProject, logStore, state.getShardMeta().getShardId(), lastConsumerCursor, maxNumberOfRecordsPerFetch);
                     }
                     catch(LogException ex){
+                        LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
+                                ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, state.getShardMeta().getShardId());
                         if(ex.GetErrorCode().compareToIgnoreCase("InvalidCursor") == 0){
                             lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition);
                         }

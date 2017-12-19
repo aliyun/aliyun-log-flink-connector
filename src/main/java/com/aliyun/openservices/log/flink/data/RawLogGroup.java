@@ -39,7 +39,9 @@ public class RawLogGroup implements Serializable {
     }
 
     public void setTopic(String topic) {
-        this.topic = topic;
+        if(topic != null){
+            this.topic = topic;
+        }
     }
 
     public String getSource() {
@@ -47,7 +49,9 @@ public class RawLogGroup implements Serializable {
     }
 
     public void setSource(String source) {
-        this.source = source;
+        if(source != null){
+            this.source = source;
+        }
     }
 
     public List<RawLog> getLogs() {

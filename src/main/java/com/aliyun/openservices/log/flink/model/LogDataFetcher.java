@@ -87,8 +87,8 @@ public class LogDataFetcher<T> {
                 boolean add = true;
                 for(LogstoreShardState state: subscribedShardsState){
                     if(state.getShardMeta().getShardId() == shard.getShardId()){
-                        if(!state.getShardMeta().getShardStatus().equals(shard.getShardStatus())
-                                || (shard.getShardStatus().equals(Consts.READONLY_SHARD_STATUS) && state.getShardMeta().getEndCursor() == null)) {
+                        if(state.getShardMeta().getShardStatus().compareToIgnoreCase(shard.getShardStatus()) != 0
+                                || (shard.getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0 && state.getShardMeta().getEndCursor() == null)) {
                             String endCursor = logClient.getCursor(logProject, logStore, shard.getShardId(), Consts.LOG_END_CURSOR);
                             state.getShardMeta().setEndCursor(endCursor);
                             state.getShardMeta().setShardStatus(Consts.READONLY_SHARD_STATUS);
@@ -140,6 +140,7 @@ public class LogDataFetcher<T> {
                 LogstoreShardState shardState = new LogstoreShardState(shard, null);
                 int newStateIndex = registerNewSubscribedShardState(shardState);
                 shardConsumersExecutor.submit(new ShardConsumer<T>(this, deserializationSchema, newStateIndex, configProps, logClient));
+                LOG.info("discover new shard: {}, task: {}, taskcnt: {}", shardState.toString(), indexOfThisConsumerSubtask, totalNumberOfConsumerSubtasks);
             }
             if (running && discoveryIntervalMillis != 0) {
                 try {
@@ -167,6 +168,7 @@ public class LogDataFetcher<T> {
         while (!shardConsumersExecutor.isTerminated()) {
             Thread.sleep(50);
         }
+        LOG.warn("LogdataFetcher exit awaitTermination");
     }
     public void shutdownFetcher() {
         running = false;
@@ -175,9 +177,7 @@ public class LogDataFetcher<T> {
             mainThread.interrupt(); // the main thread may be sleeping for the discovery interval
         }
 
-        if (LOG.isInfoEnabled()) {
-            LOG.info("Shutting down the shard consumer threads of subtask {} ...", indexOfThisConsumerSubtask);
-        }
+        LOG.warn("Shutting down the shard consumer threads of subtask {} ...", indexOfThisConsumerSubtask);
         shardConsumersExecutor.shutdownNow();
     }
     public void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor) {
@@ -190,7 +190,7 @@ public class LogDataFetcher<T> {
         synchronized (checkpointLock) {
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
             state.setLastConsumerCursor(cursor);
-            if(state.getShardMeta().getShardStatus().equals(Consts.READONLY_SHARD_STATUS) && cursor.equals(state.getShardMeta().getEndCursor())){
+            if(state.getShardMeta().getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0 && cursor.compareTo(state.getShardMeta().getEndCursor()) == 0){
                 if (this.numberOfActiveShards.decrementAndGet() == 0) {
                     LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
                             indexOfThisConsumerSubtask);
@@ -201,6 +201,7 @@ public class LogDataFetcher<T> {
     }
     public void stopWithError(Throwable throwable) {
         if (this.error.compareAndSet(null, throwable)) {
+            LOG.error("LogDataFetcher stopWithError: {}", throwable.toString());
             shutdownFetcher();
         }
     }

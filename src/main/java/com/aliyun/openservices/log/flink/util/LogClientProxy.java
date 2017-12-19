@@ -18,7 +18,7 @@ public class LogClientProxy implements Serializable{
     private Client logClient;
     public LogClientProxy(String endpoint, String accessKeyId, String accessKey){
         this.logClient = new Client(endpoint, accessKeyId, accessKey);
-        this.logClient.setUserAgent("flink-log-connector-0.1.3");
+        this.logClient.setUserAgent("flink-log-connector-0.1.4");
     }
     public String getCursor(String project, String logstore, int shard, String position) throws LogException {
         String cursor = null;
