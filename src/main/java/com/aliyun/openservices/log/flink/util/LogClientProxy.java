@@ -24,10 +24,10 @@ public class LogClientProxy implements Serializable{
         String cursor = null;
         while (true) {
             try {
-                if (position.equals(Consts.LOG_BEGIN_CURSOR)) {
+                if (position.compareTo(Consts.LOG_BEGIN_CURSOR) == 0) {
                     cursor = logClient.GetCursor(project, logstore, shard, com.aliyun.openservices.log.common.Consts.CursorMode.BEGIN).GetCursor();
                 }
-                else if(position.equals(Consts.LOG_END_CURSOR)){
+                else if(position.compareTo(Consts.LOG_END_CURSOR) == 0){
                     cursor = logClient.GetCursor(project, logstore, shard, com.aliyun.openservices.log.common.Consts.CursorMode.END).GetCursor();
                 }
                 else{

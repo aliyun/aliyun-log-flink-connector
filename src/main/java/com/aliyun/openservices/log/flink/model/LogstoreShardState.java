@@ -28,10 +28,10 @@ public class LogstoreShardState {
     }
 
     public boolean hasMoreData(){
-        if(shardMeta.getShardStatus().equals(Consts.READWRITE_SHARD_STATUS)) return true;
-        else if(shardMeta.getShardStatus().equals(Consts.READONLY_SHARD_STATUS)){
+        if(shardMeta.getShardStatus().compareToIgnoreCase(Consts.READWRITE_SHARD_STATUS) == 0) return true;
+        else if(shardMeta.getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0){
             if(lastConsumerCursor == null || shardMeta.getEndCursor() == null) return true;
-            else if(lastConsumerCursor.equals(shardMeta.getEndCursor())) return false;
+            else if(lastConsumerCursor.compareTo(shardMeta.getEndCursor()) == 0) return false;
             else return true;
         }
         else return false;

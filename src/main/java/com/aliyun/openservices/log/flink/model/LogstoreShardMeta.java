@@ -68,8 +68,8 @@ public class LogstoreShardMeta implements Serializable {
         LogstoreShardMeta that = (LogstoreShardMeta) o;
 
         if (shardId != that.shardId) return false;
-        if (!beginHashKey.equals(that.beginHashKey)) return false;
-        if (!endHashKey.equals(that.endHashKey)) return false;
+        if (beginHashKey.compareTo(that.beginHashKey) != 0) return false;
+        if (endHashKey.compareTo(that.endHashKey) != 0) return false;
         return true;
 
     }
