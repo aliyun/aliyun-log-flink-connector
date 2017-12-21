@@ -89,7 +89,7 @@ public class LogDataFetcher<T> {
                     if(state.getShardMeta().getShardId() == shard.getShardId()){
                         if(state.getShardMeta().getShardStatus().compareToIgnoreCase(shard.getShardStatus()) != 0
                                 || (shard.getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0 && state.getShardMeta().getEndCursor() == null)) {
-                            String endCursor = logClient.getCursor(logProject, logStore, shard.getShardId(), Consts.LOG_END_CURSOR);
+                            String endCursor = logClient.getCursor(logProject, logStore, shard.getShardId(), Consts.LOG_END_CURSOR, "");
                             state.getShardMeta().setEndCursor(endCursor);
                             state.getShardMeta().setShardStatus(Consts.READONLY_SHARD_STATUS);
                             LOG.info("change shard status, shard: {}", shard.toString());

@@ -24,7 +24,8 @@ public class ShardConsumer<T> implements Runnable{
     private String lastConsumerCursor;
     private final String logProject;
     private final String logStore;
-    private final String consumerStartPosition;
+    private String consumerStartPosition;
+    private final String consumerGroupName;
 
     public ShardConsumer(LogDataFetcher<T> fetcher, LogDeserializationSchema<T> deserializer, int subscribedShardStateIndex, Properties configProps, LogClientProxy logClient){
         this.fetcherRef = fetcher;
@@ -36,18 +37,19 @@ public class ShardConsumer<T> implements Runnable{
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
         this.consumerStartPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
+        this.consumerGroupName = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
     }
 
     public void run() {
         try {
             LogstoreShardState state = fetcherRef.getShardState(subscribedShardStateIndex);
             if(state.getShardMeta().getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0 && state.getShardMeta().getEndCursor() == null){
-                String endCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), Consts.LOG_END_CURSOR);
+                String endCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), Consts.LOG_END_CURSOR, "");
                 state.getShardMeta().setEndCursor(endCursor);
             }
             lastConsumerCursor = state.getLastConsumerCursor();
             if(lastConsumerCursor == null){
-                lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition);
+                lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition, consumerGroupName);
             }
             while(isRunning()){
                 if(state.hasMoreData()){
@@ -59,12 +61,16 @@ public class ShardConsumer<T> implements Runnable{
                         LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
                                 ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, state.getShardMeta().getShardId());
                         if(ex.GetErrorCode().compareToIgnoreCase("InvalidCursor") == 0){
-                            lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition);
+                            if(consumerStartPosition.compareTo(Consts.LOG_FROM_CHECKPOINT) == 0){
+                                consumerStartPosition = Consts.LOG_BEGIN_CURSOR;
+                            }
+                            lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition, consumerGroupName);
                         }
                         else{
                             throw ex;
                         }
                     }
+
                     if(getLogResponse != null){
                         if(getLogResponse.GetCount() > 0 ) {
                             deserializeRecordForCollectionAndUpdateState(getLogResponse.GetLogGroups(), getLogResponse.GetNextCursor());
@@ -82,6 +88,7 @@ public class ShardConsumer<T> implements Runnable{
                         if(sleepTime < fetchIntervalMillis)
                             sleepTime = fetchIntervalMillis;
                         Thread.sleep(sleepTime);
+                        getLogResponse = null;
                     }
                 }
                 else{
@@ -97,6 +104,7 @@ public class ShardConsumer<T> implements Runnable{
     private void deserializeRecordForCollectionAndUpdateState(List<LogGroupData> records, String nextCursor)
             throws IOException {
         final T value = deserializer.deserialize(records);
+        LOG.info("finish deserializer");
         long timestamp = System.currentTimeMillis();
         if(records.size() > 0){
             if(records.get(0).GetFastLogGroup().getLogsCount() > 0) {
@@ -109,6 +117,7 @@ public class ShardConsumer<T> implements Runnable{
                 subscribedShardStateIndex,
                 nextCursor);
         lastConsumerCursor = nextCursor;
+        records = null;
     }
     private boolean isRunning() {
         return !Thread.interrupted();

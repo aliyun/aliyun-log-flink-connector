@@ -10,6 +10,7 @@ public class Consts {
 
     public static String LOG_BEGIN_CURSOR = "begin_cursor";
     public static String LOG_END_CURSOR = "end_cursor";
+    public static String LOG_FROM_CHECKPOINT = "consumer_from_checkpoint";
 
     public static String LOG_PRODUCER_USER_AGENT = "flink-log-producer-0.1.0";
 

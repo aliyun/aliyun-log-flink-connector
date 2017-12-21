@@ -2,10 +2,12 @@ package com.aliyun.openservices.log.flink.util;
 
 import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.ConsumerGroup;
+import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
 import com.aliyun.openservices.log.response.BatchGetLogResponse;
+import com.sun.tools.internal.jxc.ap.Const;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +22,7 @@ public class LogClientProxy implements Serializable{
         this.logClient = new Client(endpoint, accessKeyId, accessKey);
         this.logClient.setUserAgent("flink-log-connector-0.1.4");
     }
-    public String getCursor(String project, String logstore, int shard, String position) throws LogException {
+    public String getCursor(String project, String logstore, int shard, String position, String consumerGroup) throws LogException {
         String cursor = null;
         while (true) {
             try {
@@ -30,14 +32,33 @@ public class LogClientProxy implements Serializable{
                 else if(position.compareTo(Consts.LOG_END_CURSOR) == 0){
                     cursor = logClient.GetCursor(project, logstore, shard, com.aliyun.openservices.log.common.Consts.CursorMode.END).GetCursor();
                 }
-                else{
+                else if(position.compareTo(Consts.LOG_FROM_CHECKPOINT) == 0){
+                    try {
+                        ArrayList<ConsumerGroupShardCheckPoint> cps = logClient.GetCheckPoint(project, logstore, consumerGroup, shard).GetCheckPoints();
+                        if (cps.size() > 0)
+                            cursor = cps.get(0).getCheckPoint();
+                        else {
+                            position = Consts.LOG_BEGIN_CURSOR;
+                            continue;
+                        }
+                    }
+                    catch(LogException ex){
+                        LOG.warn("get cursor error, project: {}, logstore: {}, shard: {}, position: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, shard, position, ex.GetErrorCode(), ex.GetErrorMessage(), ex.GetRequestId());
+                        if(ex.GetErrorCode().contains("NotExist")){
+                            position = Consts.LOG_BEGIN_CURSOR;
+                            continue;
+                        }
+                        else throw ex;
+                    }
+                }
+                else {
                     int time = Integer.valueOf(position);
                     cursor = logClient.GetCursor(project, logstore, shard, time).GetCursor();
                 }
                 break;
             } catch (LogException e) {
                 LOG.warn("get cursor error, project: {}, logstore: {}, shard: {}, position: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, shard, position, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
-                if (e.GetErrorCode().compareToIgnoreCase("Unauthorized") == 0 || e.GetErrorCode().contains("NotExist") || e.GetErrorCode().contains("Invalid")) {
+                if (e.GetErrorCode().contains("Unauthorized") || e.GetErrorCode().contains("NotExist") || e.GetErrorCode().contains("Invalid")) {
                     throw e;
                 }
             }
