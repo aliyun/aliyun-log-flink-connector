@@ -104,7 +104,6 @@ public class ShardConsumer<T> implements Runnable{
     private void deserializeRecordForCollectionAndUpdateState(List<LogGroupData> records, String nextCursor)
             throws IOException {
         final T value = deserializer.deserialize(records);
-        LOG.info("finish deserializer");
         long timestamp = System.currentTimeMillis();
         if(records.size() > 0){
             if(records.get(0).GetFastLogGroup().getLogsCount() > 0) {
