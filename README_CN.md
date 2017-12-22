@@ -13,7 +13,7 @@ Flink log connector是阿里云日志服务提供的，用于对接flink的工�
 <dependency>
             <groupId>com.aliyun.openservices</groupId>
             <artifactId>flink-log-connector</artifactId>
-            <version>0.1.3</version>
+            <version>0.1.5</version>
 </dependency>
 <dependency>
             <groupId>com.google.protobuf</groupId>
