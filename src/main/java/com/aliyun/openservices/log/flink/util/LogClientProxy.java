@@ -7,7 +7,6 @@ import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
 import com.aliyun.openservices.log.response.BatchGetLogResponse;
-import com.sun.tools.internal.jxc.ap.Const;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +36,15 @@ public class LogClientProxy implements Serializable{
                 else if(position.compareTo(Consts.LOG_FROM_CHECKPOINT) == 0){
                     try {
                         ArrayList<ConsumerGroupShardCheckPoint> cps = logClient.GetCheckPoint(project, logstore, consumerGroup, shard).GetCheckPoints();
+                        if(LOG.isDebugEnabled()) {
+                            LOG.debug("get checkpoints, p: {}, l: {}, s: {}, position: {}, cg: {}, result: {}",
+                                    project,
+                                    logstore,
+                                    shard,
+                                    position,
+                                    consumerGroup,
+                                    cps.size());
+                        }
                         if (cps.size() > 0)
                             cursor = cps.get(0).getCheckPoint();
                         else {
