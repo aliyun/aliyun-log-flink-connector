@@ -50,6 +50,7 @@ public class ShardConsumer<T> implements Runnable{
             lastConsumerCursor = state.getLastConsumerCursor();
             if(lastConsumerCursor == null){
                 lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition, consumerGroupName);
+                LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, state.getShardMeta().getShardId(), lastConsumerCursor);
             }
             while(isRunning()){
                 if(state.hasMoreData()){

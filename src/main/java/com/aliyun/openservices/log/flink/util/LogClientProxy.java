@@ -47,7 +47,7 @@ public class LogClientProxy implements Serializable{
                         }
                         if (cps.size() > 0)
                             cursor = cps.get(0).getCheckPoint();
-                        else {
+                        if(cursor == null || cursor.length() == 0){
                             position = Consts.LOG_BEGIN_CURSOR;
                             continue;
                         }
@@ -74,6 +74,7 @@ public class LogClientProxy implements Serializable{
             }
             try {
                 Thread.sleep(100);
+                cursor = null;
             } catch (InterruptedException e) {
             }
         }
