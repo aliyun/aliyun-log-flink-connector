@@ -13,7 +13,7 @@ The producer writes data into Log Service. When using the connector, you must ad
 <dependency>
             <groupId>com.aliyun.openservices</groupId>
             <artifactId>flink-log-connector</artifactId>
-            <version>0.1.6</version>
+            <version>0.1.7</version>
 </dependency>
 <dependency>
             <groupId>com.google.protobuf</groupId>
