@@ -108,7 +108,8 @@ public class ShardConsumer<T> implements Runnable{
         long timestamp = System.currentTimeMillis();
         if(records.size() > 0){
             if(records.get(0).GetFastLogGroup().getLogsCount() > 0) {
-                timestamp = records.get(0).GetFastLogGroup().getLogs(0).getTime() * 1000;
+                long logTimeStamp = records.get(0).GetFastLogGroup().getLogs(0).getTime();
+                timestamp = logTimeStamp * 1000;
             }
         }
         fetcherRef.emitRecordAndUpdateState(
