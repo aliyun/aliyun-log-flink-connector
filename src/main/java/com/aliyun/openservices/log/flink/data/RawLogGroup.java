@@ -23,6 +23,7 @@ public class RawLogGroup implements Serializable {
     }
 
     public void addLog(RawLog log){
+        log.setTags(tags);
         logs.add(log);
     }
 
