@@ -9,8 +9,5 @@
         <module name="flink-log-connector" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="flink-log-connector" target="1.5" />
-    </bytecodeTargetLevel>
   </component>
 </project>
