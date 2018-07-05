@@ -116,7 +116,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
                             cursorStateForCheckpoint.add(Tuple2.of(entry.getKey(), entry.getValue()));
                             if (consumerGroupName != null) {
-                                logClient.updateCheckpoint(fetcher.getLogProject(), fetcher.getLogStore(), consumerGroupName, "flinkTask-" + getRuntimeContext().getIndexOfThisSubtask() + "Of" + getRuntimeContext().getNumberOfParallelSubtasks(), entry.getKey().getShardId(), entry.getValue());
+                                logClient.updateCheckpoint(logProject, logStore, consumerGroupName, "flinkTask-" + getRuntimeContext().getIndexOfThisSubtask() + "Of" + getRuntimeContext().getNumberOfParallelSubtasks(), entry.getKey().getShardId(), entry.getValue());
                             }
                         }
                     }
@@ -127,7 +127,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 if (LOG.isDebugEnabled()) {
                     StringBuilder strb = new StringBuilder();
                     for(Map.Entry<LogstoreShardMeta, String> entry: lastStateSnapshot.entrySet()){
-                        strb.append("shard: " + entry.getKey().toString() + ", cursor: " +entry.getValue());
+                        strb.append("shard: ").append(entry.getKey().toString()).append(", cursor: ").append(entry.getValue());
                     }
                     LOG.debug("Snapshotted state, last processed cursor: {}, checkpoint id: {}, timestamp: {}",
                             strb, context.getCheckpointId(), context.getCheckpointTimestamp());
