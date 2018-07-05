@@ -1,15 +1,19 @@
 package com.aliyun.openservices.log.flink.model;
 
 import com.aliyun.openservices.log.exception.LogException;
-import org.apache.flink.api.common.functions.RuntimeContext;
-import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
+import org.apache.flink.api.common.functions.RuntimeContext;
+import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -22,7 +26,6 @@ public class LogDataFetcher<T> {
 
     private final Properties configProps;
     private final LogDeserializationSchema<T> deserializationSchema;
-    private final RuntimeContext runtimeContext;
     private final int totalNumberOfConsumerSubtasks;
     private final int indexOfThisConsumerSubtask;
     private final SourceFunction.SourceContext<T> sourceContext;
@@ -41,7 +44,6 @@ public class LogDataFetcher<T> {
                           Properties configProps,
                           LogDeserializationSchema<T> deserializationSchema, LogClientProxy logClient) {
         this.sourceContext = sourceContext;
-        this.runtimeContext = runtimeContext;
         this.configProps = configProps;
         this.deserializationSchema = deserializationSchema;
         this.totalNumberOfConsumerSubtasks = runtimeContext.getNumberOfParallelSubtasks();
@@ -71,8 +73,9 @@ public class LogDataFetcher<T> {
 
     private static ExecutorService createShardConsumersThreadPool(final String subtaskName) {
         return Executors.newCachedThreadPool(new ThreadFactory() {
+            private final AtomicLong threadCount = new AtomicLong(0);
+
             public Thread newThread(Runnable runnable) {
-                final AtomicLong threadCount = new AtomicLong(0);
                 Thread thread = new Thread(runnable);
                 thread.setName("shardConsumers-" + subtaskName + "-thread-" + threadCount.getAndIncrement());
                 thread.setDaemon(true);
