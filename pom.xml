@@ -26,8 +26,9 @@
         </license>
     </licenses>
     <scm>
-        <url>/tags/flink-log-connector-0.1.9</url>
-        <connection>/tags/flink-log-connector-0.1.9</connection>
+        <url>https://github.com/aliyun/aliyun-log-flink-connector</url>
+        <connection>scm:git:https://github.com/aliyun/aliyun-log-flink-connector.git</connection>
+        <developerConnection>scm:git:https://github.com/aliyun/aliyun-log-flink-connector.git</developerConnection>
     </scm>
     <developers>
         <developer>
