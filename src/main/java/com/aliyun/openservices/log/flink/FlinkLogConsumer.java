@@ -115,7 +115,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                                 getRuntimeContext().getIndexOfThisSubtask())) {
 
                             cursorStateForCheckpoint.add(Tuple2.of(entry.getKey(), entry.getValue()));
-                            if (consumerGroupName != null) {
+                            if (consumerGroupName != null && logClient != null) {
                                 logClient.updateCheckpoint(logProject, logStore, consumerGroupName, "flinkTask-" + getRuntimeContext().getIndexOfThisSubtask() + "Of" + getRuntimeContext().getNumberOfParallelSubtasks(), entry.getKey().getShardId(), entry.getValue());
                             }
                         }
