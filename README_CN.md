@@ -6,29 +6,29 @@ Flink log connector是阿里云日志服务提供的，用于对接flink的工�
 生产者用于将数据写入日志服务，使用connector时，需要在项目中添加maven依赖：
 ```
 <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-streaming-java_2.11</artifactId>
-            <version>1.3.2</version>
+    <groupId>org.apache.flink</groupId>
+    <artifactId>flink-streaming-java_2.11</artifactId>
+    <version>1.3.2</version>
 </dependency>
 <dependency>
-            <groupId>com.aliyun.openservices</groupId>
-            <artifactId>flink-log-connector</artifactId>
-            <version>0.1.7</version>
+    <groupId>com.aliyun.openservices</groupId>
+    <artifactId>flink-log-connector</artifactId>
+    <version>0.1.7</version>
 </dependency>
 <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
-            <version>2.5.0</version>
+    <groupId>com.google.protobuf</groupId>
+    <artifactId>protobuf-java</artifactId>
+    <version>2.5.0</version>
 </dependency>
- <dependency>
-            <groupId>com.aliyun.openservices</groupId>
-            <artifactId>aliyun-log</artifactId>
-            <version>0.6.10</version>
- </dependency>
 <dependency>
-            <groupId>com.aliyun.openservices</groupId>
-            <artifactId>log-loghub-producer</artifactId>
-            <version>0.1.8</version>
+    <groupId>com.aliyun.openservices</groupId>
+    <artifactId>aliyun-log</artifactId>
+    <version>0.6.10</version>
+</dependency>
+<dependency>
+    <groupId>com.aliyun.openservices</groupId>
+    <artifactId>log-loghub-producer</artifactId>
+    <version>0.1.8</version>
 </dependency>
 ```
 ## 用法
@@ -68,14 +68,23 @@ Flink log consumer支持设置shard的消费起始位置，通过设置属性Con
 
 * Consts.LOG_BEGIN_CURSOR： 表示从shard的头开始消费，也就是从shard中最旧的数据开始消费。
 * Consts.LOG_END_CURSOR： 表示从shard的尾开始，也就是从shard中最新的数据开始消费。
+* Consts.LOG_FROM_CHECKPOINT：以消费组的checkpoint作为消费的起始位置。
 * UnixTimestamp： 一个整型数值的字符串，用1970-01-01到现在的秒数表示， 含义是消费shard中这个时间点之后的数据。
 
-三种取值举例如下：
+四种取值举例如下：
 ```
-configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION， Consts.LOG_BEGIN_CURSOR);
-configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION， Consts.LOG_END_CURSOR);
-configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION， "1512439000");
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION，Consts.LOG_BEGIN_CURSOR);
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION，Consts.LOG_END_CURSOR);
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION，Consts.LOG_FROM_CHECKPOINT);
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION，"1512439000");
 ```
+当从消费的checkpoint获取起始位置时，必须提供消费组名称。除此之外还支持设置一个默认的起始位置，在消费组不存在或者无法从消费组
+中获取checkpoint时，将自动切换到默认的起始位置。如下所示：
+```
+configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION，Consts.LOG_FROM_CHECKPOINT);
+configProps.put(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION，Consts.LOG_END_CURSOR);
+```
+NOTE: 默认的位置不支持设置为```Consts.LOG_FROM_CHECKPOINT```且默认值为```Consts.LOG_BEGIN_CURSOR```。
 
 #### 1.3 监控：消费进度(可选)
 Flink log consumer支持设置消费进度监控，所谓消费进度就是获取每一个shard实时的消费位置，这个位置使用时间戳表示，详细概念可以参考
