@@ -29,7 +29,7 @@ public class LogstoreShardState {
 
     public boolean hasMoreData(){
         if(shardMeta.getShardStatus().compareToIgnoreCase(Consts.READWRITE_SHARD_STATUS) == 0) return true;
-        else if(shardMeta.getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0){
+        else if(shardMeta.isReadOnly()){
             if(lastConsumerCursor == null || shardMeta.getEndCursor() == null) return true;
             else if(lastConsumerCursor.compareTo(shardMeta.getEndCursor()) == 0) return false;
             else return true;

@@ -24,6 +24,7 @@ public class ShardConsumer<T> implements Runnable{
     private final String logProject;
     private final String logStore;
     private String consumerStartPosition;
+    private final String defaultPosition;
     private final String consumerGroupName;
 
     public ShardConsumer(LogDataFetcher<T> fetcher, LogDeserializationSchema<T> deserializer, int subscribedShardStateIndex, Properties configProps, LogClientProxy logClient){
@@ -37,6 +38,14 @@ public class ShardConsumer<T> implements Runnable{
         this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
         this.consumerStartPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroupName = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
+        if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)
+            && (consumerGroupName == null || consumerGroupName.isEmpty())) {
+            throw new IllegalArgumentException("The setting " + ConfigConstants.LOG_CONSUMERGROUP + " is required for restoring checkpoint from consumer group");
+        }
+        defaultPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION, Consts.LOG_BEGIN_CURSOR);
+        if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(defaultPosition)) {
+            throw new IllegalArgumentException("Cannot use " + Consts.LOG_FROM_CHECKPOINT + " as the default position");
+        }
     }
 
     public void run() {
@@ -50,8 +59,8 @@ public class ShardConsumer<T> implements Runnable{
             }
             lastConsumerCursor = state.getLastConsumerCursor();
             if(lastConsumerCursor == null){
-                lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, consumerGroupName);
-                LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, shardId, lastConsumerCursor);
+                lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, defaultPosition, consumerGroupName);
+                LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, state.getShardMeta().getShardId(), lastConsumerCursor);
             }
             while(isRunning()){
                 if(state.hasMoreData()){
@@ -72,7 +81,6 @@ public class ShardConsumer<T> implements Runnable{
                             throw ex;
                         }
                     }
-
                     if(getLogResponse != null){
                         if(getLogResponse.GetCount() > 0 ) {
                             deserializeRecordForCollectionAndUpdateState(getLogResponse.GetLogGroups(), getLogResponse.GetNextCursor());
