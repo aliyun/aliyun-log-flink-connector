@@ -2,14 +2,13 @@ package com.aliyun.openservices.log.flink.model;
 
 import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.exception.LogException;
-import com.aliyun.openservices.log.response.BatchGetLogResponse;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
+import com.aliyun.openservices.log.response.BatchGetLogResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Properties;
 
@@ -18,8 +17,8 @@ public class ShardConsumer<T> implements Runnable{
     private final LogDataFetcher<T> fetcherRef;
     private final LogDeserializationSchema<T> deserializer;
     private final int subscribedShardStateIndex;
-    private int maxNumberOfRecordsPerFetch = Consts.DEFAULT_NUMBER_PER_FETCH;
-    private long fetchIntervalMillis = Consts.DEFAULT_FETCH_INTERVAL_MILLIS;
+    private int maxNumberOfRecordsPerFetch;
+    private long fetchIntervalMillis;
     private final LogClientProxy logClient;
     private String lastConsumerCursor;
     private final String logProject;
@@ -31,8 +30,8 @@ public class ShardConsumer<T> implements Runnable{
         this.fetcherRef = fetcher;
         this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
-        this.maxNumberOfRecordsPerFetch = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, Integer.toString(Consts.DEFAULT_NUMBER_PER_FETCH)));
-        this.fetchIntervalMillis = Long.valueOf(configProps.getProperty(ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS, Long.toString(Consts.DEFAULT_FETCH_INTERVAL_MILLIS)));
+        this.maxNumberOfRecordsPerFetch = getNumberPerFetch(configProps);
+        this.fetchIntervalMillis = getFetchIntervalMillis(configProps);
         this.logClient = logClient;
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
@@ -43,29 +42,31 @@ public class ShardConsumer<T> implements Runnable{
     public void run() {
         try {
             LogstoreShardState state = fetcherRef.getShardState(subscribedShardStateIndex);
-            if(state.getShardMeta().getShardStatus().compareToIgnoreCase(Consts.READONLY_SHARD_STATUS) == 0 && state.getShardMeta().getEndCursor() == null){
-                String endCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), Consts.LOG_END_CURSOR, "");
+            final LogstoreShardMeta shardMeta = state.getShardMeta();
+            final int shardId = shardMeta.getShardId();
+            if(shardMeta.isReadOnly() && state.getShardMeta().getEndCursor() == null){
+                String endCursor = logClient.getCursor(logProject, logStore, shardId, Consts.LOG_END_CURSOR, "");
                 state.getShardMeta().setEndCursor(endCursor);
             }
             lastConsumerCursor = state.getLastConsumerCursor();
             if(lastConsumerCursor == null){
-                lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition, consumerGroupName);
-                LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, state.getShardMeta().getShardId(), lastConsumerCursor);
+                lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, consumerGroupName);
+                LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, shardId, lastConsumerCursor);
             }
             while(isRunning()){
                 if(state.hasMoreData()){
                     BatchGetLogResponse getLogResponse = null;
                     try {
-                        getLogResponse = logClient.getLogs(logProject, logStore, state.getShardMeta().getShardId(), lastConsumerCursor, maxNumberOfRecordsPerFetch);
+                        getLogResponse = logClient.getLogs(logProject, logStore, shardId, lastConsumerCursor, maxNumberOfRecordsPerFetch);
                     }
                     catch(LogException ex){
                         LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
-                                ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, state.getShardMeta().getShardId());
-                        if(ex.GetErrorCode().compareToIgnoreCase("InvalidCursor") == 0){
+                                ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, shardId);
+                        if("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())){
                             if(consumerStartPosition.compareTo(Consts.LOG_FROM_CHECKPOINT) == 0){
                                 consumerStartPosition = Consts.LOG_BEGIN_CURSOR;
                             }
-                            lastConsumerCursor = logClient.getCursor(logProject, logStore, state.getShardMeta().getShardId(), consumerStartPosition, consumerGroupName);
+                            lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, consumerGroupName);
                         }
                         else{
                             throw ex;
@@ -89,7 +90,6 @@ public class ShardConsumer<T> implements Runnable{
                         if(sleepTime < fetchIntervalMillis)
                             sleepTime = fetchIntervalMillis;
                         Thread.sleep(sleepTime);
-                        getLogResponse = null;
                     }
                 }
                 else{
@@ -98,12 +98,12 @@ public class ShardConsumer<T> implements Runnable{
                 }
             }
         } catch (Throwable t) {
-            LOG.error("unexpected error: {}", t.toString());
+            LOG.error("unexpected error: {}", t);
             fetcherRef.stopWithError(t);
         }
     }
-    private void deserializeRecordForCollectionAndUpdateState(List<LogGroupData> records, String nextCursor)
-            throws IOException {
+
+    private void deserializeRecordForCollectionAndUpdateState(List<LogGroupData> records, String nextCursor) {
         final T value = deserializer.deserialize(records);
         long timestamp = System.currentTimeMillis();
         if(records.size() > 0){
@@ -118,9 +118,33 @@ public class ShardConsumer<T> implements Runnable{
                 subscribedShardStateIndex,
                 nextCursor);
         lastConsumerCursor = nextCursor;
-        records = null;
     }
+
     private boolean isRunning() {
         return !Thread.interrupted();
+    }
+
+    private static int getNumberPerFetch(Properties properties) {
+        final String value = properties.getProperty(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH);
+        if (value != null && !value.isEmpty()) {
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException ex) {
+                LOG.warn("Invalid property - MAX_NUMBER_PER_FETCH must be number but was {}", value);
+            }
+        }
+        return Consts.DEFAULT_NUMBER_PER_FETCH;
+    }
+
+    private static long getFetchIntervalMillis(Properties properties) {
+        final String value = properties.getProperty(ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS);
+        if (value != null && !value.isEmpty()) {
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException ex) {
+                LOG.warn("Invalid property - FETCH_DATA_INTERVAL_MILLIS must be number but was {}", value);
+            }
+        }
+        return Consts.DEFAULT_FETCH_INTERVAL_MILLIS;
     }
 }
