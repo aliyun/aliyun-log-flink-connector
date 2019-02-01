@@ -1,12 +1,10 @@
 package com.aliyun.openservices.log.flink.model;
 
-import com.aliyun.openservices.log.flink.util.Consts;
-
 public class LogstoreShardState {
     private LogstoreShardMeta shardMeta;
     private String lastConsumerCursor;
 
-    public LogstoreShardState(LogstoreShardMeta shardMeta, String lastConsumerCursor){
+    public LogstoreShardState(LogstoreShardMeta shardMeta, String lastConsumerCursor) {
         this.shardMeta = shardMeta;
         this.lastConsumerCursor = lastConsumerCursor;
     }
@@ -27,14 +25,13 @@ public class LogstoreShardState {
         return lastConsumerCursor;
     }
 
-    public boolean hasMoreData(){
-        if(shardMeta.getShardStatus().compareToIgnoreCase(Consts.READWRITE_SHARD_STATUS) == 0) return true;
-        else if(shardMeta.isReadOnly()){
-            if(lastConsumerCursor == null || shardMeta.getEndCursor() == null) return true;
-            else if(lastConsumerCursor.compareTo(shardMeta.getEndCursor()) == 0) return false;
+    public boolean hasMoreData() {
+        if (shardMeta.isReadWrite()) return true;
+        else if (shardMeta.isReadOnly()) {
+            if (lastConsumerCursor == null || shardMeta.getEndCursor() == null) return true;
+            else if (lastConsumerCursor.compareTo(shardMeta.getEndCursor()) == 0) return false;
             else return true;
-        }
-        else return false;
+        } else return false;
     }
 
     @Override
