@@ -80,8 +80,8 @@ public class LogClientProxy implements Serializable{
             ConsumerGroupCheckPointResponse response = logClient.GetCheckPoint(project, logstore, consumerGroup, shard);
             ArrayList<ConsumerGroupShardCheckPoint> checkpoints = response.GetCheckPoints();
             if (LOG.isDebugEnabled()) {
-                LOG.debug("Get checkpoints, p: {}, l: {}, s: {}, cg: {}, result: {}",
-                        project, logstore, shard, consumerGroup, checkpoints.size());
+                LOG.debug("Get checkpoints, project: {}, logstore: {}, shard: {}, consumerGroup: {}, result: {}",
+                        project, logstore, shard, consumerGroup, checkpoints != null ? checkpoints.size() : null);
             }
             if (checkpoints == null || checkpoints.isEmpty()) {
                 LOG.info("No checkpoint found for shard {}, consumer group {}", shard, consumerGroup);
@@ -89,7 +89,7 @@ public class LogClientProxy implements Serializable{
             }
             ConsumerGroupShardCheckPoint checkpoint = checkpoints.get(0);
             if (checkpoint != null) {
-                LOG.info("Got checkpoint {} from consumer group {} for shard {}", checkpoint.getCheckPoint(), checkpoint, shard);
+                LOG.info("Got checkpoint {} from consumer group {} for shard {}", checkpoint.getCheckPoint(), consumerGroup, shard);
                 return checkpoint.getCheckPoint();
             }
         } catch (LogException ex) {
