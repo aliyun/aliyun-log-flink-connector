@@ -1,5 +1,7 @@
 package com.aliyun.openservices.log.flink.model;
 
+import com.aliyun.openservices.log.flink.util.Consts;
+
 import java.io.Serializable;
 
 public class LogstoreShardMeta implements Serializable {
@@ -10,9 +12,10 @@ public class LogstoreShardMeta implements Serializable {
     private String shardStatus;
     private String endCursor;
 
-    public LogstoreShardMeta(){
+    public LogstoreShardMeta() {
 
     }
+
     public LogstoreShardMeta(int shardId, String beginHashKey, String endHashKey, String shardStatus) {
         this.shardId = shardId;
         this.beginHashKey = beginHashKey;
@@ -58,6 +61,14 @@ public class LogstoreShardMeta implements Serializable {
 
     public void setEndCursor(String endCursor) {
         this.endCursor = endCursor;
+    }
+
+    public boolean isReadOnly() {
+        return Consts.READONLY_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
+    }
+
+    public void setReadOnly() {
+        setShardStatus(Consts.READONLY_SHARD_STATUS);
     }
 
     @Override
