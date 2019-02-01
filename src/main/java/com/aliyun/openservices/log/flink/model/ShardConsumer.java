@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Properties;
 
-public class ShardConsumer<T> implements Runnable{
+public class ShardConsumer<T> implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
     private final LogDataFetcher<T> fetcherRef;
     private final LogDeserializationSchema<T> deserializer;
@@ -28,7 +28,7 @@ public class ShardConsumer<T> implements Runnable{
     private final String defaultPosition;
     private final String consumerGroupName;
 
-    public ShardConsumer(LogDataFetcher<T> fetcher, LogDeserializationSchema<T> deserializer, int subscribedShardStateIndex, Properties configProps, LogClientProxy logClient){
+    public ShardConsumer(LogDataFetcher<T> fetcher, LogDeserializationSchema<T> deserializer, int subscribedShardStateIndex, Properties configProps, LogClientProxy logClient) {
         this.fetcherRef = fetcher;
         this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
@@ -40,7 +40,7 @@ public class ShardConsumer<T> implements Runnable{
         this.consumerStartPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroupName = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)
-            && (consumerGroupName == null || consumerGroupName.isEmpty())) {
+                && (consumerGroupName == null || consumerGroupName.isEmpty())) {
             throw new IllegalArgumentException("The setting " + ConfigConstants.LOG_CONSUMERGROUP + " is required for restoring checkpoint from consumer group");
         }
         defaultPosition = getDefaultPosition(configProps);
@@ -54,54 +54,50 @@ public class ShardConsumer<T> implements Runnable{
             LogstoreShardState state = fetcherRef.getShardState(subscribedShardStateIndex);
             final LogstoreShardMeta shardMeta = state.getShardMeta();
             final int shardId = shardMeta.getShardId();
-            if(shardMeta.isReadOnly() && state.getShardMeta().getEndCursor() == null){
+            if (shardMeta.isReadOnly() && state.getShardMeta().getEndCursor() == null) {
                 String endCursor = logClient.getCursor(logProject, logStore, shardId, Consts.LOG_END_CURSOR, "");
                 state.getShardMeta().setEndCursor(endCursor);
             }
             lastConsumerCursor = state.getLastConsumerCursor();
-            if(lastConsumerCursor == null){
+            if (lastConsumerCursor == null) {
                 lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, defaultPosition, consumerGroupName);
                 LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, shardId, lastConsumerCursor);
             }
-            while(isRunning()){
-                if(state.hasMoreData()){
+            while (isRunning()) {
+                if (state.hasMoreData()) {
                     BatchGetLogResponse getLogResponse = null;
                     try {
                         getLogResponse = logClient.getLogs(logProject, logStore, shardId, lastConsumerCursor, maxNumberOfRecordsPerFetch);
-                    }
-                    catch(LogException ex){
+                    } catch (LogException ex) {
                         LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
                                 ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, shardId);
-                        if("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())){
-                            if(consumerStartPosition.compareTo(Consts.LOG_FROM_CHECKPOINT) == 0){
-                                consumerStartPosition = Consts.LOG_BEGIN_CURSOR;
+                        if ("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())) {
+                            if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)) {
+                                LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
+                                consumerStartPosition = defaultPosition;
                             }
                             lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, consumerGroupName);
-                        }
-                        else{
+                        } else {
                             throw ex;
                         }
                     }
-                    if(getLogResponse != null){
-                        if(getLogResponse.GetCount() > 0 ) {
+                    if (getLogResponse != null) {
+                        if (getLogResponse.GetCount() > 0) {
                             deserializeRecordForCollectionAndUpdateState(getLogResponse.GetLogGroups(), getLogResponse.GetNextCursor());
                         }
                         long sleepTime = 0;
-                        if(getLogResponse.GetRawSize() < 1024 * 1024 && getLogResponse.GetCount() < 100) {
+                        if (getLogResponse.GetRawSize() < 1024 * 1024 && getLogResponse.GetCount() < 100) {
                             sleepTime = 500;
-                        }
-                        else if(getLogResponse.GetRawSize() < 2 * 1024 * 1024 && getLogResponse.GetCount() < 500) {
+                        } else if (getLogResponse.GetRawSize() < 2 * 1024 * 1024 && getLogResponse.GetCount() < 500) {
                             sleepTime = 200;
-                        }
-                        else if(getLogResponse.GetRawSize() < 4 * 1024 * 1024 && getLogResponse.GetCount() < 1000) {
+                        } else if (getLogResponse.GetRawSize() < 4 * 1024 * 1024 && getLogResponse.GetCount() < 1000) {
                             sleepTime = 50;
                         }
-                        if(sleepTime < fetchIntervalMillis)
+                        if (sleepTime < fetchIntervalMillis)
                             sleepTime = fetchIntervalMillis;
                         Thread.sleep(sleepTime);
                     }
-                }
-                else{
+                } else {
                     LOG.info("ShardConsumer exit, shard: {}", state.toString());
                     break;
                 }
@@ -115,8 +111,8 @@ public class ShardConsumer<T> implements Runnable{
     private void deserializeRecordForCollectionAndUpdateState(List<LogGroupData> records, String nextCursor) {
         final T value = deserializer.deserialize(records);
         long timestamp = System.currentTimeMillis();
-        if(records.size() > 0){
-            if(records.get(0).GetFastLogGroup().getLogsCount() > 0) {
+        if (records.size() > 0) {
+            if (records.get(0).GetFastLogGroup().getLogsCount() > 0) {
                 long logTimeStamp = records.get(0).GetFastLogGroup().getLogs(0).getTime();
                 timestamp = logTimeStamp * 1000;
             }
