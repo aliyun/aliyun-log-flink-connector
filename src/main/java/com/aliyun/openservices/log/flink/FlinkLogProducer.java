@@ -78,7 +78,11 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         producerConfig.userAgent = Consts.LOG_PRODUCER_USER_AGENT;
         if(configProps.containsKey(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT))
             producerConfig.maxIOThreadSizeInPool = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT));
-        if(configProps.containsKey(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS))
+        if (configProps.containsKey(ConfigConstants.LEGACY_LOG_PACKAGE_TIMEOUT_MILLIS)) {
+            LOG.warn("Setting {} has been deprecated in favor of {}", ConfigConstants.LEGACY_LOG_PACKAGE_TIMEOUT_MILLIS,
+                    ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS);
+            producerConfig.packageTimeoutInMS = Integer.valueOf(configProps.getProperty(ConfigConstants.LEGACY_LOG_PACKAGE_TIMEOUT_MILLIS));
+        } else if(configProps.containsKey(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS))
             producerConfig.packageTimeoutInMS = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS));
         if(configProps.containsKey(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE))
             producerConfig.logsCountPerPackage = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE));
