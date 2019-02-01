@@ -45,8 +45,7 @@ public class LogClientProxy implements Serializable{
                     if (cursor == null || cursor.isEmpty()) {
                         LOG.info("No available checkpoint for shard {} in consumer group {}, setting to default position {}", shard, consumerGroup, defaultPosition);
                         position = defaultPosition;
-                    } else {
-                        break;
+                        continue;
                     }
                 }
                 else {
