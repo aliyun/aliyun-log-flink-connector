@@ -6,6 +6,7 @@ import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.response.BatchGetLogResponse;
+import org.apache.flink.util.PropertiesUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +43,7 @@ public class ShardConsumer<T> implements Runnable{
             && (consumerGroupName == null || consumerGroupName.isEmpty())) {
             throw new IllegalArgumentException("The setting " + ConfigConstants.LOG_CONSUMERGROUP + " is required for restoring checkpoint from consumer group");
         }
-        defaultPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION, Consts.LOG_BEGIN_CURSOR);
+        defaultPosition = getDefaultPosition(configProps);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(defaultPosition)) {
             throw new IllegalArgumentException("Cannot use " + Consts.LOG_FROM_CHECKPOINT + " as the default position");
         }
@@ -133,26 +134,15 @@ public class ShardConsumer<T> implements Runnable{
     }
 
     private static int getNumberPerFetch(Properties properties) {
-        final String value = properties.getProperty(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH);
-        if (value != null && !value.isEmpty()) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException ex) {
-                LOG.warn("Invalid property - MAX_NUMBER_PER_FETCH must be number but was {}", value);
-            }
-        }
-        return Consts.DEFAULT_NUMBER_PER_FETCH;
+        return PropertiesUtil.getInt(properties, ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, Consts.DEFAULT_NUMBER_PER_FETCH);
     }
 
     private static long getFetchIntervalMillis(Properties properties) {
-        final String value = properties.getProperty(ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS);
-        if (value != null && !value.isEmpty()) {
-            try {
-                return Long.parseLong(value);
-            } catch (NumberFormatException ex) {
-                LOG.warn("Invalid property - FETCH_DATA_INTERVAL_MILLIS must be number but was {}", value);
-            }
-        }
-        return Consts.DEFAULT_FETCH_INTERVAL_MILLIS;
+        return PropertiesUtil.getLong(properties, ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS, Consts.DEFAULT_FETCH_INTERVAL_MILLIS);
+    }
+
+    private static String getDefaultPosition(Properties properties) {
+        final String val = properties.getProperty(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION);
+        return val != null && !val.isEmpty() ? val : Consts.LOG_BEGIN_CURSOR;
     }
 }
