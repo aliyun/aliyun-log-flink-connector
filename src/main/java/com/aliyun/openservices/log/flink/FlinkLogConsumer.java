@@ -30,7 +30,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private final Properties configProps;
     private transient LogDataFetcher<T> fetcher;
     private volatile boolean running = true;
-    private static final String curcorStateStoreName = "LogStore-Shard-State";
+    private static final String CURSOR_STATE_STORE_NAME = "LogStore-Shard-State";
     private transient ListState<Tuple2<LogstoreShardMeta, String>> cursorStateForCheckpoint;
     private final LogDeserializationSchema<T> deserializer;
     private transient HashMap<LogstoreShardMeta, String> cursorsToRestore;
@@ -150,7 +150,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 TypeInformation.of(String.class));
 
         cursorStateForCheckpoint = context.getOperatorStateStore().getUnionListState(
-                new ListStateDescriptor(curcorStateStoreName, shardsStateTypeInfo));
+                new ListStateDescriptor<Tuple2<LogstoreShardMeta, String>>(CURSOR_STATE_STORE_NAME, shardsStateTypeInfo));
 
         if (context.isRestored()) {
             if (cursorsToRestore == null) {
