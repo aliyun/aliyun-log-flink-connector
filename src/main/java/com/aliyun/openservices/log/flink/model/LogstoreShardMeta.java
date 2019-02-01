@@ -67,6 +67,10 @@ public class LogstoreShardMeta implements Serializable {
         return Consts.READONLY_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
     }
 
+    public boolean isReadWrite() {
+        return Consts.READWRITE_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
+    }
+
     public void setReadOnly() {
         setShardStatus(Consts.READONLY_SHARD_STATUS);
     }
