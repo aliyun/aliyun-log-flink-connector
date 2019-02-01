@@ -131,7 +131,7 @@ public class LogDataFetcher<T> {
             LogstoreShardState shardState = subscribedShardsState.get(index);
             if(shardState.hasMoreData()){
                 numberOfActiveShards.incrementAndGet();
-                shardConsumersExecutor.submit(new ShardConsumer(this, deserializationSchema, index, configProps, logClient));
+                shardConsumersExecutor.submit(new ShardConsumer<T>(this, deserializationSchema, index, configProps, logClient));
             }
         }
         final long discoveryIntervalMillis = Long.valueOf(configProps.getProperty(ConfigConstants.LOG_SHARDS_DISCOVERY_INTERVAL_MILLIS, Long.toString(Consts.DEFAULT_SHARDS_DISCOVERY_INTERVAL_MILLIS)));
