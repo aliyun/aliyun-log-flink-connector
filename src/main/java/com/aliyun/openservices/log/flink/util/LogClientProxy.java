@@ -16,13 +16,14 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class LogClientProxy implements Serializable{
+public class LogClientProxy implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
     private static int maxRetryTimes = 10;
     private Client logClient;
-    public LogClientProxy(String endpoint, String accessKeyId, String accessKey){
+
+    public LogClientProxy(String endpoint, String accessKeyId, String accessKey) {
         this.logClient = new Client(endpoint, accessKeyId, accessKey);
-        this.logClient.setUserAgent("flink-log-connector-0.1.6");
+        this.logClient.setUserAgent(Consts.LOG_CONNECTOR_USER_AGENT);
     }
 
     public String getCursor(String project, String logstore, int shard, String position, String consumerGroup) throws LogException {
@@ -36,19 +37,16 @@ public class LogClientProxy implements Serializable{
             try {
                 if (Consts.LOG_BEGIN_CURSOR.equals(position)) {
                     cursor = logClient.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor();
-                }
-                else if (Consts.LOG_END_CURSOR.equals(position)) {
+                } else if (Consts.LOG_END_CURSOR.equals(position)) {
                     cursor = logClient.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
-                }
-                else if (Consts.LOG_FROM_CHECKPOINT.equals(position)) {
+                } else if (Consts.LOG_FROM_CHECKPOINT.equals(position)) {
                     cursor = getConsumerGroupCheckpoint(project, logstore, consumerGroup, shard);
                     if (cursor == null || cursor.isEmpty()) {
                         LOG.info("No available checkpoint for shard {} in consumer group {}, setting to default position {}", shard, consumerGroup, defaultPosition);
                         position = defaultPosition;
                         continue;
                     }
-                }
-                else {
+                } else {
                     int time = Integer.valueOf(position);
                     cursor = logClient.GetCursor(project, logstore, shard, time).GetCursor();
                 }
@@ -65,7 +63,7 @@ public class LogClientProxy implements Serializable{
             } catch (InterruptedException e) {
             }
         }
-        if(retryTimes >= maxRetryTimes){
+        if (retryTimes >= maxRetryTimes) {
             throw new LogException("ExceedMaxRetryTimes", "fail to getCursor", "");
         }
         return cursor;
@@ -94,7 +92,7 @@ public class LogClientProxy implements Serializable{
         } catch (LogException ex) {
             LOG.warn("Got cursor error, project: {}, logstore: {}, shard: {}, errorcode: {}, errormessage: {}, requestid: {}",
                     project, logstore, shard, ex.GetErrorCode(), ex.GetErrorMessage(), ex.GetRequestId());
-            if (!ex.GetErrorCode().contains("NotExist")){
+            if (!ex.GetErrorCode().contains("NotExist")) {
                 throw ex;
             }
         }
@@ -117,23 +115,23 @@ public class LogClientProxy implements Serializable{
             } catch (InterruptedException e) {
             }
         }
-        if(retryTimes >= maxRetryTimes){
+        if (retryTimes >= maxRetryTimes) {
             throw new LogException("ExceedMaxRetryTimes", "fail to getLogs", "");
         }
         return null;
     }
+
     public List<LogstoreShardMeta> listShards(String project, String logstore) throws LogException {
         List<LogstoreShardMeta> shards = new ArrayList<LogstoreShardMeta>();
         int retryTimes = 0;
         while (retryTimes++ < maxRetryTimes) {
-            try{
-                for(Shard shard: logClient.ListShard(project, logstore).GetShards()){
+            try {
+                for (Shard shard : logClient.ListShard(project, logstore).GetShards()) {
                     LogstoreShardMeta shardMeta = new LogstoreShardMeta(shard.GetShardId(), shard.getInclusiveBeginKey(), shard.getExclusiveEndKey(), shard.getStatus());
                     shards.add(shardMeta);
                 }
                 break;
-            }
-            catch(LogException e){
+            } catch (LogException e) {
                 LOG.warn("listShards error, project: {}, logstore: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
                 if (e.GetErrorCode().compareToIgnoreCase("Unauthorized") == 0 || e.GetErrorCode().contains("NotExist") || e.GetErrorCode().contains("Invalid")) {
                     throw e;
@@ -144,7 +142,7 @@ public class LogClientProxy implements Serializable{
             } catch (InterruptedException e) {
             }
         }
-        if(retryTimes >= maxRetryTimes){
+        if (retryTimes >= maxRetryTimes) {
             throw new LogException("ExceedMaxRetryTimes", "fail to listShards", "");
         }
         return shards;
@@ -155,13 +153,13 @@ public class LogClientProxy implements Serializable{
             logClient.CreateConsumerGroup(project, logstore, new ConsumerGroup(consumerGroup, 100, false));
         } catch (LogException e) {
             LOG.warn("updateCheckpoint error, project: {}, logstore: {}, consumerGroup: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, consumerGroup, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
-            if(!e.GetErrorCode().contains("AlreadyExist")) throw e;
+            if (!e.GetErrorCode().contains("AlreadyExist")) throw e;
         }
     }
 
-    public void updateCheckpoint(String project, String logstore, String consumerGroup, String consumer, int shard, String checkpoint){
+    public void updateCheckpoint(String project, String logstore, String consumerGroup, String consumer, int shard, String checkpoint) {
         try {
-            if(checkpoint != null) {
+            if (checkpoint != null) {
                 logClient.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
             }
         } catch (LogException e) {
