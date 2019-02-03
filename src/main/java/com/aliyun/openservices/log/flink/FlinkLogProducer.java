@@ -90,11 +90,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             producerConfig.logsBytesPerPackage = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE));
         if(configProps.containsKey(ConfigConstants.LOG_MEM_POOL_BYTES))
             producerConfig.memPoolSizeInByte = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_MEM_POOL_BYTES));
-        producerConfig.userAgent = "flink-log-producer";
         logProducer = new LogProducer(producerConfig);
         logProducer.setProjectConfig(new ProjectConfig(logProject, configProps.getProperty(ConfigConstants.LOG_ENDPOINT), configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID), configProps.getProperty(ConfigConstants.LOG_ACCESSKEY)));
         LOG.info("Started log producer instance");
-
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
