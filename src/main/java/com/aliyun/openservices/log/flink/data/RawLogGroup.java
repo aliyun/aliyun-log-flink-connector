@@ -7,22 +7,21 @@ import java.util.List;
 import java.util.Map;
 
 public class RawLogGroup implements Serializable {
-    public String source;
-    public String topic = "";
-    public Map<String, String> tags;
-    public List<RawLog> logs;
+    private String source;
+    private String topic = "";
+    private Map<String, String> tags;
+    private List<RawLog> logs;
 
-    public RawLogGroup()
-    {
+    public RawLogGroup() {
         tags = new HashMap<String, String>();
         logs = new ArrayList<RawLog>();
     }
 
-    public void addTag(String key, String value){
+    public void addTag(String key, String value) {
         tags.put(key, value);
     }
 
-    public void addLog(RawLog log){
+    public void addLog(RawLog log) {
         log.setTags(tags);
         logs.add(log);
     }
@@ -40,7 +39,7 @@ public class RawLogGroup implements Serializable {
     }
 
     public void setTopic(String topic) {
-        if(topic != null){
+        if (topic != null) {
             this.topic = topic;
         }
     }
@@ -50,7 +49,7 @@ public class RawLogGroup implements Serializable {
     }
 
     public void setSource(String source) {
-        if(source != null){
+        if (source != null) {
             this.source = source;
         }
     }
@@ -66,7 +65,7 @@ public class RawLogGroup implements Serializable {
     @Override
     public String toString() {
         StringBuilder strb = new StringBuilder();
-        if(logs.size() > 0){
+        if (logs.size() > 0) {
             strb.append(logs.get(0).toString());
         }
         return "RawLogGroup{" +

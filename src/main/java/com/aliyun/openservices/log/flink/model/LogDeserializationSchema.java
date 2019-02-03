@@ -7,5 +7,6 @@ import java.io.Serializable;
 import java.util.List;
 
 public interface LogDeserializationSchema<T> extends Serializable, ResultTypeQueryable<T> {
-    public T deserialize(List<LogGroupData> logGroup);
+
+    T deserialize(List<LogGroupData> logGroup);
 }

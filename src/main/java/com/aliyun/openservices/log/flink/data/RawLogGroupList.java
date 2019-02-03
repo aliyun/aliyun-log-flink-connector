@@ -4,14 +4,14 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class RawLogGroupList implements Serializable{
-    public List<RawLogGroup> rawLogGroups;
+public class RawLogGroupList implements Serializable {
+    private List<RawLogGroup> rawLogGroups;
 
-    public RawLogGroupList(){
+    public RawLogGroupList() {
         rawLogGroups = new ArrayList<RawLogGroup>();
     }
 
-    public void add(RawLogGroup lg){
+    public void add(RawLogGroup lg) {
         rawLogGroups.add(lg);
     }
 
@@ -26,8 +26,8 @@ public class RawLogGroupList implements Serializable{
     @Override
     public String toString() {
         StringBuilder strBuilder = new StringBuilder();
-        for(RawLogGroup lg: rawLogGroups){
-            strBuilder.append(lg.toString() + "\r\n");
+        for (RawLogGroup lg : rawLogGroups) {
+            strBuilder.append(lg.toString()).append("\r\n");
         }
         return "RawLogGroupList{" +
                 "rawLogGroups=" + strBuilder.toString() +

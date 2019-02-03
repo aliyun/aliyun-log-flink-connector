@@ -1,21 +1,21 @@
 package com.aliyun.openservices.log.flink.data;
 
-import com.aliyun.openservices.log.common.*;
+import com.aliyun.openservices.log.common.FastLog;
+import com.aliyun.openservices.log.common.FastLogContent;
+import com.aliyun.openservices.log.common.FastLogGroup;
+import com.aliyun.openservices.log.common.FastLogTag;
+import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
-import com.aliyun.openservices.log.flink.model.ShardConsumer;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.PojoTypeInfo;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
 public class RawLogGroupListDeserializer implements LogDeserializationSchema<RawLogGroupList> {
-    private static final Logger LOG = LoggerFactory.getLogger(RawLogGroupListDeserializer.class);
 
     public RawLogGroupList deserialize(List<LogGroupData> logGroups) {
-        RawLogGroupList loggroupList = new RawLogGroupList();
-        for(LogGroupData logGroup: logGroups){
+        RawLogGroupList logGroupList = new RawLogGroupList();
+        for (LogGroupData logGroup : logGroups) {
             FastLogGroup flg = logGroup.GetFastLogGroup();
             RawLogGroup rawLogGroup = new RawLogGroup();
             rawLogGroup.setSource(flg.getSource());
@@ -34,10 +34,9 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
                 }
                 rawLogGroup.addLog(rlog);
             }
-            loggroupList.add(rawLogGroup);
+            logGroupList.add(rawLogGroup);
         }
-        logGroups = null;
-        return loggroupList;
+        return logGroupList;
     }
 
     public TypeInformation<RawLogGroupList> getProducedType() {
