@@ -60,15 +60,11 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
         for (LogstoreShardMeta shard : newShards) {
-            if (cursorsToRestore != null) {
-                if (cursorsToRestore.containsKey(shard)) {
-                    fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, cursorsToRestore.get(shard)));
-                } else {
-                    fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, null));
-                }
-            } else {
-                fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, null));
+            String checkpoint = null;
+            if (cursorsToRestore != null && cursorsToRestore.containsKey(shard)) {
+                checkpoint = cursorsToRestore.get(shard);
             }
+            fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, checkpoint));
         }
         if (!running) return;
         this.fetcher = fetcher;
