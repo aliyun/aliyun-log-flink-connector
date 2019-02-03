@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implements ResultTypeQueryable<T>, CheckpointedFunction, CheckpointListener{
+public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implements ResultTypeQueryable<T>, CheckpointedFunction, CheckpointListener {
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogConsumer.class);
 
     private final Properties configProps;
@@ -38,16 +38,18 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private LogClientProxy logClient;
     private String logProject = null;
     private String logStore = null;
-    public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps){
+
+    public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
         this.configProps = configProps;
         this.deserializer = deserializer;
-        if(configProps.containsKey(ConfigConstants.LOG_CONSUMERGROUP)){
+        if (configProps.containsKey(ConfigConstants.LOG_CONSUMERGROUP)) {
             this.consumerGroupName = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         }
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
     }
 
+    @Override
     public void run(SourceContext<T> sourceContext) throws Exception {
         this.logClient = new LogClientProxy(configProps.getProperty(ConfigConstants.LOG_ENDPOINT),
                 configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID),
@@ -57,25 +59,25 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             logClient.createConsumerGroup(fetcher.getLogProject(), fetcher.getLogStore(), consumerGroupName);
         }
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
-        for(LogstoreShardMeta shard: newShards){
-            if(cursorsToRestore != null){
-                if(cursorsToRestore.containsKey(shard)){
+        for (LogstoreShardMeta shard : newShards) {
+            if (cursorsToRestore != null) {
+                if (cursorsToRestore.containsKey(shard)) {
                     fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, cursorsToRestore.get(shard)));
-                }
-                else{
+                } else {
                     fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, null));
                 }
-            }
-            else{
+            } else {
                 fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, null));
             }
         }
-        if(!running) return;
+        if (!running) return;
         this.fetcher = fetcher;
         fetcher.runFetcher();
         fetcher.awaitTermination();
         sourceContext.close();
     }
+
+    @Override
     public void cancel() {
         running = false;
 
@@ -95,6 +97,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
     }
 
+    @Override
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
         if (!running) {
             LOG.info("snapshotState() called on closed source; returning null.");
@@ -122,11 +125,11 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                     }
                 }
             } else {
-                HashMap<LogstoreShardMeta, String> lastStateSnapshot = fetcher.snapshotState();
+                Map<LogstoreShardMeta, String> lastStateSnapshot = fetcher.snapshotState();
 
                 if (LOG.isDebugEnabled()) {
                     StringBuilder strb = new StringBuilder();
-                    for(Map.Entry<LogstoreShardMeta, String> entry: lastStateSnapshot.entrySet()){
+                    for (Map.Entry<LogstoreShardMeta, String> entry : lastStateSnapshot.entrySet()) {
                         strb.append("shard: ").append(entry.getKey().toString()).append(", cursor: ").append(entry.getValue());
                     }
                     LOG.debug("Snapshotted state, last processed cursor: {}, checkpoint id: {}, timestamp: {}",
@@ -143,6 +146,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
     }
 
+    @Override
     public void initializeState(FunctionInitializationContext context) throws Exception {
         LOG.info("initializeState...");
         TypeInformation<Tuple2<LogstoreShardMeta, String>> shardsStateTypeInfo = new TupleTypeInfo<Tuple2<LogstoreShardMeta, String>>(
@@ -166,18 +170,18 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 LOG.info("Setting restore state in the FlinkLogConsumer. Using the following offsets: {}",
                         cursorsToRestore);
             }
-        }
-        else {
+        } else {
             LOG.info("No restore state for FlinkLogConsumer.");
         }
     }
 
-    public TypeInformation getProducedType() {
+    @Override
+    public TypeInformation<T> getProducedType() {
         return deserializer.getProducedType();
     }
 
+    @Override
     public void notifyCheckpointComplete(long l) throws Exception {
-
     }
 
     @Override

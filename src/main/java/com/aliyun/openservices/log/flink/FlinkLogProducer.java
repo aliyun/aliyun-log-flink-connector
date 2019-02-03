@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction{
+public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducer.class);
     private final Properties configProps;
@@ -32,12 +32,11 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private final String logProject;
     private final String logStore;
 
-    public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps){
+    public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
         this.configProps = configProps;
         this.schema = schema;
         logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
-
     }
 
     public Properties getConfigProps() {
@@ -65,30 +64,29 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     }
 
     @Override
-    public void open(Configuration parameters) throws Exception
-    {
+    public void open(Configuration parameters) throws Exception {
         super.open(parameters);
-        if(callback == null){
+        if (callback == null) {
             callback = new ProducerCallback();
         }
-        if(customPartitioner != null){
+        if (customPartitioner != null) {
             customPartitioner.initialize(getRuntimeContext().getIndexOfThisSubtask(), getRuntimeContext().getNumberOfParallelSubtasks());
         }
         ProducerConfig producerConfig = new ProducerConfig();
         producerConfig.userAgent = Consts.LOG_CONNECTOR_USER_AGENT;
-        if(configProps.containsKey(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT))
+        if (configProps.containsKey(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT))
             producerConfig.maxIOThreadSizeInPool = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT));
         if (configProps.containsKey(ConfigConstants.LEGACY_LOG_PACKAGE_TIMEOUT_MILLIS)) {
             LOG.warn("Setting {} has been deprecated in favor of {}", ConfigConstants.LEGACY_LOG_PACKAGE_TIMEOUT_MILLIS,
                     ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS);
             producerConfig.packageTimeoutInMS = Integer.valueOf(configProps.getProperty(ConfigConstants.LEGACY_LOG_PACKAGE_TIMEOUT_MILLIS));
-        } else if(configProps.containsKey(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS))
+        } else if (configProps.containsKey(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS))
             producerConfig.packageTimeoutInMS = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS));
-        if(configProps.containsKey(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE))
+        if (configProps.containsKey(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE))
             producerConfig.logsCountPerPackage = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE));
-        if(configProps.containsKey(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE))
+        if (configProps.containsKey(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE))
             producerConfig.logsBytesPerPackage = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE));
-        if(configProps.containsKey(ConfigConstants.LOG_MEM_POOL_BYTES))
+        if (configProps.containsKey(ConfigConstants.LOG_MEM_POOL_BYTES))
             producerConfig.memPoolSizeInByte = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_MEM_POOL_BYTES));
         logProducer = new LogProducer(producerConfig);
         logProducer.setProjectConfig(new ProjectConfig(logProject, configProps.getProperty(ConfigConstants.LOG_ENDPOINT), configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID), configProps.getProperty(ConfigConstants.LOG_ACCESSKEY)));
@@ -96,7 +94,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
-        if(logProducer != null) {
+        if (logProducer != null) {
             logProducer.flush();
             Thread.sleep(logProducer.getProducerConfig().packageTimeoutInMS);
         }
@@ -112,13 +110,13 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         }
         RawLogGroup logGroup = schema.serialize(value);
         String shardHashKey = null;
-        if(customPartitioner != null){
+        if (customPartitioner != null) {
             shardHashKey = customPartitioner.getHashKey(value);
         }
         List<LogItem> logs = new ArrayList<LogItem>();
-        for(RawLog rlog: logGroup.getLogs()) {
+        for (RawLog rlog : logGroup.getLogs()) {
             LogItem li = new LogItem(rlog.getTime());
-            for(Map.Entry<String, String> kv: rlog.getContents().entrySet()) {
+            for (Map.Entry<String, String> kv : rlog.getContents().entrySet()) {
                 li.PushBack(kv.getKey(), kv.getValue());
             }
             logs.add(li);
@@ -126,13 +124,14 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         ProducerCallback cloneCallback = callback.clone();
         cloneCallback.init(logProducer, logProject, logStore, logGroup.getTopic(), shardHashKey, logGroup.getSource(), logs);
         logProducer.send(logProject, logStore, logGroup.getTopic(), shardHashKey, logGroup.getSource(), logs, cloneCallback);
-        if(LOG.isDebugEnabled()){
+        if (LOG.isDebugEnabled()) {
             LOG.debug("send logs...");
         }
     }
+
     @Override
     public void close() throws Exception {
-        if(logProducer != null) {
+        if (logProducer != null) {
             logProducer.flush();
             Thread.sleep(logProducer.getProducerConfig().packageTimeoutInMS);
             logProducer.close();
