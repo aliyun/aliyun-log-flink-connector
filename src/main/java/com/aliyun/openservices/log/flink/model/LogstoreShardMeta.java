@@ -12,10 +12,6 @@ public class LogstoreShardMeta implements Serializable {
     private String shardStatus;
     private String endCursor;
 
-    public LogstoreShardMeta() {
-
-    }
-
     public LogstoreShardMeta(int shardId, String beginHashKey, String endHashKey, String shardStatus) {
         this.shardId = shardId;
         this.beginHashKey = beginHashKey;
@@ -83,10 +79,9 @@ public class LogstoreShardMeta implements Serializable {
         LogstoreShardMeta that = (LogstoreShardMeta) o;
 
         if (shardId != that.shardId) return false;
-        if (beginHashKey.compareTo(that.beginHashKey) != 0) return false;
-        if (endHashKey.compareTo(that.endHashKey) != 0) return false;
+        if (!beginHashKey.equals(that.beginHashKey)) return false;
+        if (!endHashKey.equals(that.endHashKey)) return false;
         return true;
-
     }
 
     @Override
