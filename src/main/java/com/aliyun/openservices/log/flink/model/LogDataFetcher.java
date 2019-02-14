@@ -171,7 +171,7 @@ public class LogDataFetcher<T> {
         while (!shardConsumersExecutor.isTerminated()) {
             Thread.sleep(50);
         }
-        LOG.warn("LogdataFetcher exit awaitTermination");
+        LOG.warn("LogDataFetcher exit awaitTermination");
     }
     public void shutdownFetcher() {
         running = false;

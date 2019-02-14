@@ -49,6 +49,7 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
+    @Override
     public void run() {
         try {
             LogstoreShardState state = fetcherRef.getShardState(subscribedShardStateIndex);
@@ -83,7 +84,7 @@ public class ShardConsumer<T> implements Runnable {
                     }
                     if (getLogResponse != null) {
                         if (getLogResponse.GetCount() > 0) {
-                            deserializeRecordForCollectionAndUpdateState(getLogResponse.GetLogGroups(), getLogResponse.GetNextCursor());
+                            processRecordsAndMoveToNextCursor(getLogResponse.GetLogGroups(), getLogResponse.GetNextCursor());
                         }
                         long sleepTime = 0;
                         if (getLogResponse.GetRawSize() < 1024 * 1024 && getLogResponse.GetCount() < 100) {
@@ -108,7 +109,7 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
-    private void deserializeRecordForCollectionAndUpdateState(List<LogGroupData> records, String nextCursor) {
+    private void processRecordsAndMoveToNextCursor(List<LogGroupData> records, String nextCursor) {
         final T value = deserializer.deserialize(records);
         long timestamp = System.currentTimeMillis();
         if (records.size() > 0) {
