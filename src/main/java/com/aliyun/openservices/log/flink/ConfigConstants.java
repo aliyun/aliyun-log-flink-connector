@@ -25,8 +25,6 @@ public class ConfigConstants {
 
     // for producer
     public static String LOG_SENDER_IO_THREAD_COUNT = "SENDER_IO_THREAD_COUNT";
-    @Deprecated
-    public static String LEGACY_LOG_PACKAGE_TIMEOUT_MILLIS = "PACKAGE_TIMEOUUT_MILLIS";
     public static String LOG_PACKAGE_TIMEOUT_MILLIS = "PACKAGE_TIMEOUT_MILLIS";
     public static String LOG_LOGS_COUNT_PER_PACKAGE = "LOGS_COUNT_PER_PACKAGE";
     public static String LOG_LOGS_BYTES_PER_PACKAGE = "LOGS_BYTES_PER_PACKAGE";
