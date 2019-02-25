@@ -2,7 +2,9 @@ package com.aliyun.openservices.log.flink;
 
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
+import com.aliyun.openservices.log.flink.model.LogShardAssigner;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
+import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -103,21 +105,20 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             LOG.info("Snapshotting state ...");
 
             cursorStateForCheckpoint.clear();
+            final RuntimeContext ctx = getRuntimeContext();
+            int numOfParallelSubtasks = ctx.getNumberOfParallelSubtasks();
+            int indexOfThisSubtask = ctx.getIndexOfThisSubtask();
 
             if (fetcher == null) {
                 if (cursorsToRestore != null) {
+
                     for (Map.Entry<LogstoreShardMeta, String> entry : cursorsToRestore.entrySet()) {
                         // cursorsToRestore is the restored global union state;
                         // should only snapshot shards that actually belong to us
-
-                        if (LogDataFetcher.isThisSubtaskShouldSubscribeTo(
-                                entry.getKey(),
-                                getRuntimeContext().getNumberOfParallelSubtasks(),
-                                getRuntimeContext().getIndexOfThisSubtask())) {
-
+                        if (LogShardAssigner.isAssigned(entry.getKey(), numOfParallelSubtasks, indexOfThisSubtask)) {
                             cursorStateForCheckpoint.add(Tuple2.of(entry.getKey(), entry.getValue()));
                             if (consumerGroupName != null && logClient != null) {
-                                logClient.updateCheckpoint(logProject, logStore, consumerGroupName, "flinkTask-" + getRuntimeContext().getIndexOfThisSubtask() + "Of" + getRuntimeContext().getNumberOfParallelSubtasks(), entry.getKey().getShardId(), entry.getValue());
+                                logClient.updateCheckpoint(logProject, logStore, consumerGroupName, consumerNameFor(indexOfThisSubtask, numOfParallelSubtasks), entry.getKey().getShardId(), entry.getValue());
                             }
                         }
                     }
@@ -137,11 +138,15 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 for (Map.Entry<LogstoreShardMeta, String> entry : lastStateSnapshot.entrySet()) {
                     cursorStateForCheckpoint.add(Tuple2.of(entry.getKey(), entry.getValue()));
                     if (consumerGroupName != null && logClient != null) {
-                        logClient.updateCheckpoint(logProject, logStore, consumerGroupName, "flinkTask-" + getRuntimeContext().getIndexOfThisSubtask() + "Of" + getRuntimeContext().getNumberOfParallelSubtasks(), entry.getKey().getShardId(), entry.getValue());
+                        logClient.updateCheckpoint(logProject, logStore, consumerGroupName, consumerNameFor(indexOfThisSubtask, numOfParallelSubtasks), entry.getKey().getShardId(), entry.getValue());
                     }
                 }
             }
         }
+    }
+
+    private static String consumerNameFor(int indexOfThisSubtask, int numOfParallelSubtasks) {
+        return "flinkTask-" + indexOfThisSubtask + "Of" + numOfParallelSubtasks;
     }
 
     @Override
