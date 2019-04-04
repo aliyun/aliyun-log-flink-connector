@@ -104,7 +104,7 @@ public class ShardConsumer<T> implements Runnable {
                 }
             }
         } catch (Throwable t) {
-            LOG.error("unexpected error: {}", t);
+            LOG.error("unexpected error", t);
             fetcherRef.stopWithError(t);
         }
     }
