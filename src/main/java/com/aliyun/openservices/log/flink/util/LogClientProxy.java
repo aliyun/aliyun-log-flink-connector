@@ -104,10 +104,12 @@ public class LogClientProxy implements Serializable {
         while (retryTimes++ < maxRetryTimes) {
             try {
                 return logClient.BatchGetLog(project, logstore, shard, count, cursor);
-            } catch (LogException e) {
-                LOG.warn("getLogs error, project: {}, logstore: {}, shard: {}, cursor: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, shard, cursor, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
-                if (e.GetErrorCode().compareToIgnoreCase("Unauthorized") == 0 || e.GetErrorCode().contains("NotExist") || e.GetErrorCode().contains("Invalid")) {
-                    throw e;
+            } catch (LogException ex) {
+                final String errorCode = ex.GetErrorCode();
+                LOG.warn("getLogs error, project: {}, logstore: {}, shard: {}, cursor: {}, errorCode: {}, errorMessage: {}, requestId: {}",
+                        project, logstore, shard, cursor, errorCode, ex.GetErrorMessage(), ex.GetRequestId());
+                if ("Unauthorized".equalsIgnoreCase(errorCode) || errorCode.contains("NotExist") || errorCode.contains("Invalid")) {
+                    throw ex;
                 }
             }
             try {
@@ -132,8 +134,10 @@ public class LogClientProxy implements Serializable {
                 }
                 break;
             } catch (LogException e) {
-                LOG.warn("listShards error, project: {}, logstore: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
-                if (e.GetErrorCode().compareToIgnoreCase("Unauthorized") == 0 || e.GetErrorCode().contains("NotExist") || e.GetErrorCode().contains("Invalid")) {
+                final String errorCode = e.GetErrorCode();
+                LOG.warn("listShards error, project: {}, logstore: {}, errorCode: {}, errorMessage: {}, requestId: {}",
+                        project, logstore, errorCode, e.GetErrorMessage(), e.GetRequestId());
+                if ("Unauthorized".equalsIgnoreCase(errorCode) || errorCode.contains("NotExist") || errorCode.contains("Invalid")) {
                     throw e;
                 }
             }

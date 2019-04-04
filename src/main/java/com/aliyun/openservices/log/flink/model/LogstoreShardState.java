@@ -29,7 +29,7 @@ public class LogstoreShardState {
         if (shardMeta.isReadWrite()) return true;
         else if (shardMeta.isReadOnly()) {
             if (lastConsumerCursor == null || shardMeta.getEndCursor() == null) return true;
-            else if (lastConsumerCursor.compareTo(shardMeta.getEndCursor()) == 0) return false;
+            else if (lastConsumerCursor.equals(shardMeta.getEndCursor())) return false;
             else return true;
         } else return false;
     }

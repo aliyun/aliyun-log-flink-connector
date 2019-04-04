@@ -90,7 +90,7 @@ public class LogDataFetcher<T> {
                 boolean add = true;
                 for(LogstoreShardState state: subscribedShardsState){
                     if(state.getShardMeta().getShardId() == shard.getShardId()){
-                        if(state.getShardMeta().getShardStatus().compareToIgnoreCase(shard.getShardStatus()) != 0
+                        if(!state.getShardMeta().getShardStatus().equalsIgnoreCase(shard.getShardStatus())
                                 || (shard.isReadOnly() && state.getShardMeta().getEndCursor() == null)) {
                             String endCursor = logClient.getCursor(logProject, logStore, shard.getShardId(), Consts.LOG_END_CURSOR, "");
                             state.getShardMeta().setEndCursor(endCursor);
@@ -193,7 +193,7 @@ public class LogDataFetcher<T> {
         synchronized (checkpointLock) {
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
             state.setLastConsumerCursor(cursor);
-            if(state.getShardMeta().isReadOnly() && cursor.compareTo(state.getShardMeta().getEndCursor()) == 0){
+            if(state.getShardMeta().isReadOnly() && cursor.equals(state.getShardMeta().getEndCursor())){
                 if (this.numberOfActiveShards.decrementAndGet() == 0) {
                     LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
                             indexOfThisConsumerSubtask);

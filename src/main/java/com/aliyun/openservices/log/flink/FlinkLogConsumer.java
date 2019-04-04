@@ -66,7 +66,9 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             }
             fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, checkpoint));
         }
-        if (!running) return;
+        if (!running) {
+            return;
+        }
         this.fetcher = fetcher;
         fetcher.runFetcher();
         fetcher.awaitTermination();
@@ -96,7 +98,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     @Override
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
         if (!running) {
-            LOG.info("snapshotState() called on closed source; returning null.");
+            LOG.info("snapshotState() called on closed source");
         } else {
             LOG.info("Snapshotting state ...");
 
