@@ -39,6 +39,10 @@ public class LogstoreShardMeta implements Serializable {
         return endCursor;
     }
 
+    boolean needSetEndCursor() {
+        return isReadOnly() && endCursor == null;
+    }
+
     public void setShardId(int shardId) {
         this.shardId = shardId;
     }
@@ -65,10 +69,6 @@ public class LogstoreShardMeta implements Serializable {
 
     public boolean isReadWrite() {
         return Consts.READWRITE_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
-    }
-
-    public void setReadOnly() {
-        setShardStatus(Consts.READONLY_SHARD_STATUS);
     }
 
     @Override

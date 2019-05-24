@@ -18,12 +18,14 @@ import java.util.List;
 
 public class LogClientProxy implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
+    private static final long serialVersionUID = -8094827334076355612L;
+
     private static int maxRetryTimes = 10;
     private Client logClient;
 
-    public LogClientProxy(String endpoint, String accessKeyId, String accessKey) {
+    public LogClientProxy(String endpoint, String accessKeyId, String accessKey, String userAgent) {
         this.logClient = new Client(endpoint, accessKeyId, accessKey);
-        this.logClient.setUserAgent(Consts.LOG_CONNECTOR_USER_AGENT);
+        this.logClient.setUserAgent(userAgent);
     }
 
     public String getCursor(String project, String logstore, int shard, String position, String consumerGroup) throws LogException {
@@ -40,7 +42,7 @@ public class LogClientProxy implements Serializable {
                 } else if (Consts.LOG_END_CURSOR.equals(position)) {
                     cursor = logClient.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
                 } else if (Consts.LOG_FROM_CHECKPOINT.equals(position)) {
-                    cursor = fetchCheckpoint(project, logstore, consumerGroup, shard);
+                    cursor = getConsumerGroupCheckpoint(project, logstore, consumerGroup, shard);
                     if (cursor == null || cursor.isEmpty()) {
                         LOG.info("No available checkpoint for shard {} in consumer group {}, setting to default position {}", shard, consumerGroup, defaultPosition);
                         position = defaultPosition;
@@ -59,9 +61,10 @@ public class LogClientProxy implements Serializable {
             }
             try {
                 Thread.sleep(100);
-                cursor = null;
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
+            cursor = null;
         }
         if (retryTimes >= maxRetryTimes) {
             throw new LogException("ExceedMaxRetryTimes", "fail to getCursor", "");
@@ -69,10 +72,10 @@ public class LogClientProxy implements Serializable {
         return cursor;
     }
 
-    private String fetchCheckpoint(final String project,
-                                   final String logstore,
-                                   final String consumerGroup,
-                                   final int shard) throws LogException {
+    private String getConsumerGroupCheckpoint(final String project,
+                                              final String logstore,
+                                              final String consumerGroup,
+                                              final int shard) throws LogException {
         try {
             ConsumerGroupCheckPointResponse response = logClient.GetCheckPoint(project, logstore, consumerGroup, shard);
             ArrayList<ConsumerGroupShardCheckPoint> checkpoints = response.GetCheckPoints();
@@ -115,6 +118,7 @@ public class LogClientProxy implements Serializable {
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
         if (retryTimes >= maxRetryTimes) {
@@ -144,6 +148,7 @@ public class LogClientProxy implements Serializable {
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
         if (retryTimes >= maxRetryTimes) {
@@ -156,11 +161,10 @@ public class LogClientProxy implements Serializable {
         try {
             logClient.CreateConsumerGroup(project, logstore, new ConsumerGroup(consumerGroup, 100, false));
         } catch (LogException e) {
-            LOG.warn("updateCheckpoint error, project: {}, logstore: {}, consumerGroup: {}," +
-                            " errorcode: {}, errormessage: {}, requestid: {}",
-                    project, logstore, consumerGroup, e.GetErrorCode(),
-                    e.GetErrorMessage(), e.GetRequestId());
-            if (!e.GetErrorCode().contains("AlreadyExist")) throw e;
+            LOG.warn("createConsumerGroup error, project: {}, logstore: {}, consumerGroup: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, consumerGroup, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
+            if (!e.GetErrorCode().contains("AlreadyExist")) {
+                throw e;
+            }
         }
     }
 
@@ -170,10 +174,7 @@ public class LogClientProxy implements Serializable {
                 logClient.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
             }
         } catch (LogException e) {
-            LOG.warn("updateCheckpoint error, project: {}, logstore: {}, consumerGroup: {}, " +
-                            "consumer: {}, shard: {}, checkpoint: {}, errorcode: {}, errormessage: {}, requestid: {}",
-                    project, logstore, consumerGroup, consumer, shard, checkpoint, e.GetErrorCode(),
-                    e.GetErrorMessage(), e.GetRequestId());
+            LOG.warn("updateCheckpoint error, project: {}, logstore: {}, consumerGroup: {}, consumer: {}, shard: {}, checkpoint: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, consumerGroup, consumer, shard, checkpoint, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
         }
     }
 }
