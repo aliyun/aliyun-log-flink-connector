@@ -27,6 +27,9 @@ public class ShardConsumer<T> implements Runnable {
     private String consumerStartPosition;
     private final String defaultPosition;
     private final String consumerGroupName;
+    private volatile boolean readOnly = false;
+    private static final int FORCE_SLEEP_THRESHOLD = 512 * 1024;
+    private static final long FORCE_SLEEP_MS = 500;
 
     public ShardConsumer(LogDataFetcher<T> fetcher, LogDeserializationSchema<T> deserializer, int subscribedShardStateIndex, Properties configProps, LogClientProxy logClient) {
         this.fetcherRef = fetcher;
@@ -65,48 +68,55 @@ public class ShardConsumer<T> implements Runnable {
                 LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, shardId, lastConsumerCursor);
             }
             while (isRunning()) {
-                if (state.hasMoreData()) {
-                    BatchGetLogResponse getLogResponse = null;
-                    try {
-                        getLogResponse = logClient.getLogs(logProject, logStore, shardId, lastConsumerCursor, maxNumberOfRecordsPerFetch);
-                    } catch (LogException ex) {
-                        LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
-                                ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, shardId);
-                        if ("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())) {
-                            if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)) {
-                                LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
-                                consumerStartPosition = defaultPosition;
-                            }
-                            lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, consumerGroupName);
-                        } else {
-                            throw ex;
-                        }
-                    }
-                    if (getLogResponse != null) {
-                        if (getLogResponse.GetCount() > 0) {
-                            processRecordsAndMoveToNextCursor(getLogResponse.GetLogGroups(), getLogResponse.GetNextCursor());
-                        }
-                        long sleepTime = 0;
-                        if (getLogResponse.GetRawSize() < 1024 * 1024 && getLogResponse.GetCount() < 100) {
-                            sleepTime = 500;
-                        } else if (getLogResponse.GetRawSize() < 2 * 1024 * 1024 && getLogResponse.GetCount() < 500) {
-                            sleepTime = 200;
-                        } else if (getLogResponse.GetRawSize() < 4 * 1024 * 1024 && getLogResponse.GetCount() < 1000) {
-                            sleepTime = 50;
-                        }
-                        if (sleepTime < fetchIntervalMillis)
-                            sleepTime = fetchIntervalMillis;
-                        Thread.sleep(sleepTime);
-                    }
-                } else {
+                if (!state.hasMoreData()) {
                     LOG.info("ShardConsumer exit, shard: {}", state.toString());
                     break;
+                }
+                BatchGetLogResponse getLogResponse = null;
+                try {
+                    getLogResponse = logClient.getLogs(logProject, logStore, shardId, lastConsumerCursor, maxNumberOfRecordsPerFetch);
+                } catch (LogException ex) {
+                    LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
+                            ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, shardId);
+                    if ("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())) {
+                        if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)) {
+                            LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
+                            consumerStartPosition = defaultPosition;
+                        }
+                        lastConsumerCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, consumerGroupName);
+                    } else {
+                        throw ex;
+                    }
+                }
+                if (getLogResponse != null) {
+                    String nextCursor = getLogResponse.GetNextCursor();
+                    if (getLogResponse.GetCount() > 0) {
+                        processRecordsAndMoveToNextCursor(getLogResponse.GetLogGroups(), nextCursor);
+                    }
+                    if (lastConsumerCursor.equalsIgnoreCase(nextCursor) && readOnly) {
+                        LOG.info("Shard {} is finished", shardId);
+                        break;
+                    }
+                    long sleepTime = 0;
+                    int size = getLogResponse.GetRawSize();
+                    if (size < FORCE_SLEEP_THRESHOLD) {
+                        sleepTime = FORCE_SLEEP_MS;
+                    }
+                    if (sleepTime < fetchIntervalMillis)
+                        sleepTime = fetchIntervalMillis;
+                    if (sleepTime > 0) {
+                        Thread.sleep(sleepTime);
+                    }
                 }
             }
         } catch (Throwable t) {
             LOG.error("unexpected error", t);
             fetcherRef.stopWithError(t);
         }
+    }
+
+    void setReadOnly() {
+        this.readOnly = true;
     }
 
     private void processRecordsAndMoveToNextCursor(List<LogGroupData> records, String nextCursor) {
