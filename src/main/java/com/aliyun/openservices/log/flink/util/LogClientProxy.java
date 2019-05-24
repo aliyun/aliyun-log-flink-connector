@@ -42,7 +42,7 @@ public class LogClientProxy implements Serializable {
                 } else if (Consts.LOG_END_CURSOR.equals(position)) {
                     cursor = logClient.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
                 } else if (Consts.LOG_FROM_CHECKPOINT.equals(position)) {
-                    cursor = getConsumerGroupCheckpoint(project, logstore, consumerGroup, shard);
+                    cursor = fetchCheckpoint(project, logstore, consumerGroup, shard);
                     if (cursor == null || cursor.isEmpty()) {
                         LOG.info("No available checkpoint for shard {} in consumer group {}, setting to default position {}", shard, consumerGroup, defaultPosition);
                         position = defaultPosition;
@@ -72,10 +72,10 @@ public class LogClientProxy implements Serializable {
         return cursor;
     }
 
-    private String getConsumerGroupCheckpoint(final String project,
-                                              final String logstore,
-                                              final String consumerGroup,
-                                              final int shard) throws LogException {
+    private String fetchCheckpoint(final String project,
+                                   final String logstore,
+                                   final String consumerGroup,
+                                   final int shard) throws LogException {
         try {
             ConsumerGroupCheckPointResponse response = logClient.GetCheckPoint(project, logstore, consumerGroup, shard);
             ArrayList<ConsumerGroupShardCheckPoint> checkpoints = response.GetCheckPoints();
