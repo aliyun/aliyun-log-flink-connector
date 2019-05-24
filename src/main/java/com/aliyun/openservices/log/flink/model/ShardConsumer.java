@@ -18,7 +18,7 @@ public class ShardConsumer<T> implements Runnable {
 
     private static final int FORCE_SLEEP_THRESHOLD = 512 * 1024;
     private static final long FORCE_SLEEP_MS = 500;
-    
+
     private final LogDataFetcher<T> fetcher;
     private final LogDeserializationSchema<T> deserializer;
     private final int subscribedShardStateIndex;
@@ -53,8 +53,7 @@ public class ShardConsumer<T> implements Runnable {
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)
                 && (consumerGroup == null || consumerGroup.isEmpty())) {
-            throw new IllegalArgumentException("The setting " + ConfigConstants.LOG_CONSUMERGROUP
-                    + " is required for restoring checkpoint from consumer group");
+            throw new IllegalArgumentException("Missing parameter: " + ConfigConstants.LOG_CONSUMERGROUP);
         }
         defaultPosition = getDefaultPosition(configProps);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(defaultPosition)) {
@@ -78,8 +77,10 @@ public class ShardConsumer<T> implements Runnable {
                 currentCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, defaultPosition, consumerGroup);
                 LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, shardId, currentCursor);
             }
+            long elapsedTime;
             while (isRunning()) {
                 BatchGetLogResponse getLogResponse = null;
+                elapsedTime = System.currentTimeMillis();
                 try {
                     getLogResponse = logClient.getLogs(logProject, logStore, shardId, currentCursor, maxNumberOfRecordsPerFetch);
                 } catch (LogException ex) {
@@ -95,11 +96,15 @@ public class ShardConsumer<T> implements Runnable {
                         throw ex;
                     }
                 }
+                LOG.info("Pull log request cost {}", System.currentTimeMillis() - elapsedTime);
+
                 if (getLogResponse != null) {
+                    elapsedTime = System.currentTimeMillis();
                     String nextCursor = getLogResponse.GetNextCursor();
                     if (getLogResponse.GetCount() > 0) {
                         processRecordsAndMoveToNextCursor(getLogResponse.GetLogGroups(), shardId, nextCursor);
                     }
+                    LOG.info("Process records cost {}", System.currentTimeMillis() - elapsedTime);
                     if (currentCursor.equalsIgnoreCase(nextCursor) && readOnly) {
                         LOG.info("Shard {} is finished", shardId);
                         break;
@@ -112,6 +117,7 @@ public class ShardConsumer<T> implements Runnable {
                     if (sleepTime < fetchIntervalMillis)
                         sleepTime = fetchIntervalMillis;
                     if (sleepTime > 0) {
+                        LOG.info("Wait {} ms before next pull request", sleepTime);
                         Thread.sleep(sleepTime);
                     }
                 }

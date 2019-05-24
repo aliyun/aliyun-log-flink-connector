@@ -167,7 +167,7 @@ public class LogDataFetcher<T> {
         return stateSnapshot;
     }
 
-    private void registerConsumer(int index, int shardId) {
+    private void createConsumerForShard(int index, int shardId) {
         ShardConsumer<T> consumer = new ShardConsumer<T>(this, deserializationSchema, index, configProps, logClient, autoCommitter);
         shardConsumersExecutor.submit(consumer);
         activeConsumers.put(shardId, consumer);
@@ -183,7 +183,7 @@ public class LogDataFetcher<T> {
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
             if (!shardState.isFinished()) {
-                registerConsumer(index, shardState.getShardMeta().getShardId());
+                createConsumerForShard(index, shardState.getShardMeta().getShardId());
             }
         }
         final long discoveryIntervalMillis = PropertiesUtil.getLong(
@@ -197,11 +197,9 @@ public class LogDataFetcher<T> {
             List<LogstoreShardMeta> newShardsDueToResharding = discoverNewShardsToSubscribe();
             for (LogstoreShardMeta shard : newShardsDueToResharding) {
                 LogstoreShardState shardState = new LogstoreShardState(shard, null);
-                numberOfActiveShards.incrementAndGet();
                 int newStateIndex = registerNewSubscribedShardState(shardState);
-                shardConsumersExecutor.submit(new ShardConsumer<T>(this, deserializationSchema, newStateIndex, configProps, logClient, autoCommitter));
                 LOG.info("discover new shard: {}, task: {}, taskcnt: {}", shardState.toString(), indexOfThisConsumerSubtask, totalNumberOfConsumerSubtasks);
-                registerConsumer(newStateIndex, shardState.getShardMeta().getShardId());
+                createConsumerForShard(newStateIndex, shardState.getShardMeta().getShardId());
             }
             if (running && discoveryIntervalMillis > 0) {
                 try {
@@ -230,7 +228,7 @@ public class LogDataFetcher<T> {
         if (checkpointMode == CheckpointMode.PERIODIC) {
             autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, logProject, logStore, consumerGroup, consumer);
             autoCommitter.start();
-            LOG.info("Checkpoint periodic committer thread has been started");
+            LOG.info("Checkpoint periodic committer thread started");
         }
     }
 

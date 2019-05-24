@@ -161,7 +161,9 @@ public class LogClientProxy implements Serializable {
         try {
             logClient.CreateConsumerGroup(project, logstore, new ConsumerGroup(consumerGroup, 100, false));
         } catch (LogException e) {
-            LOG.warn("createConsumerGroup error, project: {}, logstore: {}, consumerGroup: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, consumerGroup, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
+            LOG.warn("Failed to create consumer group: {}, code: {}," +
+                            " message: {}, requestID: {}",
+                    consumerGroup, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
             if (!e.GetErrorCode().contains("AlreadyExist")) {
                 throw e;
             }
@@ -174,7 +176,11 @@ public class LogClientProxy implements Serializable {
                 logClient.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
             }
         } catch (LogException e) {
-            LOG.warn("updateCheckpoint error, project: {}, logstore: {}, consumerGroup: {}, consumer: {}, shard: {}, checkpoint: {}, errorcode: {}, errormessage: {}, requestid: {}", project, logstore, consumerGroup, consumer, shard, checkpoint, e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
+            LOG.warn("Failed to update checkpoint error, consumerGroup: {}," +
+                            " shard: {}, checkpoint: {}, code: {}, message: {}," +
+                            " requestID: {}",
+                    consumerGroup, shard, checkpoint,
+                    e.GetErrorCode(), e.GetErrorMessage(), e.GetRequestId());
         }
     }
 }
