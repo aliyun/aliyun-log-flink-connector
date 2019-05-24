@@ -7,8 +7,9 @@ import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
-import com.aliyun.openservices.log.response.BatchGetLogResponse;
+import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
+import com.aliyun.openservices.log.response.PullLogsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +21,7 @@ public class LogClientProxy implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
     private static final long serialVersionUID = -8094827334076355612L;
 
-    private static int maxRetryTimes = 10;
+    private static final int MAX_ATTEMPTS = 10;
     private Client logClient;
 
     public LogClientProxy(String endpoint, String accessKeyId, String accessKey, String userAgent) {
@@ -32,10 +33,31 @@ public class LogClientProxy implements Serializable {
         return getCursor(project, logstore, shard, position, Consts.LOG_BEGIN_CURSOR, consumerGroup);
     }
 
+    public String getEndCursor(String project, String logstore, int shard) {
+        LogException lastException = null;
+        for (int i = 0; i < MAX_ATTEMPTS; i++) {
+            try {
+                return logClient.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
+            } catch (LogException lex) {
+                lastException = lex;
+                LOG.warn("Failed to fetch end cursor, code {}, message {}, requestID {}.",
+                        lex.GetErrorCode(), lex.GetErrorMessage(), lex.GetRequestId());
+            }
+            if (i < MAX_ATTEMPTS - 1) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        throw new RuntimeException(lastException);
+    }
+
     public String getCursor(String project, String logstore, int shard, String position, String defaultPosition, String consumerGroup) throws LogException {
         String cursor = null;
         int retryTimes = 0;
-        while (retryTimes++ < maxRetryTimes) {
+        while (retryTimes++ < MAX_ATTEMPTS) {
             try {
                 if (Consts.LOG_BEGIN_CURSOR.equals(position)) {
                     cursor = logClient.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor();
@@ -66,7 +88,7 @@ public class LogClientProxy implements Serializable {
             }
             cursor = null;
         }
-        if (retryTimes >= maxRetryTimes) {
+        if (retryTimes >= MAX_ATTEMPTS) {
             throw new LogException("ExceedMaxRetryTimes", "fail to getCursor", "");
         }
         return cursor;
@@ -102,11 +124,12 @@ public class LogClientProxy implements Serializable {
         return null;
     }
 
-    public BatchGetLogResponse getLogs(String project, String logstore, int shard, String cursor, int count) throws LogException {
+    public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, int count) throws LogException {
         int retryTimes = 0;
-        while (retryTimes++ < maxRetryTimes) {
+        PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor);
+        while (retryTimes++ < MAX_ATTEMPTS) {
             try {
-                return logClient.BatchGetLog(project, logstore, shard, count, cursor);
+                return logClient.pullLogs(request);
             } catch (LogException ex) {
                 final String errorCode = ex.GetErrorCode();
                 LOG.warn("getLogs error, project: {}, logstore: {}, shard: {}, cursor: {}, errorCode: {}, errorMessage: {}, requestId: {}",
@@ -121,7 +144,7 @@ public class LogClientProxy implements Serializable {
                 Thread.currentThread().interrupt();
             }
         }
-        if (retryTimes >= maxRetryTimes) {
+        if (retryTimes >= MAX_ATTEMPTS) {
             throw new LogException("ExceedMaxRetryTimes", "fail to getLogs", "");
         }
         return null;
@@ -130,7 +153,7 @@ public class LogClientProxy implements Serializable {
     public List<LogstoreShardMeta> listShards(String project, String logstore) throws LogException {
         List<LogstoreShardMeta> shards = new ArrayList<LogstoreShardMeta>();
         int retryTimes = 0;
-        while (retryTimes++ < maxRetryTimes) {
+        while (retryTimes++ < MAX_ATTEMPTS) {
             try {
                 for (Shard shard : logClient.ListShard(project, logstore).GetShards()) {
                     LogstoreShardMeta shardMeta = new LogstoreShardMeta(shard.GetShardId(), shard.getInclusiveBeginKey(), shard.getExclusiveEndKey(), shard.getStatus());
@@ -151,7 +174,7 @@ public class LogClientProxy implements Serializable {
                 Thread.currentThread().interrupt();
             }
         }
-        if (retryTimes >= maxRetryTimes) {
+        if (retryTimes >= MAX_ATTEMPTS) {
             throw new LogException("ExceedMaxRetryTimes", "fail to listShards", "");
         }
         return shards;

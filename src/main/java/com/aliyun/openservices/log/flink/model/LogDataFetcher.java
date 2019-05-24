@@ -127,7 +127,7 @@ public class LogDataFetcher<T> {
                 if (shardMeta.getShardId() == shardID) {
                     if (!shardMeta.getShardStatus().equalsIgnoreCase(status)
                             || shardMeta.needSetEndCursor()) {
-                        String endCursor = logClient.getCursor(logProject, logStore, shard.getShardId(), Consts.LOG_END_CURSOR, "");
+                        String endCursor = logClient.getEndCursor(logProject, logStore, shardID);
                         LOG.info("The latest cursor of shard {} is {}", shardID, endCursor);
                         shardMeta.setEndCursor(endCursor);
                         shardMeta.setShardStatus(status);

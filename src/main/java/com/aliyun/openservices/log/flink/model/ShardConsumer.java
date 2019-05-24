@@ -5,7 +5,7 @@ import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
-import com.aliyun.openservices.log.response.BatchGetLogResponse;
+import com.aliyun.openservices.log.response.PullLogsResponse;
 import org.apache.flink.util.PropertiesUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,7 +68,7 @@ public class ShardConsumer<T> implements Runnable {
             final int shardId = shardMeta.getShardId();
             LOG.info("Starting shard consumer for shard {}", shardId);
             if (shardMeta.needSetEndCursor()) {
-                String endCursor = logClient.getCursor(logProject, logStore, shardId, Consts.LOG_END_CURSOR, "");
+                String endCursor = logClient.getEndCursor(logProject, logStore, shardId);
                 LOG.info("The latest cursor of shard {} is {}", shardId, endCursor);
                 shardMeta.setEndCursor(endCursor);
             }
@@ -79,10 +79,10 @@ public class ShardConsumer<T> implements Runnable {
             }
             long elapsedTime;
             while (isRunning()) {
-                BatchGetLogResponse getLogResponse = null;
+                PullLogsResponse response = null;
                 elapsedTime = System.currentTimeMillis();
                 try {
-                    getLogResponse = logClient.getLogs(logProject, logStore, shardId, currentCursor, maxNumberOfRecordsPerFetch);
+                    response = logClient.pullLogs(logProject, logStore, shardId, currentCursor, maxNumberOfRecordsPerFetch);
                 } catch (LogException ex) {
                     LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
                             ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, shardId);
@@ -96,28 +96,31 @@ public class ShardConsumer<T> implements Runnable {
                         throw ex;
                     }
                 }
-                LOG.info("Pull log request cost {}", System.currentTimeMillis() - elapsedTime);
-
-                if (getLogResponse != null) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Pull log request cost {}", System.currentTimeMillis() - elapsedTime);
+                }
+                if (response != null) {
                     elapsedTime = System.currentTimeMillis();
-                    String nextCursor = getLogResponse.GetNextCursor();
-                    if (getLogResponse.GetCount() > 0) {
-                        processRecordsAndMoveToNextCursor(getLogResponse.GetLogGroups(), shardId, nextCursor);
+                    String nextCursor = response.getNextCursor();
+                    if (response.getCount() > 0) {
+                        processRecordsAndMoveToNextCursor(response.getLogGroups(), shardId, nextCursor);
                     }
-                    LOG.info("Process records cost {}", System.currentTimeMillis() - elapsedTime);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Process records cost {}", System.currentTimeMillis() - elapsedTime);
+                    }
                     if (currentCursor.equalsIgnoreCase(nextCursor) && readOnly) {
                         LOG.info("Shard {} is finished", shardId);
                         break;
                     }
                     long sleepTime = 0;
-                    int size = getLogResponse.GetRawSize();
+                    int size = response.getRawSize();
                     if (size < FORCE_SLEEP_THRESHOLD) {
                         sleepTime = FORCE_SLEEP_MS;
                     }
                     if (sleepTime < fetchIntervalMillis)
                         sleepTime = fetchIntervalMillis;
                     if (sleepTime > 0) {
-                        LOG.info("Wait {} ms before next pull request", sleepTime);
+                        LOG.debug("Wait {} ms before next pull request", sleepTime);
                         Thread.sleep(sleepTime);
                     }
                 }
