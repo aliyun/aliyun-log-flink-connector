@@ -21,13 +21,12 @@ public class ShardConsumer<T> implements Runnable {
     private final LogDataFetcher<T> fetcher;
     private final LogDeserializationSchema<T> deserializer;
     private final int subscribedShardStateIndex;
-    private int maxNumberOfRecordsPerFetch;
-    private long fetchIntervalMillis;
+    private final int fetchSize;
+    private final long fetchIntervalMs;
     private final LogClientProxy logClient;
-    private String currentCursor;
     private final String logProject;
     private final String logStore;
-    private String consumerStartPosition;
+    private String initialPosition;
     private final String defaultPosition;
     private final String consumerGroup;
     private final CheckpointCommitter committer;
@@ -42,15 +41,15 @@ public class ShardConsumer<T> implements Runnable {
         this.fetcher = fetcher;
         this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
-        this.maxNumberOfRecordsPerFetch = getNumberPerFetch(configProps);
-        this.fetchIntervalMillis = getFetchIntervalMillis(configProps);
+        this.fetchSize = getNumberPerFetch(configProps);
+        this.fetchIntervalMs = getFetchIntervalMillis(configProps);
         this.logClient = logClient;
         this.committer = committer;
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
-        this.consumerStartPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
+        this.initialPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
-        if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)
+        if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)
                 && (consumerGroup == null || consumerGroup.isEmpty())) {
             throw new IllegalArgumentException("Missing parameter: " + ConfigConstants.LOG_CONSUMERGROUP);
         }
@@ -66,30 +65,26 @@ public class ShardConsumer<T> implements Runnable {
             final LogstoreShardMeta shardMeta = state.getShardMeta();
             final int shardId = shardMeta.getShardId();
             LOG.info("Starting shard consumer for shard {}", shardId);
-            if (shardMeta.needSetEndCursor()) {
-                String endCursor = logClient.getEndCursor(logProject, logStore, shardId);
-                LOG.info("The latest cursor of shard {} is {}", shardId, endCursor);
-                shardMeta.setEndCursor(endCursor);
-            }
-            currentCursor = state.getOffset();
-            if (currentCursor == null) {
-                currentCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, defaultPosition, consumerGroup);
-                LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, shardId, currentCursor);
+            String cursor = state.getOffset();
+            if (cursor == null) {
+                cursor = logClient.getCursor(logProject, logStore, shardId, initialPosition, defaultPosition, consumerGroup);
+                LOG.info("Start from fetched cursor: {}, shard: {}", cursor, shardId);
+            } else {
+                LOG.info("Start from restored cursor: {}, shard: {}", cursor, shardId);
             }
             while (isRunning()) {
                 PullLogsResponse response = null;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
-                    response = logClient.pullLogs(logProject, logStore, shardId, currentCursor, maxNumberOfRecordsPerFetch);
+                    response = logClient.pullLogs(logProject, logStore, shardId, cursor, fetchSize);
                 } catch (LogException ex) {
-                    LOG.warn("getLogs exception, errorcode: {}, errormessage: {}, project : {}, logstore: {}, shard: {}",
-                            ex.GetErrorCode(), ex.GetErrorMessage(), logProject, logStore, shardId);
-                    if ("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())) {
-                        if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(consumerStartPosition)) {
-                            LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
-                            consumerStartPosition = defaultPosition;
-                        }
-                        currentCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, consumerGroup);
+                    LOG.warn("Failed to fetch logs, error code: {}, message: {}, shard: {}",
+                            ex.GetErrorCode(), ex.GetErrorMessage(), shardId);
+
+                    if ("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())
+                            && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
+                        LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
+                        cursor = logClient.getCursor(logProject, logStore, shardId, defaultPosition, consumerGroup);
                     } else {
                         throw ex;
                     }
@@ -104,11 +99,12 @@ public class ShardConsumer<T> implements Runnable {
                         long processingStartTimeMs = System.currentTimeMillis();
                         processRecordsAndMoveToNextCursor(response.getLogGroups(), shardId, nextCursor);
                         processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
-                        LOG.debug("Process records cost {}", processingTimeMs);
+                        LOG.debug("Process records cost {} ms.", processingTimeMs);
+                        cursor = nextCursor;
                     } else {
                         processingTimeMs = 0;
                         LOG.debug("No records has been responded.");
-                        if (currentCursor.equalsIgnoreCase(nextCursor) && readOnly) {
+                        if (cursor.equalsIgnoreCase(nextCursor) && readOnly) {
                             LOG.info("Shard {} is finished", shardId);
                             break;
                         }
@@ -129,8 +125,8 @@ public class ShardConsumer<T> implements Runnable {
         } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
             sleepTime = 200;
         }
-        if (sleepTime < fetchIntervalMillis) {
-            sleepTime = fetchIntervalMillis;
+        if (sleepTime < fetchIntervalMs) {
+            sleepTime = fetchIntervalMs;
         }
         sleepTime -= processingTimeMs;
         if (sleepTime > 0) {
@@ -158,9 +154,8 @@ public class ShardConsumer<T> implements Runnable {
                 subscribedShardStateIndex,
                 nextCursor);
         if (committer != null) {
-            committer.updateCheckpoint(shardId, currentCursor);
+            committer.updateCheckpoint(shardId, nextCursor);
         }
-        currentCursor = nextCursor;
     }
 
     private boolean isRunning() {
