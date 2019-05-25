@@ -119,7 +119,7 @@ env.enableCheckpointing(5000);
 更多Flink checkpoint的细节请参考Flink官方文档[Checkpoints](https://ci.apache.org/projects/flink/flink-docs-release-1.3/setup/checkpoints.html)。
 
 ##### DISABLED
-选择ON_CHECKPOINTS时，checkpoint不会被提交到日志服务服务端。
+选择DISABLED时，checkpoint不会被提交到日志服务服务端。
 
 ##### PERIODIC
 选择PERIODIC时，checkpoint被定时提交到日志服务服务端，和Flink Checkpointing完全独立。支持自定义提交间隔：
