@@ -2,15 +2,15 @@ package com.aliyun.openservices.log.flink.model;
 
 public class LogstoreShardState {
     private LogstoreShardMeta shardMeta;
-    private String lastConsumerCursor;
+    private String offset;
 
-    public LogstoreShardState(LogstoreShardMeta shardMeta, String lastConsumerCursor) {
+    public LogstoreShardState(LogstoreShardMeta shardMeta, String checkpoint) {
         this.shardMeta = shardMeta;
-        this.lastConsumerCursor = lastConsumerCursor;
+        this.offset = checkpoint;
     }
 
-    public void setLastConsumerCursor(String lastConsumerCursor) {
-        this.lastConsumerCursor = lastConsumerCursor;
+    public void setOffset(String offset) {
+        this.offset = offset;
     }
 
     public void setShardMeta(LogstoreShardMeta shardMeta) {
@@ -21,24 +21,21 @@ public class LogstoreShardState {
         return shardMeta;
     }
 
-    public String getLastConsumerCursor() {
-        return lastConsumerCursor;
+    public String getOffset() {
+        return offset;
     }
 
-    public boolean hasMoreData() {
-        if (shardMeta.isReadWrite()) return true;
-        else if (shardMeta.isReadOnly()) {
-            if (lastConsumerCursor == null || shardMeta.getEndCursor() == null) return true;
-            else if (lastConsumerCursor.equals(shardMeta.getEndCursor())) return false;
-            else return true;
-        } else return false;
+    boolean isFinished() {
+        return offset != null
+                && offset.equalsIgnoreCase(shardMeta.getEndCursor())
+                && shardMeta.isReadOnly();
     }
 
     @Override
     public String toString() {
         return "LogstoreShardState{" +
                 "shardMeta=" + shardMeta.toString() +
-                ", lastConsumerCursor='" + lastConsumerCursor + '\'' +
+                ", offset='" + offset + '\'' +
                 '}';
     }
 }

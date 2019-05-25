@@ -7,6 +7,7 @@ public class ConfigConstants {
     public static String LOG_ACCESSKEY = "ACCESSKEY";
     public static String LOG_PROJECT = "PROJECT";
     public static String LOG_LOGSTORE = "LOGSTORE";
+    public static String LOG_USER_AGENT = "USER_AGENT";
 
     //for consumer
     public static String LOG_CONSUMERGROUP = "CONSUMER_GROUP";
@@ -29,5 +30,6 @@ public class ConfigConstants {
     public static String LOG_LOGS_COUNT_PER_PACKAGE = "LOGS_COUNT_PER_PACKAGE";
     public static String LOG_LOGS_BYTES_PER_PACKAGE = "LOGS_BYTES_PER_PACKAGE";
     public static String LOG_MEM_POOL_BYTES = "MEM_POOL_SIZE_IN_BYTES";
-
+    public static String LOG_CHECKPOINT_MODE = "LOG_CHECKPOINT_MODE";
+    public static String LOG_COMMIT_INTERVAL_MILLIS = "LOG_COMMIT_INTERVAL";
 }
