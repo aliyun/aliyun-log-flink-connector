@@ -13,8 +13,7 @@ public final class LogUtil {
     public static CheckpointMode parseCheckpointMode(Properties properties) {
         final String mode = properties.getProperty(ConfigConstants.LOG_CHECKPOINT_MODE);
         if (mode == null || mode.isEmpty()) {
-            // For BWC
-            return CheckpointMode.ON_CHECKPOINT;
+            return CheckpointMode.ON_CHECKPOINTS;
         }
         return CheckpointMode.fromString(mode);
     }

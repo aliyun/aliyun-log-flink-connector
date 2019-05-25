@@ -9,7 +9,7 @@ public enum CheckpointMode {
      * Commit checkpoint only when Flink creating checkpoint, which means Flink
      * checkpointing must be enabled.
      */
-    ON_CHECKPOINT,
+    ON_CHECKPOINTS,
     /**
      * Auto commit checkpoint periodic.
      */
