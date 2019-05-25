@@ -95,7 +95,7 @@ public class ShardConsumer<T> implements Runnable {
                     }
                 }
                 if (LOG.isDebugEnabled()) {
-                    LOG.debug("Pull logs request cost {}", System.currentTimeMillis() - fetchStartTimeMs);
+                    LOG.debug("Fetch request cost {} ms", System.currentTimeMillis() - fetchStartTimeMs);
                 }
                 if (response != null) {
                     long processingTimeMs;
@@ -108,10 +108,10 @@ public class ShardConsumer<T> implements Runnable {
                     } else {
                         processingTimeMs = 0;
                         LOG.debug("No records has been responded.");
-                    }
-                    if (currentCursor.equalsIgnoreCase(nextCursor) && readOnly) {
-                        LOG.info("Shard {} is finished", shardId);
-                        break;
+                        if (currentCursor.equalsIgnoreCase(nextCursor) && readOnly) {
+                            LOG.info("Shard {} is finished", shardId);
+                            break;
+                        }
                     }
                     adjustFetchFrequency(response.getRawSize(), processingTimeMs);
                 }
