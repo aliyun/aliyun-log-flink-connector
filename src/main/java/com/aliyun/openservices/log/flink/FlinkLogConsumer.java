@@ -162,7 +162,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private void updateCursorState(LogstoreShardMeta shardMeta, String cursor) throws Exception {
         cursorStateForCheckpoint.add(Tuple2.of(shardMeta, cursor));
-        if (checkpointMode == CheckpointMode.ON_CHECKPOINT) {
+        if (checkpointMode == CheckpointMode.ON_CHECKPOINTS) {
             updateCheckpointIfNeeded(shardMeta.getShardId(), cursor);
         }
     }

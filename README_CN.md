@@ -23,7 +23,7 @@ Flink log connector是阿里云日志服务提供的，用于对接flink的工�
 <dependency>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>aliyun-log</artifactId>
-    <version>0.6.10</version>
+    <version>0.6.29</version>
 </dependency>
 <dependency>
     <groupId>com.aliyun.openservices</groupId>
@@ -94,11 +94,21 @@ Flink log consumer支持设置消费进度监控，所谓消费进度就是获�
 configProps.put(ConfigConstants.LOG_CONSUMERGROUP， "your consumer group name”);
 ```
 > 注意上面代码是可选的，如果设置了，consumer会首先创建consumerGroup，如果已经存在，则什么都不做，consumer中的snapshot会自动同步到日志服务的consumerGroup中，用户可以在日志服务的控制台查看consumer的消费进度。
-#### 1.4 容灾和exactly once语义支持
-当打开Flink的checkpointing功能时，Flink log consumer会周期性的将每个shard的消费进度保存起来，当作业失败时，flink会恢复log consumer，并
-从保存的最新的checkpoint开始消费。
+#### 1.4 消费组Checkpoint 提交模式
 
-写checkpoint的周期定义了当发生失败时，最多多少的数据会被回溯，也就是重新消费，使用代码如下：
+通过配置LOG_CHECKPOINT_MODE这个参数可以指定消费组Checkpoint的提交模式，目前支持如下三种：
+```
+configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.PERIODIC.name());
+configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.ON_CHECKPOINTS.name());
+configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.DISABLED.name());
+```
+默认为 ON_CHECKPOINTS。
+
+##### ON_CHECKPOINT
+
+选择ON_CHECKPOINTS时，当打开Flink的Checkpointing功能时，每个Shard的消费进度会保存在Flink的State中，同时会提交到日志服务服务端，当作业Failover时，会从Flink的State中恢复，如果不存在对应的checkpoint，会从服务端保存的最新的checkpoint恢复。
+
+写checkpoint的周期定义了当发生失败时，最多多少的数据会被重复消费，Flink设置Checkpointing代码如下：
 ```
 final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 // 开启flink exactly once语义
@@ -107,6 +117,19 @@ env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
 env.enableCheckpointing(5000);
 ```
 更多Flink checkpoint的细节请参考Flink官方文档[Checkpoints](https://ci.apache.org/projects/flink/flink-docs-release-1.3/setup/checkpoints.html)。
+
+##### DISABLED
+选择DISABLED时，checkpoint不会被提交到日志服务服务端。
+
+##### PERIODIC
+选择PERIODIC时，checkpoint被定时提交到日志服务服务端，和Flink Checkpointing完全独立。支持自定义提交间隔：
+```
+configProps.put(ConfigConstants.LOG_COMMIT_INTERVAL_MILLIS, "1000");
+```
+默认为10秒提交一次。
+
+NOTE: 这个配置只和消费组提交checkpoint到日志服务有关，无论这个配置如何配置，都不影响Flink的State。
+
 #### 1.5 补充材料：关联 API与权限设置
 Flink log consumer 会用到的阿里云日志服务接口如下：
 * GetCursorOrData
