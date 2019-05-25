@@ -17,7 +17,6 @@ public class ShardConsumer<T> implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
 
     private static final int FORCE_SLEEP_THRESHOLD = 512 * 1024;
-    private static final long FORCE_SLEEP_MS = 500;
 
     private final LogDataFetcher<T> fetcher;
     private final LogDeserializationSchema<T> deserializer;
@@ -77,10 +76,9 @@ public class ShardConsumer<T> implements Runnable {
                 currentCursor = logClient.getCursor(logProject, logStore, shardId, consumerStartPosition, defaultPosition, consumerGroup);
                 LOG.info("init cursor success, p: {}, l: {}, s: {}, cursor: {}", logProject, logStore, shardId, currentCursor);
             }
-            long elapsedTime;
             while (isRunning()) {
                 PullLogsResponse response = null;
-                elapsedTime = System.currentTimeMillis();
+                long fetchStartTimeMs = System.currentTimeMillis();
                 try {
                     response = logClient.pullLogs(logProject, logStore, shardId, currentCursor, maxNumberOfRecordsPerFetch);
                 } catch (LogException ex) {
@@ -97,37 +95,47 @@ public class ShardConsumer<T> implements Runnable {
                     }
                 }
                 if (LOG.isDebugEnabled()) {
-                    LOG.debug("Pull log request cost {}", System.currentTimeMillis() - elapsedTime);
+                    LOG.debug("Pull logs request cost {}", System.currentTimeMillis() - fetchStartTimeMs);
                 }
                 if (response != null) {
-                    elapsedTime = System.currentTimeMillis();
+                    long processingTimeMs;
                     String nextCursor = response.getNextCursor();
                     if (response.getCount() > 0) {
+                        long processingStartTimeMs = System.currentTimeMillis();
                         processRecordsAndMoveToNextCursor(response.getLogGroups(), shardId, nextCursor);
-                    }
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("Process records cost {}", System.currentTimeMillis() - elapsedTime);
+                        processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
+                        LOG.debug("Process records cost {}", processingTimeMs);
+                    } else {
+                        processingTimeMs = 0;
+                        LOG.debug("No records has been responded.");
                     }
                     if (currentCursor.equalsIgnoreCase(nextCursor) && readOnly) {
                         LOG.info("Shard {} is finished", shardId);
                         break;
                     }
-                    long sleepTime = 0;
-                    int size = response.getRawSize();
-                    if (size < FORCE_SLEEP_THRESHOLD) {
-                        sleepTime = FORCE_SLEEP_MS;
-                    }
-                    if (sleepTime < fetchIntervalMillis)
-                        sleepTime = fetchIntervalMillis;
-                    if (sleepTime > 0) {
-                        LOG.debug("Wait {} ms before next pull request", sleepTime);
-                        Thread.sleep(sleepTime);
-                    }
+                    adjustFetchFrequency(response.getRawSize(), processingTimeMs);
                 }
             }
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);
+        }
+    }
+
+    private void adjustFetchFrequency(int responseSize, long processingTimeMs) throws InterruptedException {
+        long sleepTime = 0;
+        if (responseSize == 0) {
+            sleepTime = 500;
+        } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
+            sleepTime = 200;
+        }
+        if (sleepTime < fetchIntervalMillis) {
+            sleepTime = fetchIntervalMillis;
+        }
+        sleepTime -= processingTimeMs;
+        if (sleepTime > 0) {
+            LOG.debug("Wait {} ms before next fetch", sleepTime);
+            Thread.sleep(sleepTime);
         }
     }
 
