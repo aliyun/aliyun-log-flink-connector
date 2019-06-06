@@ -34,25 +34,25 @@ public class LogClientProxy implements Serializable {
         return getCursor(project, logstore, shard, position, Consts.LOG_BEGIN_CURSOR, consumerGroup);
     }
 
-    public String getEndCursor(String project, String logstore, int shard) {
-        LogException lastException = null;
-        for (int i = 0; i < MAX_ATTEMPTS; i++) {
+    public String getEndCursor(String project, String logstore, int shard) throws LogException {
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             try {
                 return logClient.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
             } catch (LogException lex) {
-                lastException = lex;
-                LOG.warn("Failed to fetch end cursor, code {}, message {}, requestID {}.",
-                        lex.GetErrorCode(), lex.GetErrorMessage(), lex.GetRequestId());
-            }
-            if (i < MAX_ATTEMPTS - 1) {
-                try {
-                    Thread.sleep(RETRY_INTERVAL_MS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                if (shouldRetry(lex, attempt)) {
+                    LOG.warn("Failed to fetch end cursor, code {}, message {}, requestID {}. Attempt {}",
+                            lex.GetErrorCode(), lex.GetErrorMessage(), lex.GetRequestId(), attempt);
+                } else {
+                    throw lex;
                 }
             }
+            try {
+                Thread.sleep(RETRY_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
-        throw new RuntimeException(lastException);
+        return null;
     }
 
     public String getCursor(String project, String logstore, int shard,
@@ -78,7 +78,7 @@ public class LogClientProxy implements Serializable {
                 }
                 break;
             } catch (LogException lex) {
-                if (isRecoverableException(lex) && attempt < MAX_ATTEMPTS - 1) {
+                if (shouldRetry(lex, attempt)) {
                     LOG.warn("Failed to fetch cursor, project {}, logstore {}, shard {}, position {}," +
                                     "errorCode {}, message {}, request ID {}. attempt {}",
                             project, logstore, shard, position, lex.GetErrorCode(),
@@ -99,6 +99,10 @@ public class LogClientProxy implements Serializable {
     private static boolean isRecoverableException(LogException lex) {
         final String errorCode = lex.GetErrorCode();
         return !errorCode.contains("Unauthorized") && !errorCode.contains("NotExist") && !errorCode.contains("Invalid");
+    }
+
+    private static boolean shouldRetry(LogException lex, int attempt) {
+        return isRecoverableException(lex) && attempt < MAX_ATTEMPTS - 1;
     }
 
     private String fetchCheckpoint(final String project,
@@ -137,7 +141,7 @@ public class LogClientProxy implements Serializable {
             try {
                 return logClient.pullLogs(request);
             } catch (LogException lex) {
-                if (isRecoverableException(lex) && attempt < MAX_ATTEMPTS - 1) {
+                if (shouldRetry(lex, attempt)) {
                     LOG.warn("Failed to pull logs from project {}, logstore {}, shard {}, cursor {}" +
                                     "errorCode {}, message {}, request ID {}. attempt {}",
                             project, logstore, shard, cursor, lex.GetErrorCode(),
@@ -165,7 +169,7 @@ public class LogClientProxy implements Serializable {
                 }
                 break;
             } catch (LogException lex) {
-                if (isRecoverableException(lex) && attempt < MAX_ATTEMPTS - 1) {
+                if (shouldRetry(lex, attempt)) {
                     LOG.warn("Failed to list shards for project {}, logstore {}, " +
                                     "errorCode {}, message {}, request ID {}. attempt {}",
                             project, logstore, lex.GetErrorCode(),
