@@ -169,7 +169,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private void updateCheckpointIfNeeded(int shardId, String cursor) {
         if (consumerGroup != null && logClient != null) {
-            logClient.updateCheckpoint(logProject, logStore, consumerGroup, consumer, shardId, cursor);
+            logClient.updateCheckpoint(logProject, logStore, consumerGroup, shardId, cursor);
         }
     }
 

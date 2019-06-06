@@ -68,7 +68,7 @@ public class CheckpointCommitter extends Thread {
         LOG.debug("Committing checkpoint to remote server");
         for (Integer shard : checkpoints.keySet()) {
             final String cursor = checkpoints.remove(shard);
-            logClient.updateCheckpoint(project, logstore, consumerGroup, consumer, shard, cursor);
+            logClient.updateCheckpoint(project, logstore, consumerGroup, shard, cursor);
         }
     }
 
