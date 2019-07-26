@@ -51,7 +51,7 @@ public class LogClientProxy implements Serializable {
             public String call() throws Exception {
                 return client.GetCursor(project, logstore, shard, ts).GetCursor();
             }
-        }, "Getting begin cursor failed");
+        }, "Getting cursor with timestamp failed");
     }
 
     public String fetchCheckpoint(final String project,

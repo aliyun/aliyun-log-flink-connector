@@ -43,12 +43,12 @@ public class RetryUtil {
                 if (shouldStop(e1, counter)) {
                     throw e1;
                 }
-                LOG.error("retry {} / {}, {}", counter, MAX_ATTEMPTS, errorMsg, e1);
+                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e1);
             } catch (Exception e2) {
                 if (counter >= MAX_ATTEMPTS) {
                     throw e2;
                 }
-                LOG.error("retry {} / {}, {}", counter, MAX_ATTEMPTS, errorMsg, e2);
+                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e2);
             }
             waitForMs(backoff);
             backoff = Math.min(backoff * 2, MAX_BACKOFF);

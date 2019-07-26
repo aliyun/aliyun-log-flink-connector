@@ -45,7 +45,6 @@ public class LogDataFetcher<T> {
     private final String logProject;
     private final String logStore;
     private final CheckpointMode checkpointMode;
-    private final String consumer;
     private final String consumerGroup;
     private CheckpointCommitter autoCommitter;
     private long commitInterval;
@@ -83,7 +82,6 @@ public class LogDataFetcher<T> {
             checkArgument(consumerGroup != null && !consumerGroup.isEmpty(),
                     "Missing parameter: " + ConfigConstants.LOG_CONSUMERGROUP);
         }
-        this.consumer = consumer;
         this.activeConsumers = new HashMap<Integer, ShardConsumer<T>>();
     }
 
