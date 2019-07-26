@@ -70,9 +70,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     public void run(SourceContext<T> sourceContext) throws Exception {
         createClient();
         final RuntimeContext ctx = getRuntimeContext();
-        String consumer = createConsumerName(ctx);
         LOG.debug("NumberOfTotalTask={}, IndexOfThisSubtask={}", ctx.getNumberOfParallelSubtasks(), ctx.getIndexOfThisSubtask());
-        LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, configProps, deserializer, logClient, checkpointMode, consumer);
+        LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, configProps, deserializer, logClient, checkpointMode);
         if (consumerGroup != null) {
             logClient.createConsumerGroup(fetcher.getLogProject(), fetcher.getLogStore(), consumerGroup);
         }
@@ -111,10 +110,6 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 LOG.warn("Error while closing log data fetcher", e);
             }
         }
-    }
-
-    private static String createConsumerName(final RuntimeContext ctx) {
-        return "flinkTask-" + ctx.getIndexOfThisSubtask() + "-Of-" + ctx.getNumberOfParallelSubtasks();
     }
 
     @Override

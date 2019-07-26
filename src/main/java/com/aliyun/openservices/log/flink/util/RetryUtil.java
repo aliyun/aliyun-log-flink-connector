@@ -54,6 +54,6 @@ public class RetryUtil {
             backoff = Math.min(backoff * 2, MAX_BACKOFF);
             counter++;
         }
-        throw new RuntimeException("No possible!");
+        throw new RuntimeException("Not possible!");
     }
 }

@@ -56,8 +56,7 @@ public class LogDataFetcher<T> {
                           Properties configProps,
                           LogDeserializationSchema<T> deserializationSchema,
                           LogClientProxy logClient,
-                          CheckpointMode checkpointMode,
-                          String consumer) {
+                          CheckpointMode checkpointMode) {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializationSchema = deserializationSchema;
