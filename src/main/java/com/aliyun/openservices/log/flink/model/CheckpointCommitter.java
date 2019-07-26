@@ -18,15 +18,13 @@ public class CheckpointCommitter extends Thread {
     private final String project;
     private final String logstore;
     private final String consumerGroup;
-    private final String consumer;
 
     CheckpointCommitter(LogClientProxy client,
                         long commitInterval,
                         LogDataFetcher fetcher,
                         String project,
                         String logstore,
-                        String consumerGroup,
-                        String consumer) {
+                        String consumerGroup) {
         checkpoints = new ConcurrentHashMap<Integer, String>();
         this.logClient = client;
         this.commitInterval = commitInterval;
@@ -34,7 +32,6 @@ public class CheckpointCommitter extends Thread {
         this.project = project;
         this.logstore = logstore;
         this.consumerGroup = consumerGroup;
-        this.consumer = consumer;
     }
 
     @Override
@@ -52,7 +49,7 @@ public class CheckpointCommitter extends Thread {
         }
     }
 
-    private void commitCheckpointPeriodic() {
+    private void commitCheckpointPeriodic() throws Exception {
         while (running) {
             commitCheckpoints();
             try {
@@ -64,7 +61,7 @@ public class CheckpointCommitter extends Thread {
         }
     }
 
-    private void commitCheckpoints() {
+    private void commitCheckpoints() throws Exception {
         LOG.debug("Committing checkpoint to remote server");
         for (Integer shard : checkpoints.keySet()) {
             final String cursor = checkpoints.remove(shard);

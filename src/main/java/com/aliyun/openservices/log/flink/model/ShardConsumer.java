@@ -59,32 +59,70 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
+    private String findInitialCursor(String position, int shardId) throws Exception {
+        String cursor;
+        if (Consts.LOG_BEGIN_CURSOR.equals(position)) {
+            cursor = logClient.getBeginCursor(logProject, logStore, shardId);
+        } else if (Consts.LOG_END_CURSOR.equals(position)) {
+            cursor = logClient.getEndCursor(logProject, logStore, shardId);
+        } else if (Consts.LOG_FROM_CHECKPOINT.equals(position)) {
+            // Fetch checkpoint first, if no checkpoint found, fallthrough default position.
+            cursor = logClient.fetchCheckpoint(logProject, logStore, consumerGroup, shardId);
+            if (cursor == null || cursor.isEmpty()) {
+                if (defaultPosition == null || defaultPosition.isEmpty()) {
+                    throw new RuntimeException("No checkpoint found");
+                }
+                LOG.info("No checkpoint available, fallthrough to default position {}", defaultPosition);
+                // FIXME change initialPosition as it will be used if pull logs return a InvalidCursor error
+                initialPosition = defaultPosition;
+                return findInitialCursor(defaultPosition, shardId);
+            }
+        } else {
+            int timestamp;
+            try {
+                timestamp = Integer.valueOf(position);
+            } catch (NumberFormatException nfe) {
+                throw new RuntimeException("Unable to parse position: " + position);
+            }
+            cursor = logClient.getCursorAtTimestamp(logProject, logStore, shardId, timestamp);
+        }
+        LOG.info("The starting cursor is {}", cursor);
+        return cursor;
+    }
+
+    private String restoreCursorFromStateOrCheckpoint(LogstoreShardState state,
+                                                      int shardId) throws Exception {
+        String cursor = state.getOffset();
+        if (cursor != null) {
+            LOG.info("Start from restored cursor: {}, shard: {}", cursor, shardId);
+            return cursor;
+        }
+        cursor = findInitialCursor(initialPosition, shardId);
+        if (cursor == null) {
+            throw new RuntimeException("Unable to find the initial cursor: " + initialPosition);
+        }
+        return cursor;
+    }
+
     public void run() {
         try {
             LogstoreShardState state = fetcher.getShardState(subscribedShardStateIndex);
             final LogstoreShardMeta shardMeta = state.getShardMeta();
             final int shardId = shardMeta.getShardId();
             LOG.info("Starting shard consumer for shard {}", shardId);
-            String cursor = state.getOffset();
-            if (cursor == null) {
-                cursor = logClient.getCursor(logProject, logStore, shardId, initialPosition, defaultPosition, consumerGroup);
-                LOG.info("Start from fetched cursor: {}, shard: {}", cursor, shardId);
-            } else {
-                LOG.info("Start from restored cursor: {}, shard: {}", cursor, shardId);
-            }
+            String cursor = restoreCursorFromStateOrCheckpoint(state, shardId);
             while (isRunning()) {
                 PullLogsResponse response = null;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
                     response = logClient.pullLogs(logProject, logStore, shardId, cursor, fetchSize);
                 } catch (LogException ex) {
-                    LOG.warn("Failed to fetch logs, error code: {}, message: {}, shard: {}",
-                            ex.GetErrorCode(), ex.GetErrorMessage(), shardId);
-
+                    LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
+                    // TODO Remove the following code
                     if ("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())
                             && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
                         LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
-                        cursor = logClient.getCursor(logProject, logStore, shardId, defaultPosition, consumerGroup);
+                        cursor = findInitialCursor(defaultPosition, shardId);
                     } else {
                         throw ex;
                     }

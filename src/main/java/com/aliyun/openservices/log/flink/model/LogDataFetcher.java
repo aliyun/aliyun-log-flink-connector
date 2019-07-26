@@ -1,5 +1,6 @@
 package com.aliyun.openservices.log.flink.model;
 
+import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
@@ -113,9 +114,15 @@ public class LogDataFetcher<T> {
         });
     }
 
-    public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws LogException {
+    public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
         List<LogstoreShardMeta> subShards = new ArrayList<LogstoreShardMeta>();
-        for (LogstoreShardMeta shard : logClient.listShards(logProject, logStore)) {
+        List<Shard> shards = logClient.listShards(logProject, logStore);
+        List<LogstoreShardMeta> shardMetas = new ArrayList<LogstoreShardMeta>(shards.size());
+        for (Shard shard : shards) {
+            LogstoreShardMeta shardMeta = new LogstoreShardMeta(shard.GetShardId(), shard.getInclusiveBeginKey(), shard.getExclusiveEndKey(), shard.getStatus());
+            shardMetas.add(shardMeta);
+        }
+        for (LogstoreShardMeta shard : shardMetas) {
             if (!isThisSubtaskShouldSubscribeTo(shard, totalNumberOfConsumerSubtasks, indexOfThisConsumerSubtask)) {
                 continue;
             }
@@ -226,7 +233,7 @@ public class LogDataFetcher<T> {
 
     private void startCommitThreadIfNeeded() {
         if (checkpointMode == CheckpointMode.PERIODIC) {
-            autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, logProject, logStore, consumerGroup, consumer);
+            autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, logProject, logStore, consumerGroup);
             autoCommitter.start();
             LOG.info("Checkpoint periodic committer thread started");
         }
