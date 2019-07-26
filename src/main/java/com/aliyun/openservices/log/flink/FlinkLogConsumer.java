@@ -73,7 +73,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         LOG.debug("NumberOfTotalTask={}, IndexOfThisSubtask={}", ctx.getNumberOfParallelSubtasks(), ctx.getIndexOfThisSubtask());
         LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, configProps, deserializer, logClient, checkpointMode);
         if (consumerGroup != null) {
-            logClient.createConsumerGroup(fetcher.getLogProject(), fetcher.getLogStore(), consumerGroup);
+            logClient.createConsumerGroup(fetcher.getProject(), fetcher.getLogStore(), consumerGroup);
         }
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
         for (LogstoreShardMeta shard : newShards) {
