@@ -50,9 +50,11 @@ public class RetryUtil {
                 }
                 LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e2);
             }
-            waitForMs(backoff);
-            backoff = Math.min(backoff * 2, MAX_BACKOFF);
-            counter++;
+            if (counter < MAX_ATTEMPTS) {
+                waitForMs(backoff);
+                backoff = Math.min(backoff * 2, MAX_BACKOFF);
+                counter++;
+            }
         }
         throw new RuntimeException("Not possible!");
     }
