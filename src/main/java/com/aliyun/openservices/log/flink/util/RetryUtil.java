@@ -22,8 +22,10 @@ public class RetryUtil {
     }
 
     private static boolean isRecoverableException(LogException lex) {
-        // Retry on Internal Server Error and Throttling Error
-        return lex != null && (lex.GetHttpCode() >= 500 || lex.GetHttpCode() == 403);
+        return lex != null
+                && (lex.GetHttpCode() >= 500 // Internal Server Error
+                || lex.GetHttpCode() == 403 // Throttling Error
+                || lex.GetHttpCode() == -1); // Client error like connection timeout
     }
 
     private static boolean shouldStop(LogException ex, int retry) {
@@ -33,7 +35,7 @@ public class RetryUtil {
         return retry > MAX_ATTEMPTS;
     }
 
-    public static <T> T retryCall(Callable<T> callable, String errorMsg) throws Exception {
+    public static <T> T retryCall(Callable<T> callable) throws Exception {
         int counter = 0;
         long backoff = INITIAL_BACKOFF;
         while (counter <= MAX_ATTEMPTS) {
@@ -43,12 +45,12 @@ public class RetryUtil {
                 if (shouldStop(e1, counter)) {
                     throw e1;
                 }
-                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e1);
+                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, e1.GetErrorMessage());
             } catch (Exception e2) {
                 if (counter >= MAX_ATTEMPTS) {
                     throw e2;
                 }
-                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e2);
+                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, e2);
             }
             if (counter < MAX_ATTEMPTS) {
                 waitForMs(backoff);
