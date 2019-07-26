@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Callable;
 
-public class RetryUtil {
+class RetryUtil {
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
 
     private static final long INITIAL_BACKOFF = 500;
@@ -35,7 +35,7 @@ public class RetryUtil {
         return retry > MAX_ATTEMPTS;
     }
 
-    public static <T> T retryCall(Callable<T> callable) throws Exception {
+    static <T> T retryCall(Callable<T> callable, String errorMsg) throws LogException {
         int counter = 0;
         long backoff = INITIAL_BACKOFF;
         while (counter <= MAX_ATTEMPTS) {
@@ -43,14 +43,15 @@ public class RetryUtil {
                 return callable.call();
             } catch (LogException e1) {
                 if (shouldStop(e1, counter)) {
+                    // TODO Throw RuntimeException here
                     throw e1;
                 }
-                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, e1.GetErrorMessage());
+                LOG.error("{}: {}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e1.GetErrorMessage());
             } catch (Exception e2) {
                 if (counter >= MAX_ATTEMPTS) {
-                    throw e2;
+                    throw new RuntimeException(errorMsg, e2);
                 }
-                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, e2);
+                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e2);
             }
             if (counter < MAX_ATTEMPTS) {
                 waitForMs(backoff);

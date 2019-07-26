@@ -1,13 +1,13 @@
 package com.aliyun.openservices.log.flink.sample;
 
+import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.FlinkLogProducer;
+import com.aliyun.openservices.log.flink.LogPartitioner;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
-import com.aliyun.openservices.log.flink.ConfigConstants;
-import com.aliyun.openservices.log.flink.FlinkLogProducer;
-import com.aliyun.openservices.log.flink.LogPartitioner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,11 +17,11 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Properties;
 
 public class ProducerSample {
-    public static String sEndpoint = "cn-hangzhou.log.aliyuncs.com";
-    public static String sAccessKeyId = "";
-    public static String sAccessKey = "";
-    public static String sProject = "ali-cn-hangzhou-sls-admin";
-    public static String sLogstore = "test-flink-producer";
+    private static final String SLS_ENDPOINT = "cn-hangzhou.log.aliyuncs.com";
+    private static final String ACCESS_KEY_ID = "";
+    private static final String ACCESS_KEY = "";
+    private static final String SLS_PROJECT = "ali-cn-hangzhou-sls-admin";
+    private static final String SLS_LOGSTORE = "test-flink-producer";
     private static final Logger LOG = LoggerFactory.getLogger(ConsumerSample.class);
 
 
@@ -35,11 +35,11 @@ public class ProducerSample {
         DataStream<String> simpleStringStream = env.addSource(new EventsGenerator());
 
         Properties configProps = new Properties();
-        configProps.put(ConfigConstants.LOG_ENDPOINT, sEndpoint);
-        configProps.put(ConfigConstants.LOG_ACCESSSKEYID, sAccessKeyId);
-        configProps.put(ConfigConstants.LOG_ACCESSKEY, sAccessKey);
-        configProps.put(ConfigConstants.LOG_PROJECT, sProject);
-        configProps.put(ConfigConstants.LOG_LOGSTORE, sLogstore);
+        configProps.put(ConfigConstants.LOG_ENDPOINT, SLS_ENDPOINT);
+        configProps.put(ConfigConstants.LOG_ACCESSSKEYID, ACCESS_KEY_ID);
+        configProps.put(ConfigConstants.LOG_ACCESSKEY, ACCESS_KEY);
+        configProps.put(ConfigConstants.LOG_PROJECT, SLS_PROJECT);
+        configProps.put(ConfigConstants.LOG_LOGSTORE, SLS_LOGSTORE);
 
         FlinkLogProducer<String> logProducer = new FlinkLogProducer<String>(new SimpleLogSerializer(), configProps);
         logProducer.setCustomPartitioner(new LogPartitioner<String>() {
@@ -49,17 +49,18 @@ public class ProducerSample {
                     MessageDigest md = MessageDigest.getInstance("MD5");
                     md.update(element.getBytes());
                     String hash = new BigInteger(1, md.digest()).toString(16);
-                    while(hash.length() < 32) hash = "0" + hash;
+                    while (hash.length() < 32) hash = "0" + hash;
                     return hash;
                 } catch (NoSuchAlgorithmException e) {
                 }
-                return  "0000000000000000000000000000000000000000000000000000000000000000";
+                return "0000000000000000000000000000000000000000000000000000000000000000";
             }
         });
         simpleStringStream.addSink(logProducer);
 
         env.execute("flink log producer");
     }
+
     public static class EventsGenerator implements SourceFunction<String> {
         private boolean running = true;
 
