@@ -100,29 +100,28 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         // do nothing
     }
 
-    public void invoke(T value) throws Exception {
+    @Override
+    public void invoke(T value, Context context) {
         if (this.logProducer == null) {
-            throw new RuntimeException("log producer has been closed");
+            throw new RuntimeException("Flink log producer has been initialized yet!");
         }
+        // TODO Support customize deserializer here
         RawLogGroup logGroup = schema.serialize(value);
         String shardHashKey = null;
         if (customPartitioner != null) {
             shardHashKey = customPartitioner.getHashKey(value);
         }
         List<LogItem> logs = new ArrayList<LogItem>();
-        for (RawLog rlog : logGroup.getLogs()) {
-            LogItem li = new LogItem(rlog.getTime());
-            for (Map.Entry<String, String> kv : rlog.getContents().entrySet()) {
-                li.PushBack(kv.getKey(), kv.getValue());
+        for (RawLog rawLog : logGroup.getLogs()) {
+            LogItem record = new LogItem(rawLog.getTime());
+            for (Map.Entry<String, String> kv : rawLog.getContents().entrySet()) {
+                record.PushBack(kv.getKey(), kv.getValue());
             }
-            logs.add(li);
+            logs.add(record);
         }
         ProducerCallback cloneCallback = callback.clone();
         cloneCallback.init(logProducer, logProject, logStore, logGroup.getTopic(), shardHashKey, logGroup.getSource(), logs);
         logProducer.send(logProject, logStore, logGroup.getTopic(), shardHashKey, logGroup.getSource(), logs, cloneCallback);
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("send logs...");
-        }
     }
 
     @Override
@@ -134,7 +133,6 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             logProducer = null;
         }
         super.close();
-        LOG.info("closed flink log producer");
-
+        LOG.info("Flink log producer has been closed");
     }
 }

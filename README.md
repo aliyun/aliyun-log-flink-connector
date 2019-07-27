@@ -3,6 +3,11 @@
 
 
 #### Change log
+
+##### 0.1.13
+- Increment maximum retry backoff.
+- Update SDK to 0.6.34.
+
 ##### 0.1.12
-- 支持自动提交checkpoint
-- 优化限流逻辑
+- Add support for auto commit checkpoint.
+- Optimize throttling.
