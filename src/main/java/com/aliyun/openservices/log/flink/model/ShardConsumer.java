@@ -66,16 +66,18 @@ public class ShardConsumer<T> implements Runnable {
         } else if (Consts.LOG_END_CURSOR.equals(position)) {
             cursor = logClient.getEndCursor(logProject, logStore, shardId);
         } else if (Consts.LOG_FROM_CHECKPOINT.equals(position)) {
-            // Fetch checkpoint first, if no checkpoint found, fallthrough default position.
             cursor = logClient.fetchCheckpoint(logProject, logStore, consumerGroup, shardId);
             if (cursor == null || cursor.isEmpty()) {
                 if (defaultPosition == null || defaultPosition.isEmpty()) {
-                    throw new RuntimeException("No checkpoint found");
+                    // This should never happen, if no checkpoint found from server side we can
+                    // also think the checkpoint is begin cursor. So if no default position is
+                    // specified, use the begin cursor as default position is reasonable.
+                    throw new RuntimeException("No checkpoint found and default position is not specified");
                 }
                 LOG.info("No checkpoint available, fallthrough to default position {}", defaultPosition);
                 // FIXME change initialPosition as it will be used if pull logs return a InvalidCursor error
                 initialPosition = defaultPosition;
-                return findInitialCursor(defaultPosition, shardId);
+                cursor = findInitialCursor(defaultPosition, shardId);
             }
         } else {
             int timestamp;
@@ -94,12 +96,12 @@ public class ShardConsumer<T> implements Runnable {
                                                       int shardId) throws Exception {
         String cursor = state.getOffset();
         if (cursor != null) {
-            LOG.info("Start from restored cursor: {}, shard: {}", cursor, shardId);
+            LOG.info("Restored cursor from Flink state: {}, shard: {}", cursor, shardId);
             return cursor;
         }
         cursor = findInitialCursor(initialPosition, shardId);
         if (cursor == null) {
-            throw new RuntimeException("Unable to find the initial cursor: " + initialPosition);
+            throw new RuntimeException("Unable to find the initial cursor from: " + initialPosition);
         }
         return cursor;
     }

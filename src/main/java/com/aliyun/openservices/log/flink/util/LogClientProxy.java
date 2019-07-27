@@ -91,7 +91,7 @@ public class LogClientProxy implements Serializable {
             public PullLogsResponse call() throws Exception {
                 return client.pullLogs(request);
             }
-        }, "Pull logs failed");
+        }, "Error while pulling logs");
     }
 
     public List<Shard> listShards(final String project, final String logstore) throws LogException {
