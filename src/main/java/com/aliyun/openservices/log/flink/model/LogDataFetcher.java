@@ -1,5 +1,6 @@
 package com.aliyun.openservices.log.flink.model;
 
+import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
@@ -41,10 +42,9 @@ public class LogDataFetcher<T> {
     private volatile Thread mainThread;
     private volatile boolean running = true;
     private volatile List<LogstoreShardState> subscribedShardsState;
-    private final String logProject;
+    private final String project;
     private final String logStore;
     private final CheckpointMode checkpointMode;
-    private final String consumer;
     private final String consumerGroup;
     private CheckpointCommitter autoCommitter;
     private long commitInterval;
@@ -56,8 +56,7 @@ public class LogDataFetcher<T> {
                           Properties configProps,
                           LogDeserializationSchema<T> deserializationSchema,
                           LogClientProxy logClient,
-                          CheckpointMode checkpointMode,
-                          String consumer) {
+                          CheckpointMode checkpointMode) {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializationSchema = deserializationSchema;
@@ -67,7 +66,7 @@ public class LogDataFetcher<T> {
         this.subscribedShardsState = new LinkedList<LogstoreShardState>();
         this.shardConsumersExecutor = createShardConsumersThreadPool(runtimeContext.getTaskNameWithSubtasks());
         this.error = new AtomicReference<Throwable>();
-        this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
+        this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
         this.logClient = logClient;
         this.checkpointMode = checkpointMode;
@@ -82,12 +81,11 @@ public class LogDataFetcher<T> {
             checkArgument(consumerGroup != null && !consumerGroup.isEmpty(),
                     "Missing parameter: " + ConfigConstants.LOG_CONSUMERGROUP);
         }
-        this.consumer = consumer;
         this.activeConsumers = new HashMap<Integer, ShardConsumer<T>>();
     }
 
-    public String getLogProject() {
-        return logProject;
+    public String getProject() {
+        return project;
     }
 
     public String getLogStore() {
@@ -113,9 +111,20 @@ public class LogDataFetcher<T> {
         });
     }
 
-    public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws LogException {
-        List<LogstoreShardMeta> subShards = new ArrayList<LogstoreShardMeta>();
-        for (LogstoreShardMeta shard : logClient.listShards(logProject, logStore)) {
+    private List<LogstoreShardMeta> listShards() throws Exception {
+        List<Shard> shards = logClient.listShards(project, logStore);
+        List<LogstoreShardMeta> shardMetas = new ArrayList<LogstoreShardMeta>(shards.size());
+        for (Shard shard : shards) {
+            LogstoreShardMeta shardMeta = new LogstoreShardMeta(shard.GetShardId(), shard.getInclusiveBeginKey(), shard.getExclusiveEndKey(), shard.getStatus());
+            shardMetas.add(shardMeta);
+        }
+        return shardMetas;
+    }
+
+    public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
+        List<LogstoreShardMeta> shardMetas = listShards();
+        List<LogstoreShardMeta> newShards = new ArrayList<LogstoreShardMeta>();
+        for (LogstoreShardMeta shard : shardMetas) {
             if (!isThisSubtaskShouldSubscribeTo(shard, totalNumberOfConsumerSubtasks, indexOfThisConsumerSubtask)) {
                 continue;
             }
@@ -127,7 +136,7 @@ public class LogDataFetcher<T> {
                 if (shardMeta.getShardId() == shardID) {
                     if (!shardMeta.getShardStatus().equalsIgnoreCase(status)
                             || shardMeta.needSetEndCursor()) {
-                        String endCursor = logClient.getEndCursor(logProject, logStore, shardID);
+                        String endCursor = logClient.getEndCursor(project, logStore, shardID);
                         LOG.info("The latest cursor of shard {} is {}", shardID, endCursor);
                         shardMeta.setEndCursor(endCursor);
                         shardMeta.setShardStatus(status);
@@ -144,10 +153,10 @@ public class LogDataFetcher<T> {
             }
             if (add) {
                 LOG.info("Subscribe new shard: {}, task: {}", shard.toString(), indexOfThisConsumerSubtask);
-                subShards.add(shard);
+                newShards.add(shard);
             }
         }
-        return subShards;
+        return newShards;
     }
 
     public int registerNewSubscribedShardState(LogstoreShardState state) {
@@ -226,7 +235,7 @@ public class LogDataFetcher<T> {
 
     private void startCommitThreadIfNeeded() {
         if (checkpointMode == CheckpointMode.PERIODIC) {
-            autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, logProject, logStore, consumerGroup, consumer);
+            autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, project, logStore, consumerGroup);
             autoCommitter.start();
             LOG.info("Checkpoint periodic committer thread started");
         }
