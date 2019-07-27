@@ -33,7 +33,7 @@ public class LogClientProxy implements Serializable {
             public String call() throws Exception {
                 return client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
             }
-        }, "Getting end cursor failed");
+        }, "Error while getting end cursor");
     }
 
     public String getBeginCursor(final String project, final String logstore, final int shard) throws LogException {
@@ -42,7 +42,7 @@ public class LogClientProxy implements Serializable {
             public String call() throws Exception {
                 return client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor();
             }
-        }, "Getting begin cursor failed");
+        }, "Error while getting begin cursor");
     }
 
     public String getCursorAtTimestamp(final String project, final String logstore, final int shard, final int ts) throws LogException {
@@ -51,7 +51,7 @@ public class LogClientProxy implements Serializable {
             public String call() throws Exception {
                 return client.GetCursor(project, logstore, shard, ts).GetCursor();
             }
-        }, "Getting cursor with timestamp failed");
+        }, "Error while getting cursor with timestamp");
     }
 
     public String fetchCheckpoint(final String project,
@@ -80,7 +80,7 @@ public class LogClientProxy implements Serializable {
                 }
                 return null;
             }
-        }, "Getting checkpoint failed");
+        }, "Error while getting checkpoint");
     }
 
     public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, int count)
@@ -100,7 +100,7 @@ public class LogClientProxy implements Serializable {
             public List<Shard> call() throws Exception {
                 return client.ListShard(project, logstore).GetShards();
             }
-        }, "List shards failed");
+        }, "Error while listing shards");
     }
 
     public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)
@@ -118,7 +118,7 @@ public class LogClientProxy implements Serializable {
                 }
                 return null;
             }
-        }, "Creating consumer group failed");
+        }, "Error while creating consumer group");
     }
 
     public void updateCheckpoint(final String project,
@@ -136,6 +136,6 @@ public class LogClientProxy implements Serializable {
                 client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
                 return null;
             }
-        }, "Updating checkpoint failed");
+        }, "Error while updating checkpoint");
     }
 }

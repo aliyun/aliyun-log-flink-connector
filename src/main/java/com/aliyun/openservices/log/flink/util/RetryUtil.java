@@ -28,13 +28,6 @@ class RetryUtil {
                 || lex.GetHttpCode() == -1); // Client error like connection timeout
     }
 
-    private static boolean shouldStop(LogException ex, int retry) {
-        if (isRecoverableException(ex)) {
-            return false;
-        }
-        return retry > MAX_ATTEMPTS;
-    }
-
     static <T> T retryCall(Callable<T> callable, String errorMsg) throws LogException {
         int counter = 0;
         long backoff = INITIAL_BACKOFF;
@@ -42,22 +35,20 @@ class RetryUtil {
             try {
                 return callable.call();
             } catch (LogException e1) {
-                if (shouldStop(e1, counter)) {
-                    // TODO Throw RuntimeException here
+                if (isRecoverableException(e1) && counter < MAX_ATTEMPTS) {
+                    LOG.error("{}: {}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e1.GetErrorMessage());
+                } else {
                     throw e1;
                 }
-                LOG.error("{}: {}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e1.GetErrorMessage());
             } catch (Exception e2) {
                 if (counter >= MAX_ATTEMPTS) {
                     throw new RuntimeException(errorMsg, e2);
                 }
                 LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e2);
             }
-            if (counter < MAX_ATTEMPTS) {
-                waitForMs(backoff);
-                backoff = Math.min(backoff * 2, MAX_BACKOFF);
-                counter++;
-            }
+            waitForMs(backoff);
+            backoff = Math.min(backoff * 2, MAX_BACKOFF);
+            counter++;
         }
         throw new RuntimeException("Not possible!");
     }
