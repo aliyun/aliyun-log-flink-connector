@@ -163,13 +163,14 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private void updateCheckpointIfNeeded(int shardId, String cursor) throws Exception {
         if (consumerGroup != null && logClient != null) {
+            LOG.debug("Updating checkpoint of shard {} to {}", shardId, cursor);
             logClient.updateCheckpoint(logProject, logStore, consumerGroup, shardId, cursor);
         }
     }
 
     @Override
     public void initializeState(FunctionInitializationContext context) throws Exception {
-        LOG.info("initializeState...");
+        LOG.debug("initializeState...");
         TypeInformation<Tuple2<LogstoreShardMeta, String>> shardsStateTypeInfo = new TupleTypeInfo<Tuple2<LogstoreShardMeta, String>>(
                 TypeInformation.of(LogstoreShardMeta.class),
                 TypeInformation.of(String.class));

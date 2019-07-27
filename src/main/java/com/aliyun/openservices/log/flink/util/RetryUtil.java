@@ -36,7 +36,7 @@ class RetryUtil {
                 return callable.call();
             } catch (LogException e1) {
                 if (isRecoverableException(e1) && counter < MAX_ATTEMPTS) {
-                    LOG.error("{}: {}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e1.GetErrorMessage());
+                    LOG.error("{}: {}, retry {}/{}", errorMsg, e1.GetErrorMessage(), counter, MAX_ATTEMPTS);
                 } else {
                     throw e1;
                 }
@@ -44,7 +44,7 @@ class RetryUtil {
                 if (counter >= MAX_ATTEMPTS) {
                     throw new RuntimeException(errorMsg, e2);
                 }
-                LOG.error("{}, retry {}/{}", counter, MAX_ATTEMPTS, errorMsg, e2);
+                LOG.error("{}, retry {}/{}", errorMsg, counter, MAX_ATTEMPTS, e2);
             }
             waitForMs(backoff);
             backoff = Math.min(backoff * 2, MAX_BACKOFF);
