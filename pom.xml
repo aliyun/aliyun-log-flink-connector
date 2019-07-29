@@ -51,6 +51,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.26</version>
+        </dependency>
+        <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
             <version>2.5.0</version>
@@ -58,12 +63,32 @@
         <dependency>
             <groupId>com.aliyun.openservices</groupId>
             <artifactId>aliyun-log</artifactId>
-            <version>0.6.34</version>
+            <version>0.6.35</version>
+            <exclusions>
+                <exclusion>
+                    <artifactId>commons-lang</artifactId>
+                    <groupId>commons-lang</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>commons-logging</artifactId>
+                    <groupId>commons-logging</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.aliyun.openservices</groupId>
             <artifactId>log-loghub-producer</artifactId>
             <version>0.1.8</version>
+            <exclusions>
+                <exclusion>
+                    <artifactId>aliyun-log</artifactId>
+                    <groupId>com.aliyun.openservices</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>fastjson</artifactId>
+                    <groupId>com.alibaba</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
     <build>
