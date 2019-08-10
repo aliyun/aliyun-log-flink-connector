@@ -82,7 +82,7 @@ public class ShardConsumer<T> implements Runnable {
         } else {
             int timestamp;
             try {
-                timestamp = Integer.valueOf(position);
+                timestamp = Integer.parseInt(position);
             } catch (NumberFormatException nfe) {
                 throw new RuntimeException("Unable to parse position: " + position);
             }

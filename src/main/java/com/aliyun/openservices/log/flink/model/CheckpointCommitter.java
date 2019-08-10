@@ -81,7 +81,7 @@ public class CheckpointCommitter extends Thread {
         try {
             commitCheckpoints();
         } catch (final Exception ex) {
-            LOG.error("Cannot commit checkpoint while shutting down...", ex);
+            LOG.error("Error while committing checkpoint", ex);
         }
         running = false;
     }
