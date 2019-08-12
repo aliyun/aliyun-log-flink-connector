@@ -6,29 +6,14 @@ Flink log connector是阿里云日志服务提供的，用于对接flink的工�
 生产者用于将数据写入日志服务，使用connector时，需要在项目中添加maven依赖：
 ```
 <dependency>
-    <groupId>org.apache.flink</groupId>
-    <artifactId>flink-streaming-java_2.11</artifactId>
-    <version>1.3.2</version>
-</dependency>
-<dependency>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector</artifactId>
-    <version>0.1.7</version>
+    <version>0.1.13</version>
 </dependency>
 <dependency>
     <groupId>com.google.protobuf</groupId>
     <artifactId>protobuf-java</artifactId>
     <version>2.5.0</version>
-</dependency>
-<dependency>
-    <groupId>com.aliyun.openservices</groupId>
-    <artifactId>aliyun-log</artifactId>
-    <version>0.6.29</version>
-</dependency>
-<dependency>
-    <groupId>com.aliyun.openservices</groupId>
-    <artifactId>log-loghub-producer</artifactId>
-    <version>0.1.8</version>
 </dependency>
 ```
 ## 用法

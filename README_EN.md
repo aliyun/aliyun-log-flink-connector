@@ -6,29 +6,14 @@ The consumer reads data from Log Service. It supports the exactly-once syntax an
 The producer writes data into Log Service. When using the connector, you must add the Maven dependency to the project:
 ```
 <dependency>
-    <groupId>org.apache.flink</groupId>
-    <artifactId>flink-streaming-java_2.11</artifactId>
-    <version>1.3.2</version>
-</dependency>
-<dependency>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector</artifactId>
-    <version>0.1.7</version>
+    <version>0.1.13</version>
 </dependency>
 <dependency>
     <groupId>com.google.protobuf</groupId>
     <artifactId>protobuf-java</artifactId>
     <version>2.5.0</version>
-</dependency>
-<dependency>
-    <groupId>com.aliyun.openservices</groupId>
-    <artifactId>aliyun-log</artifactId>
-    <version>0.6.10</version>
-</dependency>
-<dependency>
-    <groupId>com.aliyun.openservices</groupId>
-    <artifactId>log-loghub-producer</artifactId>
-    <version>0.1.8</version>
 </dependency>
 ```
 ## Usage
