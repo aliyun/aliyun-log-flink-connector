@@ -33,10 +33,16 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private final String logStore;
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
+        if (schema == null) {
+            throw new IllegalArgumentException("schema cannot be null");
+        }
+        if (configProps == null) {
+            throw new IllegalArgumentException("configProps cannot be null");
+        }
         this.configProps = configProps;
         this.schema = schema;
-        logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
+        this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
+        this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
     }
 
     public Properties getConfigProps() {
@@ -75,15 +81,15 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         ProducerConfig producerConfig = new ProducerConfig();
         producerConfig.userAgent = Consts.LOG_CONNECTOR_USER_AGENT;
         if (configProps.containsKey(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT))
-            producerConfig.maxIOThreadSizeInPool = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT));
+            producerConfig.maxIOThreadSizeInPool = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT));
         if (configProps.containsKey(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS))
-            producerConfig.packageTimeoutInMS = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS));
+            producerConfig.packageTimeoutInMS = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS));
         if (configProps.containsKey(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE))
-            producerConfig.logsCountPerPackage = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE));
+            producerConfig.logsCountPerPackage = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE));
         if (configProps.containsKey(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE))
-            producerConfig.logsBytesPerPackage = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE));
+            producerConfig.logsBytesPerPackage = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE));
         if (configProps.containsKey(ConfigConstants.LOG_MEM_POOL_BYTES))
-            producerConfig.memPoolSizeInByte = Integer.valueOf(configProps.getProperty(ConfigConstants.LOG_MEM_POOL_BYTES));
+            producerConfig.memPoolSizeInByte = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_MEM_POOL_BYTES));
         logProducer = new LogProducer(producerConfig);
         logProducer.setProjectConfig(new ProjectConfig(logProject, configProps.getProperty(ConfigConstants.LOG_ENDPOINT), configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID), configProps.getProperty(ConfigConstants.LOG_ACCESSKEY)));
         LOG.info("Started log producer instance");
@@ -105,19 +111,28 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (this.logProducer == null) {
             throw new RuntimeException("Flink log producer has not been initialized yet!");
         }
-        // TODO Support customize deserializer here
         RawLogGroup logGroup = schema.serialize(value);
+        if (logGroup == null) {
+            LOG.info("The serialized log group is null, will not send any data to log service");
+            return;
+        }
         String shardHashKey = null;
         if (customPartitioner != null) {
             shardHashKey = customPartitioner.getHashKey(value);
         }
         List<LogItem> logs = new ArrayList<LogItem>();
         for (RawLog rawLog : logGroup.getLogs()) {
+            if (rawLog == null) {
+                continue;
+            }
             LogItem record = new LogItem(rawLog.getTime());
             for (Map.Entry<String, String> kv : rawLog.getContents().entrySet()) {
                 record.PushBack(kv.getKey(), kv.getValue());
             }
             logs.add(record);
+        }
+        if (logs.isEmpty()) {
+            return;
         }
         ProducerCallback cloneCallback = callback.clone();
         cloneCallback.init(logProducer, logProject, logStore, logGroup.getTopic(), shardHashKey, logGroup.getSource(), logs);
