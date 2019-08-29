@@ -4,7 +4,9 @@ import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
+import com.aliyun.openservices.log.flink.model.LogstoreShardState;
 import com.aliyun.openservices.log.flink.util.Consts;
+import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.ListState;
@@ -18,8 +20,6 @@ import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
-import com.aliyun.openservices.log.flink.model.LogstoreShardState;
-import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,7 +118,6 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             LOG.info("snapshotState() called on closed source");
         } else {
             LOG.info("Snapshotting state ...");
-
             cursorStateForCheckpoint.clear();
 
             if (fetcher == null) {
@@ -126,7 +125,6 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                     for (Map.Entry<LogstoreShardMeta, String> entry : cursorsToRestore.entrySet()) {
                         // cursorsToRestore is the restored global union state;
                         // should only snapshot shards that actually belong to us
-
                         if (LogDataFetcher.isThisSubtaskShouldSubscribeTo(
                                 entry.getKey(),
                                 getRuntimeContext().getNumberOfParallelSubtasks(),

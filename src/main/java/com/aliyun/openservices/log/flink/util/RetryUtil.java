@@ -21,28 +21,22 @@ class RetryUtil {
         }
     }
 
-    private static boolean isRecoverableException(LogException lex) {
-        return lex != null
-                && (lex.GetHttpCode() >= 500 // Internal Server Error
-                || lex.GetHttpCode() == 403 // Throttling Error
-                || lex.GetHttpCode() == -1); // Client error like connection timeout
-    }
-
     static <T> T retryCall(Callable<T> callable, String errorMsg) throws LogException {
         int counter = 0;
         long backoff = INITIAL_BACKOFF;
         while (counter <= MAX_ATTEMPTS) {
             try {
+                // TODO Handle ignorable exception in call()
                 return callable.call();
             } catch (LogException e1) {
-                if (isRecoverableException(e1) && counter < MAX_ATTEMPTS) {
+                if (counter < MAX_ATTEMPTS) {
                     LOG.error("{}: {}, retry {}/{}", errorMsg, e1.GetErrorMessage(), counter, MAX_ATTEMPTS);
                 } else {
                     throw e1;
                 }
             } catch (Exception e2) {
                 if (counter >= MAX_ATTEMPTS) {
-                    throw new RuntimeException(errorMsg, e2);
+                    throw new LogException("Unknown", errorMsg, e2, "");
                 }
                 LOG.error("{}, retry {}/{}", errorMsg, counter, MAX_ATTEMPTS, e2);
             }

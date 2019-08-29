@@ -133,7 +133,16 @@ public class LogClientProxy implements Serializable {
         RetryUtil.retryCall(new Callable<Void>() {
             @Override
             public Void call() throws Exception {
-                client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
+                try {
+                    client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
+                } catch (LogException ex) {
+                    if (ex.GetHttpCode() != 404) {
+                        // TODO ignore 404 here but it's not a good way
+                        throw ex;
+                    }
+                    LOG.warn("Update checkpoint failed: {}, {}, {}",
+                            ex.GetErrorCode(), ex.GetErrorMessage(), ex.GetRequestId());
+                }
                 return null;
             }
         }, "Error while updating checkpoint");
