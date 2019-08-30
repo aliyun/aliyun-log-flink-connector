@@ -11,7 +11,7 @@ class RetryUtil {
 
     private static final long INITIAL_BACKOFF = 500;
     private static final long MAX_BACKOFF = 5000;
-    private static final int MAX_ATTEMPTS = 32;
+    private static final int MAX_ATTEMPTS = 20;
 
     private static void waitForMs(long sleepMs) {
         try {
@@ -19,10 +19,6 @@ class RetryUtil {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    private static boolean isRecoverableException(LogException lex) {
-        return lex.GetHttpCode() != 400 && lex.GetHttpCode() != 405 && lex.GetHttpCode() != 415;
     }
 
     static <T> T retryCall(Callable<T> callable, String errorMsg) throws LogException {
@@ -33,8 +29,12 @@ class RetryUtil {
                 // TODO Handle ignorable exception in call()
                 return callable.call();
             } catch (LogException e1) {
-                if (isRecoverableException(e1) && counter < MAX_ATTEMPTS) {
+                if (e1.GetHttpCode() >= 500) {
+                    // always retry for internal server error
+                    counter = 0;
+                } else if (counter < MAX_ATTEMPTS) {
                     LOG.error("{}: {}, retry {}/{}", errorMsg, e1.GetErrorMessage(), counter, MAX_ATTEMPTS);
+                    counter++;
                 } else {
                     throw e1;
                 }
@@ -43,10 +43,10 @@ class RetryUtil {
                     throw new LogException("Unknown", errorMsg, e2, "");
                 }
                 LOG.error("{}, retry {}/{}", errorMsg, counter, MAX_ATTEMPTS, e2);
+                counter++;
             }
             waitForMs(backoff);
             backoff = Math.min(backoff * 2, MAX_BACKOFF);
-            counter++;
         }
         throw new RuntimeException("Not possible!");
     }
