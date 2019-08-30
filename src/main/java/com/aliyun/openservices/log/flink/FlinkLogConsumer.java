@@ -196,7 +196,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                     LOG.warn("Unable to update restored checkpoint to server", ex);
                 }
             }
-            LOG.info("Setting restore state in the FlinkLogConsumer. Using the following offsets: {}", cursorsToRestore);
+            LOG.info("The following offsets have been restored from Flink state: {}", cursorsToRestore);
         }
     }
 
