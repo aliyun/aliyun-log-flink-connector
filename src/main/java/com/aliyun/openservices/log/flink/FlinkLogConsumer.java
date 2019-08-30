@@ -46,7 +46,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private final String consumerGroup;
     private LogClientProxy logClient;
     private final String logProject;
-    private final String logStore;
+    private final String logstore;
     private final CheckpointMode checkpointMode;
 
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -54,7 +54,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.deserializer = deserializer;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
+        this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
     }
 
@@ -75,7 +75,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         LOG.debug("NumberOfTotalTask={}, IndexOfThisSubtask={}", ctx.getNumberOfParallelSubtasks(), ctx.getIndexOfThisSubtask());
         LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, configProps, deserializer, logClient, checkpointMode);
         if (consumerGroup != null) {
-            logClient.createConsumerGroup(fetcher.getProject(), fetcher.getLogStore(), consumerGroup);
+            logClient.createConsumerGroup(fetcher.getProject(), fetcher.getLogstore(), consumerGroup);
         }
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
         for (LogstoreShardMeta shard : newShards) {
@@ -161,8 +161,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private void updateCheckpointIfNeeded(int shardId, String cursor) throws Exception {
         if (consumerGroup != null && logClient != null) {
-            LOG.debug("Updating checkpoint of shard {} to {}", shardId, cursor);
-            logClient.updateCheckpoint(logProject, logStore, consumerGroup, shardId, cursor);
+            LOG.debug("Updating checkpoint of shard {} to {}, project {}, logstore {}", shardId, cursor, logProject, logstore);
+            logClient.updateCheckpoint(logProject, logstore, consumerGroup, shardId, cursor);
         }
     }
 
@@ -180,11 +180,11 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
         if (cursorsToRestore == null) {
             cursorsToRestore = new HashMap<LogstoreShardMeta, String>();
-            List<Integer> shardIds = fetchLatestShards(logProject, logStore);
+            List<Integer> shardIds = fetchLatestShards(logProject, logstore);
             for (Tuple2<LogstoreShardMeta, String> cursor : cursorStateForCheckpoint.get()) {
                 final LogstoreShardMeta shardMeta = cursor.f0;
                 final String checkpoint = cursor.f1;
-                LOG.info("initializeState, project: {}, logstore: {}, shard: {}, checkpoint: {}", logProject, logStore, shardMeta, checkpoint);
+                LOG.info("initializeState, project: {}, logstore: {}, shard: {}, checkpoint: {}", logProject, logstore, shardMeta, checkpoint);
                 int shardId = shardMeta.getShardId();
                 if (shardIds != null && !shardIds.contains(shardId)) {
                     LOG.warn("The shard {} already not exist", shardId);

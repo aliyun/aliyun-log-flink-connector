@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -31,8 +32,8 @@ public class LogDataFetcher<T> {
 
     private final Properties configProps;
     private final LogDeserializationSchema<T> deserializationSchema;
-    private final int totalNumberOfConsumerSubtasks;
-    private final int indexOfThisConsumerSubtask;
+    private final int totalNumberOfSubtasks;
+    private final int indexOfThisSubtask;
     private final SourceFunction.SourceContext<T> sourceContext;
     private final Object checkpointLock;
     private final ExecutorService shardConsumersExecutor;
@@ -43,7 +44,7 @@ public class LogDataFetcher<T> {
     private volatile boolean running = true;
     private volatile List<LogstoreShardState> subscribedShardsState;
     private final String project;
-    private final String logStore;
+    private final String logstore;
     private final CheckpointMode checkpointMode;
     private final String consumerGroup;
     private CheckpointCommitter autoCommitter;
@@ -60,14 +61,14 @@ public class LogDataFetcher<T> {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializationSchema = deserializationSchema;
-        this.totalNumberOfConsumerSubtasks = runtimeContext.getNumberOfParallelSubtasks();
-        this.indexOfThisConsumerSubtask = runtimeContext.getIndexOfThisSubtask();
+        this.totalNumberOfSubtasks = runtimeContext.getNumberOfParallelSubtasks();
+        this.indexOfThisSubtask = runtimeContext.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
         this.subscribedShardsState = new LinkedList<LogstoreShardState>();
         this.shardConsumersExecutor = createShardConsumersThreadPool(runtimeContext.getTaskNameWithSubtasks());
         this.error = new AtomicReference<Throwable>();
         this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
+        this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
         this.logClient = logClient;
         this.checkpointMode = checkpointMode;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
@@ -88,14 +89,14 @@ public class LogDataFetcher<T> {
         return project;
     }
 
-    public String getLogStore() {
-        return logStore;
+    public String getLogstore() {
+        return logstore;
     }
 
     public static boolean isThisSubtaskShouldSubscribeTo(LogstoreShardMeta shard,
-                                                         int totalNumberOfConsumerSubtasks,
-                                                         int indexOfThisConsumerSubtask) {
-        return (Math.abs(shard.hashCode() % totalNumberOfConsumerSubtasks)) == indexOfThisConsumerSubtask;
+                                                         int totalNumberOfSubtasks,
+                                                         int indexOfThisSubtask) {
+        return (Math.abs(shard.hashCode() % totalNumberOfSubtasks)) == indexOfThisSubtask;
     }
 
     private static ExecutorService createShardConsumersThreadPool(final String subtaskName) {
@@ -111,32 +112,33 @@ public class LogDataFetcher<T> {
         });
     }
 
-    private List<LogstoreShardMeta> listShards() throws Exception {
-        List<Shard> shards = logClient.listShards(project, logStore);
+    private List<LogstoreShardMeta> listAssignedShards() throws Exception {
+        List<Shard> shards = logClient.listShards(project, logstore);
         List<LogstoreShardMeta> shardMetas = new ArrayList<LogstoreShardMeta>(shards.size());
         for (Shard shard : shards) {
             LogstoreShardMeta shardMeta = new LogstoreShardMeta(shard.GetShardId(), shard.getInclusiveBeginKey(), shard.getExclusiveEndKey(), shard.getStatus());
-            shardMetas.add(shardMeta);
+            if (isThisSubtaskShouldSubscribeTo(shardMeta, totalNumberOfSubtasks, indexOfThisSubtask)) {
+                shardMetas.add(shardMeta);
+            }
         }
         return shardMetas;
     }
 
     public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
-        List<LogstoreShardMeta> shardMetas = listShards();
+        List<LogstoreShardMeta> shardMetas = listAssignedShards();
         List<LogstoreShardMeta> newShards = new ArrayList<LogstoreShardMeta>();
+        List<Integer> activeShards = new ArrayList<Integer>();
         for (LogstoreShardMeta shard : shardMetas) {
-            if (!isThisSubtaskShouldSubscribeTo(shard, totalNumberOfConsumerSubtasks, indexOfThisConsumerSubtask)) {
-                continue;
-            }
             boolean add = true;
             String status = shard.getShardStatus();
             int shardID = shard.getShardId();
+            activeShards.add(shardID);
             for (LogstoreShardState state : subscribedShardsState) {
                 LogstoreShardMeta shardMeta = state.getShardMeta();
                 if (shardMeta.getShardId() == shardID) {
                     if (!shardMeta.getShardStatus().equalsIgnoreCase(status)
                             || shardMeta.needSetEndCursor()) {
-                        String endCursor = logClient.getEndCursor(project, logStore, shardID);
+                        String endCursor = logClient.getEndCursor(project, logstore, shardID);
                         LOG.info("The latest cursor of shard {} is {}", shardID, endCursor);
                         shardMeta.setEndCursor(endCursor);
                         shardMeta.setShardStatus(status);
@@ -152,8 +154,18 @@ public class LogDataFetcher<T> {
                 }
             }
             if (add) {
-                LOG.info("Subscribe new shard: {}, task: {}", shard.toString(), indexOfThisConsumerSubtask);
+                LOG.info("Subscribe new shard: {}, task: {}", shard.toString(), indexOfThisSubtask);
                 newShards.add(shard);
+            }
+        }
+        Iterator<LogstoreShardState> iterator = subscribedShardsState.iterator();
+        while (iterator.hasNext()) {
+            LogstoreShardState state = iterator.next();
+            int shardID = state.getShardMeta().getShardId();
+            if (!activeShards.contains(shardID) && activeConsumers.containsKey(shardID)) {
+                // shard was not exist any more
+                activeConsumers.remove(shardID);
+                iterator.remove();
             }
         }
         return newShards;
@@ -207,7 +219,7 @@ public class LogDataFetcher<T> {
             for (LogstoreShardMeta shard : newShardsDueToResharding) {
                 LogstoreShardState shardState = new LogstoreShardState(shard, null);
                 int newStateIndex = registerNewSubscribedShardState(shardState);
-                LOG.info("discover new shard: {}, task: {}, taskcnt: {}", shardState.toString(), indexOfThisConsumerSubtask, totalNumberOfConsumerSubtasks);
+                LOG.info("discover new shard: {}, task: {}, taskcnt: {}", shardState.toString(), indexOfThisSubtask, totalNumberOfSubtasks);
                 createConsumerForShard(newStateIndex, shardState.getShardMeta().getShardId());
             }
             if (running && discoveryIntervalMillis > 0) {
@@ -235,7 +247,7 @@ public class LogDataFetcher<T> {
 
     private void startCommitThreadIfNeeded() {
         if (checkpointMode == CheckpointMode.PERIODIC) {
-            autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, project, logStore, consumerGroup);
+            autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, project, logstore, consumerGroup);
             autoCommitter.start();
             LOG.info("Checkpoint periodic committer thread started");
         }
@@ -253,7 +265,7 @@ public class LogDataFetcher<T> {
         if (mainThread != null) {
             mainThread.interrupt(); // the main thread may be sleeping for the discovery interval
         }
-        LOG.warn("Shutting down the shard consumer threads of subtask {} ...", indexOfThisConsumerSubtask);
+        LOG.warn("Shutting down the shard consumer threads of subtask {} ...", indexOfThisSubtask);
         shardConsumersExecutor.shutdownNow();
         if (autoCommitter != null) {
             LOG.info("Stopping checkpoint committer thread.");
@@ -276,7 +288,7 @@ public class LogDataFetcher<T> {
             if (state.isFinished()) {
                 if (this.numberOfActiveShards.decrementAndGet() == 0) {
                     LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
-                            indexOfThisConsumerSubtask);
+                            indexOfThisSubtask);
                     sourceContext.markAsTemporarilyIdle();
                 }
             }
