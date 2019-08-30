@@ -33,6 +33,7 @@ final class RetryUtil {
                 return callable.call();
             } catch (LogException e1) {
                 if (e1.GetHttpCode() >= 500) {
+                    LOG.error("{}: {}, retry after {} ms", errorMsg, e1.GetErrorMessage(), backoff);
                     // always retry for internal server error
                     counter = 0;
                 } else if (counter < MAX_ATTEMPTS) {
