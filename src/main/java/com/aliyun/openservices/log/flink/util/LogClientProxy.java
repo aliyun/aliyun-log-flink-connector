@@ -21,6 +21,7 @@ public class LogClientProxy implements Serializable {
     private static final long serialVersionUID = -8094827334076355612L;
 
     private final Client client;
+    private long consumerGroupCreatedAt = -1;
 
     public LogClientProxy(String endpoint, String accessKeyId, String accessKey, String userAgent) {
         this.client = new Client(endpoint, accessKeyId, accessKey);
@@ -105,9 +106,9 @@ public class LogClientProxy implements Serializable {
 
     public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)
             throws Exception {
-        RetryUtil.retryCall(new Callable<Void>() {
+        boolean create = RetryUtil.retryCall(new Callable<Boolean>() {
             @Override
-            public Void call() throws Exception {
+            public Boolean call() throws Exception {
                 ConsumerGroup consumerGroup = new ConsumerGroup(consumerGroupName, 100, false);
                 try {
                     client.CreateConsumerGroup(project, logstore, consumerGroup);
@@ -115,10 +116,14 @@ public class LogClientProxy implements Serializable {
                     if (!ex.GetErrorCode().contains("AlreadyExist")) {
                         throw ex;
                     }
+                    return false;
                 }
-                return null;
+                return true;
             }
         }, "Error while creating consumer group");
+        if (create) {
+            consumerGroupCreatedAt = System.currentTimeMillis();
+        }
     }
 
     public void updateCheckpoint(final String project,
@@ -137,10 +142,14 @@ public class LogClientProxy implements Serializable {
                     client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
                 } catch (LogException ex) {
                     // Ignore shard not exist error here, as it's already been deleted or server is upgrading.
-                    if ("ShardNotExist".equals(ex.GetErrorCode())) {
-                        LOG.warn("Shard {} already not exist", shard);
-                    } else {
+                    if (!"ShardNotExist".equals(ex.GetErrorCode())) {
                         throw ex;
+                    }
+                    // Consumer group need at most 1 minute to sync shards
+                    if (System.currentTimeMillis() - consumerGroupCreatedAt <= 60000) {
+                        LOG.debug("Consumer group is not ready, ignore shard not exist error");
+                    } else {
+                        LOG.warn("Shard {} already not exist", shard);
                     }
                 }
                 return null;

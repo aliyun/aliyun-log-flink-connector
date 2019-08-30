@@ -139,7 +139,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 if (LOG.isDebugEnabled()) {
                     StringBuilder strb = new StringBuilder();
                     for (Map.Entry<LogstoreShardMeta, String> entry : lastStateSnapshot.entrySet()) {
-                        strb.append("shard: ").append(entry.getKey().toString()).append(", cursor: ").append(entry.getValue());
+                        strb.append("shard: ").append(entry.getKey().getShardId()).append(", cursor: ").append(entry.getValue());
                     }
                     LOG.debug("Snapshotted state, last processed cursor: {}, checkpoint id: {}, timestamp: {}",
                             strb, context.getCheckpointId(), context.getCheckpointTimestamp());
