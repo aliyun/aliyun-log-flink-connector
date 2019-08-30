@@ -3,11 +3,10 @@ package com.aliyun.openservices.log.flink.model;
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
-import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
+import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
-import org.apache.flink.util.PropertiesUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,10 +72,7 @@ public class LogDataFetcher<T> {
         this.checkpointMode = checkpointMode;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         if (checkpointMode == CheckpointMode.PERIODIC) {
-            commitInterval = PropertiesUtil.getLong(
-                    configProps,
-                    ConfigConstants.LOG_COMMIT_INTERVAL_MILLIS,
-                    Consts.DEFAULT_COMMIT_INTERVAL_MILLIS);
+            commitInterval = LogUtil.getCommitIntervalMs(configProps);
             checkArgument(commitInterval > 0,
                     "Checkpoint commit interval must be positive: " + commitInterval);
             checkArgument(consumerGroup != null && !consumerGroup.isEmpty(),
@@ -207,10 +203,7 @@ public class LogDataFetcher<T> {
                 createConsumerForShard(index, shardState.getShardMeta().getShardId());
             }
         }
-        final long discoveryIntervalMillis = PropertiesUtil.getLong(
-                configProps,
-                ConfigConstants.LOG_SHARDS_DISCOVERY_INTERVAL_MILLIS,
-                Consts.DEFAULT_SHARDS_DISCOVERY_INTERVAL_MILLIS);
+        final long discoveryIntervalMs = LogUtil.getDiscoveryIntervalMs(configProps);
         if (numberOfActiveShards.get() == 0) {
             sourceContext.markAsTemporarilyIdle();
         }
@@ -219,12 +212,13 @@ public class LogDataFetcher<T> {
             for (LogstoreShardMeta shard : newShardsDueToResharding) {
                 LogstoreShardState shardState = new LogstoreShardState(shard, null);
                 int newStateIndex = registerNewSubscribedShardState(shardState);
-                LOG.info("discover new shard: {}, task: {}, taskcnt: {}", shardState.toString(), indexOfThisSubtask, totalNumberOfSubtasks);
+                LOG.info("discover new shard: {}, task: {}, total task: {}",
+                        shardState.toString(), indexOfThisSubtask, totalNumberOfSubtasks);
                 createConsumerForShard(newStateIndex, shardState.getShardMeta().getShardId());
             }
-            if (running && discoveryIntervalMillis > 0) {
+            if (running && discoveryIntervalMs > 0) {
                 try {
-                    Thread.sleep(discoveryIntervalMillis);
+                    Thread.sleep(discoveryIntervalMs);
                 } catch (InterruptedException iex) {
                     // the sleep may be interrupted by shutdownFetcher()
                 }
@@ -265,7 +259,7 @@ public class LogDataFetcher<T> {
         if (mainThread != null) {
             mainThread.interrupt(); // the main thread may be sleeping for the discovery interval
         }
-        LOG.warn("Shutting down the shard consumer threads of subtask {} ...", indexOfThisSubtask);
+        LOG.warn("Shutting down the shard consumer threads of subtask {}", indexOfThisSubtask);
         shardConsumersExecutor.shutdownNow();
         if (autoCommitter != null) {
             LOG.info("Stopping checkpoint committer thread.");
