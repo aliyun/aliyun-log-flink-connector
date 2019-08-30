@@ -120,17 +120,17 @@ public class ShardConsumer<T> implements Runnable {
                     response = logClient.pullLogs(logProject, logstore, shardId, cursor, fetchSize);
                 } catch (LogException ex) {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
-                    // TODO Remove the following code
                     String errorCode = ex.GetErrorCode();
-                    if ("InvalidCursor".equalsIgnoreCase(errorCode)
-                            && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
-                        LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
-                        cursor = findInitialCursor(defaultPosition, shardId);
-                        continue;
-                    }
                     if ("ShardNotExist".equals(errorCode)) {
                         LOG.warn("The shard {} already not exist, project {} logstore {}", shardId, logProject, logstore);
                         break;
+                    }
+                    // TODO Remove the following code
+                    if ("InvalidCursor".equalsIgnoreCase(errorCode)
+                            && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
+                        LOG.warn("Got invalid cursor error, start from default position {}", defaultPosition);
+                        cursor = findInitialCursor(defaultPosition, shardId);
+                        continue;
                     }
                     throw ex;
                 }
