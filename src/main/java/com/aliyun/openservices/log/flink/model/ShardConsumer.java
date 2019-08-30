@@ -5,8 +5,8 @@ import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
+import com.aliyun.openservices.log.flink.util.LogUtil;
 import com.aliyun.openservices.log.response.PullLogsResponse;
-import org.apache.flink.util.PropertiesUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,8 +41,9 @@ public class ShardConsumer<T> implements Runnable {
         this.fetcher = fetcher;
         this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
-        this.fetchSize = getNumberPerFetch(configProps);
-        this.fetchIntervalMs = getFetchIntervalMillis(configProps);
+        // TODO Move configs to a class
+        this.fetchSize = LogUtil.getNumberPerFetch(configProps);
+        this.fetchIntervalMs = LogUtil.getFetchIntervalMillis(configProps);
         this.logClient = logClient;
         this.committer = committer;
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
@@ -53,9 +54,9 @@ public class ShardConsumer<T> implements Runnable {
                 && (consumerGroup == null || consumerGroup.isEmpty())) {
             throw new IllegalArgumentException("Missing parameter: " + ConfigConstants.LOG_CONSUMERGROUP);
         }
-        defaultPosition = getDefaultPosition(configProps);
+        defaultPosition = LogUtil.getDefaultPosition(configProps);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(defaultPosition)) {
-            throw new IllegalArgumentException("Cannot use " + Consts.LOG_FROM_CHECKPOINT + " as the default position");
+            throw new IllegalArgumentException(Consts.LOG_FROM_CHECKPOINT + " cannot be used as default position");
         }
     }
 
@@ -166,7 +167,7 @@ public class ShardConsumer<T> implements Runnable {
     private void adjustFetchFrequency(int responseSize, long processingTimeMs) throws InterruptedException {
         long sleepTime = 0;
         if (responseSize == 0) {
-            sleepTime = 600;
+            sleepTime = 1000;
         } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
             sleepTime = 200;
         }
@@ -187,7 +188,7 @@ public class ShardConsumer<T> implements Runnable {
     private void processRecordsAndSaveOffset(List<LogGroupData> records, int shardId, String nextCursor) {
         final T value = deserializer.deserialize(records);
         long timestamp = System.currentTimeMillis();
-        if (records.size() > 0) {
+        if (!records.isEmpty()) {
             if (records.get(0).GetFastLogGroup().getLogsCount() > 0) {
                 long logTimeStamp = records.get(0).GetFastLogGroup().getLogs(0).getTime();
                 timestamp = logTimeStamp * 1000;
@@ -207,16 +208,4 @@ public class ShardConsumer<T> implements Runnable {
         return !Thread.interrupted();
     }
 
-    private static int getNumberPerFetch(Properties properties) {
-        return PropertiesUtil.getInt(properties, ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, Consts.DEFAULT_NUMBER_PER_FETCH);
-    }
-
-    private static long getFetchIntervalMillis(Properties properties) {
-        return PropertiesUtil.getLong(properties, ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS, Consts.DEFAULT_FETCH_INTERVAL_MILLIS);
-    }
-
-    private static String getDefaultPosition(Properties properties) {
-        final String val = properties.getProperty(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION);
-        return val != null && !val.isEmpty() ? val : Consts.LOG_BEGIN_CURSOR;
-    }
 }
