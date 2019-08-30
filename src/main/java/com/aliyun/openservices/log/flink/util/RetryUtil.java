@@ -21,6 +21,10 @@ class RetryUtil {
         }
     }
 
+    private static boolean isRecoverableException(LogException lex) {
+        return lex.GetHttpCode() != 400 && lex.GetHttpCode() != 405 && lex.GetHttpCode() != 415;
+    }
+
     static <T> T retryCall(Callable<T> callable, String errorMsg) throws LogException {
         int counter = 0;
         long backoff = INITIAL_BACKOFF;
@@ -29,7 +33,7 @@ class RetryUtil {
                 // TODO Handle ignorable exception in call()
                 return callable.call();
             } catch (LogException e1) {
-                if (counter < MAX_ATTEMPTS) {
+                if (isRecoverableException(e1) && counter < MAX_ATTEMPTS) {
                     LOG.error("{}: {}, retry {}/{}", errorMsg, e1.GetErrorMessage(), counter, MAX_ATTEMPTS);
                 } else {
                     throw e1;

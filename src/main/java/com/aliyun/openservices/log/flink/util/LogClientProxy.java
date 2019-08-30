@@ -136,12 +136,12 @@ public class LogClientProxy implements Serializable {
                 try {
                     client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
                 } catch (LogException ex) {
-                    if (ex.GetHttpCode() != 404) {
-                        // TODO ignore 404 here but it's not a good way
+                    // Ignore share not exist error here, as it's already been deleted or server is upgrading.
+                    if ("ShardNotExist".equals(ex.GetErrorCode())) {
+                        LOG.warn("Shard {} already not exist", shard);
+                    } else {
                         throw ex;
                     }
-                    LOG.warn("Update checkpoint failed: {}, {}, {}",
-                            ex.GetErrorCode(), ex.GetErrorMessage(), ex.GetRequestId());
                 }
                 return null;
             }
