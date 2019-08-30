@@ -25,7 +25,7 @@ public class ShardConsumer<T> implements Runnable {
     private final long fetchIntervalMs;
     private final LogClientProxy logClient;
     private final String logProject;
-    private final String logStore;
+    private final String logstore;
     private String initialPosition;
     private final String defaultPosition;
     private final String consumerGroup;
@@ -46,7 +46,7 @@ public class ShardConsumer<T> implements Runnable {
         this.logClient = logClient;
         this.committer = committer;
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
+        this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
         this.initialPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)
@@ -62,11 +62,11 @@ public class ShardConsumer<T> implements Runnable {
     private String findInitialCursor(String position, int shardId) throws Exception {
         String cursor;
         if (Consts.LOG_BEGIN_CURSOR.equals(position)) {
-            cursor = logClient.getBeginCursor(logProject, logStore, shardId);
+            cursor = logClient.getBeginCursor(logProject, logstore, shardId);
         } else if (Consts.LOG_END_CURSOR.equals(position)) {
-            cursor = logClient.getEndCursor(logProject, logStore, shardId);
+            cursor = logClient.getEndCursor(logProject, logstore, shardId);
         } else if (Consts.LOG_FROM_CHECKPOINT.equals(position)) {
-            cursor = logClient.fetchCheckpoint(logProject, logStore, consumerGroup, shardId);
+            cursor = logClient.fetchCheckpoint(logProject, logstore, consumerGroup, shardId);
             if (cursor == null || cursor.isEmpty()) {
                 if (defaultPosition == null || defaultPosition.isEmpty()) {
                     // This should never happen, if no checkpoint found from server side we can
@@ -84,9 +84,9 @@ public class ShardConsumer<T> implements Runnable {
             try {
                 timestamp = Integer.parseInt(position);
             } catch (NumberFormatException nfe) {
-                throw new RuntimeException("Unable to parse position: " + position);
+                throw new RuntimeException("Unable to parse timestamp which expect a unix timestamp but was: " + position);
             }
-            cursor = logClient.getCursorAtTimestamp(logProject, logStore, shardId, timestamp);
+            cursor = logClient.getCursorAtTimestamp(logProject, logstore, shardId, timestamp);
         }
         LOG.info("The starting cursor is {}", cursor);
         return cursor;
@@ -117,17 +117,22 @@ public class ShardConsumer<T> implements Runnable {
                 PullLogsResponse response = null;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
-                    response = logClient.pullLogs(logProject, logStore, shardId, cursor, fetchSize);
+                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, fetchSize);
                 } catch (LogException ex) {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
                     // TODO Remove the following code
-                    if ("InvalidCursor".equalsIgnoreCase(ex.GetErrorCode())
+                    String errorCode = ex.GetErrorCode();
+                    if ("InvalidCursor".equalsIgnoreCase(errorCode)
                             && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
                         LOG.info("Got invalid cursor error, switch to default position {}", defaultPosition);
                         cursor = findInitialCursor(defaultPosition, shardId);
-                    } else {
-                        throw ex;
+                        continue;
                     }
+                    if ("ShardNotExist".equals(errorCode)) {
+                        LOG.warn("The shard {} already not exist, project {} logstore {}", shardId, logProject, logstore);
+                        break;
+                    }
+                    throw ex;
                 }
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Fetch request cost {} ms", System.currentTimeMillis() - fetchStartTimeMs);
