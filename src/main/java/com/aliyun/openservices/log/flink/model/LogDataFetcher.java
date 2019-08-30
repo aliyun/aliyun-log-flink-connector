@@ -162,7 +162,7 @@ public class LogDataFetcher<T> {
         while (iterator.hasNext()) {
             LogstoreShardState state = iterator.next();
             int shardID = state.getShardMeta().getShardId();
-            if (!activeShards.contains(shardID) && activeConsumers.containsKey(shardID)) {
+            if (!activeShards.contains(shardID)) {
                 // shard was not exist any more
                 activeConsumers.remove(shardID);
                 iterator.remove();
