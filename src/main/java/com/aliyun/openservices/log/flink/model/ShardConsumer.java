@@ -88,7 +88,6 @@ public class ShardConsumer<T> implements Runnable {
             }
             cursor = logClient.getCursorAtTimestamp(logProject, logstore, shardId, timestamp);
         }
-        LOG.info("The starting cursor is {}", cursor);
         return cursor;
     }
 
@@ -111,8 +110,8 @@ public class ShardConsumer<T> implements Runnable {
             LogstoreShardState state = fetcher.getShardState(subscribedShardStateIndex);
             final LogstoreShardMeta shardMeta = state.getShardMeta();
             final int shardId = shardMeta.getShardId();
-            LOG.info("Starting shard consumer for shard {}", shardId);
             String cursor = restoreCursorFromStateOrCheckpoint(state, shardId);
+            LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
             while (isRunning()) {
                 PullLogsResponse response;
                 long fetchStartTimeMs = System.currentTimeMillis();
