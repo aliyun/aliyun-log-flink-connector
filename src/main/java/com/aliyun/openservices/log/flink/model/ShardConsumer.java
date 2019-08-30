@@ -114,7 +114,7 @@ public class ShardConsumer<T> implements Runnable {
             LOG.info("Starting shard consumer for shard {}", shardId);
             String cursor = restoreCursorFromStateOrCheckpoint(state, shardId);
             while (isRunning()) {
-                PullLogsResponse response = null;
+                PullLogsResponse response;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
                     response = logClient.pullLogs(logProject, logstore, shardId, cursor, fetchSize);
@@ -122,6 +122,7 @@ public class ShardConsumer<T> implements Runnable {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
                     String errorCode = ex.GetErrorCode();
                     if ("ShardNotExist".equals(errorCode)) {
+                        // The shard has been deleted
                         LOG.warn("The shard {} already not exist, project {} logstore {}", shardId, logProject, logstore);
                         break;
                     }
@@ -142,14 +143,14 @@ public class ShardConsumer<T> implements Runnable {
                     String nextCursor = response.getNextCursor();
                     if (response.getCount() > 0) {
                         long processingStartTimeMs = System.currentTimeMillis();
-                        processRecordsAndMoveToNextCursor(response.getLogGroups(), shardId, nextCursor);
+                        processRecordsAndSaveOffset(response.getLogGroups(), shardId, nextCursor);
                         processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
-                        LOG.debug("Process records cost {} ms.", processingTimeMs);
+                        LOG.debug("Processing records of shard {} cost {} ms.", shardId, processingTimeMs);
                         cursor = nextCursor;
                     } else {
                         processingTimeMs = 0;
-                        LOG.debug("No records has been responded.");
-                        if (cursor.equalsIgnoreCase(nextCursor) && readOnly) {
+                        LOG.debug("No records of shard {} has been responded.", shardId);
+                        if (cursor.equals(nextCursor) && readOnly) {
                             LOG.info("Shard {} is finished", shardId);
                             break;
                         }
@@ -184,7 +185,7 @@ public class ShardConsumer<T> implements Runnable {
         this.readOnly = true;
     }
 
-    private void processRecordsAndMoveToNextCursor(List<LogGroupData> records, int shardId, String nextCursor) {
+    private void processRecordsAndSaveOffset(List<LogGroupData> records, int shardId, String nextCursor) {
         final T value = deserializer.deserialize(records);
         long timestamp = System.currentTimeMillis();
         if (records.size() > 0) {

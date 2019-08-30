@@ -250,7 +250,6 @@ public class LogDataFetcher<T> {
 
     public void shutdownFetcher() {
         running = false;
-
         if (mainThread != null) {
             mainThread.interrupt(); // the main thread may be sleeping for the discovery interval
         }

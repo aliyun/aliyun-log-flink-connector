@@ -153,7 +153,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private void updateCursorState(LogstoreShardMeta shardMeta, String cursor) throws Exception {
         cursorStateForCheckpoint.add(Tuple2.of(shardMeta, cursor));
-        if (checkpointMode == CheckpointMode.ON_CHECKPOINTS) {
+        if (cursor != null && checkpointMode == CheckpointMode.ON_CHECKPOINTS) {
+            // NOTE: The cursor of new discovered shard maybe null
             updateCheckpointIfNeeded(shardMeta.getShardId(), cursor);
         }
     }
@@ -179,7 +180,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
         if (cursorsToRestore == null) {
             cursorsToRestore = new HashMap<LogstoreShardMeta, String>();
-            List<Integer> shardIds = tryFetchShardList(logProject, logStore);
+            List<Integer> shardIds = fetchLatestShards(logProject, logStore);
             for (Tuple2<LogstoreShardMeta, String> cursor : cursorStateForCheckpoint.get()) {
                 final LogstoreShardMeta shardMeta = cursor.f0;
                 final String checkpoint = cursor.f1;
@@ -200,7 +201,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
     }
 
-    private List<Integer> tryFetchShardList(String project, String logstore) {
+    private List<Integer> fetchLatestShards(String project, String logstore) {
         try {
             List<Shard> shards = logClient.listShards(project, logstore);
             List<Integer> shardIds = new ArrayList<Integer>(shards.size());
