@@ -123,12 +123,12 @@ public class LogDataFetcher<T> {
     public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
         List<LogstoreShardMeta> shardMetas = listAssignedShards();
         List<LogstoreShardMeta> newShards = new ArrayList<LogstoreShardMeta>();
-        List<Integer> activeShards = new ArrayList<Integer>();
+//        List<Integer> activeShards = new ArrayList<Integer>();
         for (LogstoreShardMeta shard : shardMetas) {
             boolean add = true;
             String status = shard.getShardStatus();
             int shardID = shard.getShardId();
-            activeShards.add(shardID);
+//            activeShards.add(shardID);
             for (LogstoreShardState state : subscribedShardsState) {
                 LogstoreShardMeta shardMeta = state.getShardMeta();
                 if (shardMeta.getShardId() == shardID) {
@@ -154,17 +154,18 @@ public class LogDataFetcher<T> {
                 newShards.add(shard);
             }
         }
-        Iterator<LogstoreShardState> iterator = subscribedShardsState.iterator();
-        while (iterator.hasNext()) {
-            LogstoreShardState state = iterator.next();
-            int shardID = state.getShardMeta().getShardId();
-            if (!activeShards.contains(shardID)) {
-                // shard was not exist any more
-                activeConsumers.remove(shardID);
-                iterator.remove();
-                LOG.info("Shard {} has been unloaded in task {}", shardID, indexOfThisSubtask);
-            }
-        }
+        // TODO Cannot delete shard state here as the index of each shard is fixed
+//        Iterator<LogstoreShardState> iterator = subscribedShardsState.iterator();
+//        while (iterator.hasNext()) {
+//            LogstoreShardState state = iterator.next();
+//            int shardID = state.getShardMeta().getShardId();
+//            if (!activeShards.contains(shardID)) {
+//                // shard was not exist any more
+//                activeConsumers.remove(shardID);
+//                iterator.remove();
+//                LOG.info("Shard {} has been unloaded in task {}", shardID, indexOfThisSubtask);
+//            }
+//        }
         return newShards;
     }
 
