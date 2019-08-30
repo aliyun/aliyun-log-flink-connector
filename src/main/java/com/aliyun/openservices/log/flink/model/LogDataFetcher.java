@@ -162,6 +162,7 @@ public class LogDataFetcher<T> {
                 // shard was not exist any more
                 activeConsumers.remove(shardID);
                 iterator.remove();
+                LOG.info("Shard {} has been unloaded in task {}", shardID, indexOfThisSubtask);
             }
         }
         return newShards;
