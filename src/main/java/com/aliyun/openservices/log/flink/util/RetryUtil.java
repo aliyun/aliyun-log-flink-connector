@@ -6,12 +6,15 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Callable;
 
-class RetryUtil {
+final class RetryUtil {
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
 
     private static final long INITIAL_BACKOFF = 500;
     private static final long MAX_BACKOFF = 5000;
     private static final int MAX_ATTEMPTS = 20;
+
+    private RetryUtil() {
+    }
 
     private static void waitForMs(long sleepMs) {
         try {
