@@ -24,12 +24,12 @@ final class RetryUtil {
         }
     }
 
-    static <T> T retryCall(Callable<T> callable, String errorMsg) throws LogException {
+    static <T> T call(Callable<T> callable, String errorMsg) throws LogException {
         int counter = 0;
         long backoff = INITIAL_BACKOFF;
-        while (counter <= MAX_ATTEMPTS) {
+        do {
             try {
-                // TODO Handle ignorable exception in call()
+                // TODO Catch ignorable exception in call()
                 return callable.call();
             } catch (LogException e1) {
                 if (e1.GetHttpCode() >= 500) {
@@ -44,14 +44,13 @@ final class RetryUtil {
                 }
             } catch (Exception e2) {
                 if (counter >= MAX_ATTEMPTS) {
-                    throw new LogException("Unknown", errorMsg, e2, "");
+                    throw new LogException("UnknownError", errorMsg, e2, "");
                 }
                 LOG.error("{}, retry {}/{}", errorMsg, counter, MAX_ATTEMPTS, e2);
                 counter++;
             }
             waitForMs(backoff);
             backoff = Math.min(backoff * 2, MAX_BACKOFF);
-        }
-        throw new RuntimeException("Not possible!");
+        } while (true);
     }
 }

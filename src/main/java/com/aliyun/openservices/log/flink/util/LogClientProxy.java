@@ -29,7 +29,7 @@ public class LogClientProxy implements Serializable {
     }
 
     public String getEndCursor(final String project, final String logstore, final int shard) throws LogException {
-        return RetryUtil.retryCall(new Callable<String>() {
+        return RetryUtil.call(new Callable<String>() {
             @Override
             public String call() throws Exception {
                 return client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
@@ -38,7 +38,7 @@ public class LogClientProxy implements Serializable {
     }
 
     public String getBeginCursor(final String project, final String logstore, final int shard) throws LogException {
-        return RetryUtil.retryCall(new Callable<String>() {
+        return RetryUtil.call(new Callable<String>() {
             @Override
             public String call() throws Exception {
                 return client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor();
@@ -47,7 +47,7 @@ public class LogClientProxy implements Serializable {
     }
 
     public String getCursorAtTimestamp(final String project, final String logstore, final int shard, final int ts) throws LogException {
-        return RetryUtil.retryCall(new Callable<String>() {
+        return RetryUtil.call(new Callable<String>() {
             @Override
             public String call() throws Exception {
                 return client.GetCursor(project, logstore, shard, ts).GetCursor();
@@ -59,7 +59,7 @@ public class LogClientProxy implements Serializable {
                                   final String logstore,
                                   final String consumerGroup,
                                   final int shard) throws LogException {
-        return RetryUtil.retryCall(new Callable<String>() {
+        return RetryUtil.call(new Callable<String>() {
             @Override
             public String call() throws Exception {
                 try {
@@ -87,7 +87,7 @@ public class LogClientProxy implements Serializable {
     public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, int count)
             throws LogException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor);
-        return RetryUtil.retryCall(new Callable<PullLogsResponse>() {
+        return RetryUtil.call(new Callable<PullLogsResponse>() {
             @Override
             public PullLogsResponse call() throws Exception {
                 return client.pullLogs(request);
@@ -96,7 +96,7 @@ public class LogClientProxy implements Serializable {
     }
 
     public List<Shard> listShards(final String project, final String logstore) throws LogException {
-        return RetryUtil.retryCall(new Callable<List<Shard>>() {
+        return RetryUtil.call(new Callable<List<Shard>>() {
             @Override
             public List<Shard> call() throws Exception {
                 return client.ListShard(project, logstore).GetShards();
@@ -106,7 +106,7 @@ public class LogClientProxy implements Serializable {
 
     public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)
             throws Exception {
-        boolean create = RetryUtil.retryCall(new Callable<Boolean>() {
+        boolean create = RetryUtil.call(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
                 ConsumerGroup consumerGroup = new ConsumerGroup(consumerGroupName, 100, false);
@@ -135,7 +135,7 @@ public class LogClientProxy implements Serializable {
             LOG.warn("The checkpoint to update is invalid: {}", checkpoint);
             return;
         }
-        RetryUtil.retryCall(new Callable<Void>() {
+        RetryUtil.call(new Callable<Void>() {
             @Override
             public Void call() throws Exception {
                 try {
