@@ -109,7 +109,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     @Override
     public void invoke(T value, Context context) {
         if (this.logProducer == null) {
-            throw new RuntimeException("Flink log producer has not been initialized yet!");
+            throw new IllegalStateException("Flink log producer has not been initialized yet!");
         }
         RawLogGroup logGroup = schema.serialize(value);
         if (logGroup == null) {
