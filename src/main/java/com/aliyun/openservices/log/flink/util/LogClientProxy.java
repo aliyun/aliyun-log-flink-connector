@@ -106,22 +106,23 @@ public class LogClientProxy implements Serializable {
 
     public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)
             throws Exception {
-        boolean create = RetryUtil.call(new Callable<Boolean>() {
+        boolean createdAtThisTime = RetryUtil.call(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
                 ConsumerGroup consumerGroup = new ConsumerGroup(consumerGroupName, 100, false);
                 try {
                     client.CreateConsumerGroup(project, logstore, consumerGroup);
                 } catch (LogException ex) {
-                    if (!ex.GetErrorCode().contains("AlreadyExist")) {
-                        throw ex;
+                    if ("ConsumerGroupAlreadyExist".equals(ex.GetErrorCode())) {
+                        return false;
                     }
-                    return false;
+                    throw ex;
                 }
                 return true;
             }
         }, "Error while creating consumer group");
-        if (create) {
+        if (createdAtThisTime) {
+            // We can ignore shard not exist error during Consumer Group initializing.
             consumerGroupCreatedAt = System.currentTimeMillis();
         }
     }
