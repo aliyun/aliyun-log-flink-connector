@@ -20,7 +20,7 @@ public class VersionInfoUtils {
 
     public static String getDefaultUserAgent() {
         if (defaultUserAgent == null) {
-            defaultUserAgent = USER_AGENT_PREFIX + "-" + getVersion()+"/" + System.getProperty("java.version");
+            defaultUserAgent = USER_AGENT_PREFIX + "-" + getVersion() + "/" + System.getProperty("java.version");
         }
         return defaultUserAgent;
     }

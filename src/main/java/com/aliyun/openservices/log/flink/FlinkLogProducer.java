@@ -79,7 +79,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             customPartitioner.initialize(getRuntimeContext().getIndexOfThisSubtask(), getRuntimeContext().getNumberOfParallelSubtasks());
         }
         ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.userAgent = Consts.LOG_CONNECTOR_USER_AGENT;
+        producerConfig.userAgent = configProps.getProperty(ConfigConstants.LOG_USER_AGENT, Consts.LOG_CONNECTOR_USER_AGENT);
         if (configProps.containsKey(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT))
             producerConfig.maxIOThreadSizeInPool = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT));
         if (configProps.containsKey(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS))
