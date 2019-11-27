@@ -131,6 +131,7 @@ public class LogClientProxy implements Serializable {
                                  final String logstore,
                                  final String consumerGroup,
                                  final int shard,
+                                 final boolean readOnly,
                                  final String checkpoint) throws LogException {
         if (checkpoint == null || checkpoint.isEmpty()) {
             LOG.warn("The checkpoint to update is invalid: {}", checkpoint);
@@ -138,19 +139,20 @@ public class LogClientProxy implements Serializable {
         }
         RetryUtil.call(new Callable<Void>() {
             @Override
-            public Void call() throws Exception {
+            public Void call() throws LogException {
                 try {
                     client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
                 } catch (LogException ex) {
-                    // Ignore shard not exist error here, as it's already been deleted or server is upgrading.
-                    if (!"ShardNotExist".equals(ex.GetErrorCode())) {
+                    if (!"ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
                         throw ex;
                     }
-                    // Consumer group need at most 1 minute to sync shards
-                    if (System.currentTimeMillis() - consumerGroupCreatedAt <= 60000) {
-                        LOG.debug("Consumer group is not ready, ignore shard not exist error");
+                    if (readOnly) {
+                        LOG.warn("Read only shard {} maybe deleted", shard);
+                        return null;
+                    } else if (System.currentTimeMillis() - consumerGroupCreatedAt <= 60000) {
+                        LOG.info("Consumer group is not ready, ignore shard not exist error");
                     } else {
-                        LOG.warn("Shard {} already not exist", shard);
+                        throw ex;
                     }
                 }
                 return null;
