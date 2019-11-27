@@ -200,7 +200,7 @@ public class ShardConsumer<T> implements Runnable {
                 subscribedShardStateIndex,
                 nextCursor);
         if (committer != null) {
-            committer.updateCheckpoint(shardId, nextCursor);
+            committer.updateCheckpoint(shardId, nextCursor, readOnly);
         }
     }
 
