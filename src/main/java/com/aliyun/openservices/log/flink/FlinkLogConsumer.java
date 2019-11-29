@@ -125,9 +125,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
         LOG.info("Snapshotting state ...");
         cursorStateForCheckpoint.clear();
-
         createClientIfNecessary();
-
         if (fetcher == null) {
             if (cursorsToRestore != null) {
                 for (Map.Entry<LogstoreShardMeta, String> entry : cursorsToRestore.entrySet()) {
@@ -172,8 +170,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     @Override
     public void initializeState(FunctionInitializationContext context) throws Exception {
-        LOG.debug("initializeState...");
-        createClientIfNecessary();
+        LOG.debug("Initializing state from Flink state");
+
         TypeInformation<Tuple2<LogstoreShardMeta, String>> shardsStateTypeInfo = new TupleTypeInfo<Tuple2<LogstoreShardMeta, String>>(
                 TypeInformation.of(LogstoreShardMeta.class),
                 TypeInformation.of(String.class));
@@ -187,6 +185,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             LOG.info("State has been restored already.");
             return;
         }
+        createClientIfNecessary();
         cursorsToRestore = new HashMap<LogstoreShardMeta, String>();
         List<Shard> shards = logClient.listShards(logProject, logstore);
         Map<Integer, Shard> allShards = new HashMap<Integer, Shard>(shards.size());
