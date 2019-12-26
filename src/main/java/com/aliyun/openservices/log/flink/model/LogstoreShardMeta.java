@@ -12,6 +12,10 @@ public class LogstoreShardMeta implements Serializable {
     private String shardStatus;
     private String endCursor;
 
+    // DONOT remove
+    public LogstoreShardMeta() {
+    }
+
     public LogstoreShardMeta(int shardId, String beginHashKey, String endHashKey, String shardStatus) {
         this.shardId = shardId;
         this.beginHashKey = beginHashKey;
