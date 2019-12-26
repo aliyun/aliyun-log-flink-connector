@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CheckpointCommitter extends Thread {
     private static final Logger LOG = LoggerFactory.getLogger(CheckpointCommitter.class);
 
-    private volatile boolean running;
+    private volatile boolean running = false;
     private final LogClientProxy logClient;
     private final long commitInterval;
     private final LogDataFetcher fetcher;

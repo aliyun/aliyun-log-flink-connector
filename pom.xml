@@ -63,7 +63,7 @@
         <dependency>
             <groupId>com.aliyun.openservices</groupId>
             <artifactId>aliyun-log</artifactId>
-            <version>0.6.37</version>
+            <version>0.6.44</version>
         </dependency>
         <dependency>
             <groupId>com.aliyun.openservices</groupId>
