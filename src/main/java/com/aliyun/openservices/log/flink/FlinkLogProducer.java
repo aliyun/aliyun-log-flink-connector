@@ -1,25 +1,34 @@
 package com.aliyun.openservices.log.flink;
 
+import com.aliyun.openservices.aliyun.log.producer.LogProducer;
+import com.aliyun.openservices.aliyun.log.producer.Producer;
+import com.aliyun.openservices.aliyun.log.producer.ProducerConfig;
+import com.aliyun.openservices.aliyun.log.producer.ProjectConfig;
+import com.aliyun.openservices.aliyun.log.producer.Result;
+import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.flink.data.RawLog;
+import com.aliyun.openservices.log.flink.data.RawLogGroup;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
-import com.aliyun.openservices.log.producer.LogProducer;
-import com.aliyun.openservices.log.producer.ProducerConfig;
-import com.aliyun.openservices.log.producer.ProjectConfig;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
-import com.aliyun.openservices.log.flink.data.RawLog;
-import com.aliyun.openservices.log.flink.data.RawLogGroup;
-import com.aliyun.openservices.log.flink.util.Consts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
@@ -27,10 +36,12 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private final Properties configProps;
     private final LogSerializationSchema<T> schema;
     private LogPartitioner<T> customPartitioner = null;
-    private transient LogProducer logProducer;
+    private transient Producer producer;
     private transient ProducerCallback callback;
     private final String logProject;
     private final String logStore;
+    private ExecutorService executor;
+    private AtomicLong buffered = new AtomicLong(0);
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
         if (schema == null) {
@@ -61,54 +72,51 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         return schema;
     }
 
-    public ProducerCallback getCallback() {
-        return callback;
-    }
-
-    public void setCallback(ProducerCallback callback) {
-        this.callback = callback;
+    private Producer createProducer() {
+        ProducerConfig producerConfig = new ProducerConfig();
+        Producer producer = new LogProducer(producerConfig);
+        ProjectConfig config = new ProjectConfig(logProject,
+                configProps.getProperty(ConfigConstants.LOG_ENDPOINT),
+                configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID),
+                configProps.getProperty(ConfigConstants.LOG_ACCESSKEY));
+        int numberOfIOThread = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT, "4"));
+        producerConfig.setIoThreadCount(numberOfIOThread);
+        producer.putProjectConfig(config);
+        return producer;
     }
 
     @Override
     public void open(Configuration parameters) throws Exception {
         super.open(parameters);
         if (callback == null) {
-            callback = new ProducerCallback();
+            callback = new ProducerCallback(buffered);
         }
         if (customPartitioner != null) {
-            customPartitioner.initialize(getRuntimeContext().getIndexOfThisSubtask(), getRuntimeContext().getNumberOfParallelSubtasks());
+            customPartitioner.initialize(
+                    getRuntimeContext().getIndexOfThisSubtask(),
+                    getRuntimeContext().getNumberOfParallelSubtasks());
         }
-        ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.userAgent = Consts.LOG_CONNECTOR_USER_AGENT;
-        if (configProps.containsKey(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT))
-            producerConfig.maxIOThreadSizeInPool = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT));
-        if (configProps.containsKey(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS))
-            producerConfig.packageTimeoutInMS = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS));
-        if (configProps.containsKey(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE))
-            producerConfig.logsCountPerPackage = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE));
-        if (configProps.containsKey(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE))
-            producerConfig.logsBytesPerPackage = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE));
-        if (configProps.containsKey(ConfigConstants.LOG_MEM_POOL_BYTES))
-            producerConfig.memPoolSizeInByte = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_MEM_POOL_BYTES));
-        logProducer = new LogProducer(producerConfig);
-        logProducer.setProjectConfig(new ProjectConfig(logProject, configProps.getProperty(ConfigConstants.LOG_ENDPOINT), configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID), configProps.getProperty(ConfigConstants.LOG_ACCESSKEY)));
+        producer = createProducer();
+        executor = Executors.newSingleThreadExecutor();
         LOG.info("Started log producer instance");
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
-        if (logProducer != null) {
-            logProducer.flush();
-            Thread.sleep(logProducer.getProducerConfig().packageTimeoutInMS);
+        if (producer != null) {
+            long lingerMs = producer.getProducerConfig().getLingerMs();
+            while (buffered.get() > 0) {
+                LOG.info("Sleep {} ms to wait all records send to remote server", lingerMs);
+                Thread.sleep(lingerMs);
+            }
         }
     }
 
-    public void initializeState(FunctionInitializationContext context) throws Exception {
-        // do nothing
+    public void initializeState(FunctionInitializationContext context) {
     }
 
     @Override
     public void invoke(T value, Context context) {
-        if (this.logProducer == null) {
+        if (this.producer == null) {
             throw new IllegalStateException("Flink log producer has not been initialized yet!");
         }
         RawLogGroup logGroup = schema.serialize(value);
@@ -134,20 +142,55 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (logs.isEmpty()) {
             return;
         }
-        ProducerCallback cloneCallback = callback.clone();
-        cloneCallback.init(logProducer, logProject, logStore, logGroup.getTopic(), shardHashKey, logGroup.getSource(), logs);
-        logProducer.send(logProject, logStore, logGroup.getTopic(), shardHashKey, logGroup.getSource(), logs, cloneCallback);
+        ListenableFuture<Result> future = null;
+        try {
+            future = producer.send(logProject,
+                    logStore,
+                    logGroup.getTopic(),
+                    logGroup.getSource(),
+                    shardHashKey,
+                    logs);
+            Futures.addCallback(future, callback, executor);
+            buffered.incrementAndGet();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ProducerException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public void close() throws Exception {
-        if (logProducer != null) {
-            logProducer.flush();
-            Thread.sleep(logProducer.getProducerConfig().packageTimeoutInMS);
-            logProducer.close();
-            logProducer = null;
+        if (producer != null) {
+            producer.close();
+            producer = null;
         }
         super.close();
         LOG.info("Flink log producer has been closed");
+    }
+
+    public static class ProducerCallback implements FutureCallback<Result> {
+        private AtomicLong count;
+
+        public ProducerCallback(AtomicLong count) {
+            this.count = count;
+        }
+
+        @Override
+        public void onSuccess(@Nullable Result result) {
+            count.decrementAndGet();
+            if (result != null && !result.isSuccessful()) {
+                LOG.error("Send logs failed, errorCode={}, errorMsg={}, attemptCount={}",
+                        result.getErrorCode(),
+                        result.getErrorMessage(),
+                        result.getAttemptCount());
+            }
+        }
+
+        @Override
+        public void onFailure(Throwable throwable) {
+            count.decrementAndGet();
+            LOG.error("Send logs failed", throwable);
+        }
     }
 }
