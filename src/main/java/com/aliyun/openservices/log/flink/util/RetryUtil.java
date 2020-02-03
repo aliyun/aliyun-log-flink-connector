@@ -9,9 +9,9 @@ import java.util.concurrent.Callable;
 final class RetryUtil {
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
 
-    private static final long INITIAL_BACKOFF = 500;
+    private static final long INITIAL_BACKOFF = 200;
     private static final long MAX_BACKOFF = 5000;
-    private static final int MAX_ATTEMPTS = 20;
+    private static final int MAX_ATTEMPTS = 12;
 
     private RetryUtil() {
     }
@@ -25,29 +25,30 @@ final class RetryUtil {
     }
 
     static <T> T call(Callable<T> callable, String errorMsg) throws LogException {
-        int counter = 0;
         long backoff = INITIAL_BACKOFF;
+        int retries = 0;
         do {
             try {
-                // TODO Catch ignorable exception in call()
                 return callable.call();
-            } catch (LogException e1) {
-                if (e1.GetHttpCode() >= 500) {
-                    LOG.error("{}: {}, retry after {} ms", errorMsg, e1.GetErrorMessage(), backoff);
-                    // always retry for internal server error
-                    counter = 0;
-                } else if (counter < MAX_ATTEMPTS) {
-                    LOG.error("{}: {}, retry {}/{}", errorMsg, e1.GetErrorMessage(), counter, MAX_ATTEMPTS);
-                    counter++;
+            } catch (LogException ex) {
+                if (ex.GetHttpCode() == 400) {
+                    throw ex;
+                }
+                if (ex.GetHttpCode() >= 500) {
+                    LOG.error("{}: {}, retry after {} ms", errorMsg, ex.GetErrorMessage(), backoff);
+                    retries = 0;
+                } else if (retries < MAX_ATTEMPTS) {
+                    LOG.error("{}: {}, retry {}/{}", errorMsg, ex.GetErrorMessage(), retries, MAX_ATTEMPTS);
+                    retries++;
                 } else {
-                    throw e1;
+                    throw ex;
                 }
-            } catch (Exception e2) {
-                if (counter >= MAX_ATTEMPTS) {
-                    throw new LogException("UnknownError", errorMsg, e2, "");
+            } catch (Exception ex) {
+                if (retries >= MAX_ATTEMPTS) {
+                    throw new LogException("UnknownError", errorMsg, ex, "");
                 }
-                LOG.error("{}, retry {}/{}", errorMsg, counter, MAX_ATTEMPTS, e2);
-                counter++;
+                LOG.error("{}, retry {}/{}", errorMsg, retries, MAX_ATTEMPTS, ex);
+                retries++;
             }
             waitForMs(backoff);
             backoff = Math.min(backoff * 2, MAX_BACKOFF);

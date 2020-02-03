@@ -21,7 +21,6 @@ public class LogClientProxy implements Serializable {
     private static final long serialVersionUID = -8094827334076355612L;
 
     private final Client client;
-    private long consumerGroupCreatedAt = -1;
 
     public LogClientProxy(String endpoint, String accessKeyId, String accessKey, String userAgent) {
         this.client = new Client(endpoint, accessKeyId, accessKey);
@@ -106,25 +105,21 @@ public class LogClientProxy implements Serializable {
 
     public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)
             throws Exception {
-        boolean createdAtThisTime = RetryUtil.call(new Callable<Boolean>() {
+        RetryUtil.call(new Callable<Void>() {
             @Override
-            public Boolean call() throws Exception {
+            public Void call() throws Exception {
                 ConsumerGroup consumerGroup = new ConsumerGroup(consumerGroupName, 100, false);
                 try {
                     client.CreateConsumerGroup(project, logstore, consumerGroup);
                 } catch (LogException ex) {
                     if ("ConsumerGroupAlreadyExist".equals(ex.GetErrorCode())) {
-                        return false;
+                        return null;
                     }
                     throw ex;
                 }
-                return true;
+                return null;
             }
         }, "Error while creating consumer group");
-        if (createdAtThisTime) {
-            // We can ignore shard not exist error during Consumer Group initializing.
-            consumerGroupCreatedAt = System.currentTimeMillis();
-        }
     }
 
     public void updateCheckpoint(final String project,
@@ -137,26 +132,20 @@ public class LogClientProxy implements Serializable {
             LOG.warn("The checkpoint to update is invalid: {}", checkpoint);
             return;
         }
-        RetryUtil.call(new Callable<Void>() {
-            @Override
-            public Void call() throws LogException {
-                try {
+        try {
+            RetryUtil.call(new Callable<Void>() {
+                @Override
+                public Void call() throws LogException {
                     client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
-                } catch (LogException ex) {
-                    if (!"ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
-                        throw ex;
-                    }
-                    if (readOnly) {
-                        LOG.warn("Read only shard {} maybe deleted", shard);
-                        return null;
-                    } else if (System.currentTimeMillis() - consumerGroupCreatedAt <= 60000) {
-                        LOG.info("Consumer group is not ready, ignore shard not exist error");
-                    } else {
-                        throw ex;
-                    }
+                    return null;
                 }
-                return null;
+            }, "Error while updating checkpoint");
+        } catch (LogException ex) {
+            if ("ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
+                LOG.warn("Shard {} not exist, readonly = {}", shard, readOnly);
+            } else {
+                throw ex;
             }
-        }, "Error while updating checkpoint");
+        }
     }
 }
