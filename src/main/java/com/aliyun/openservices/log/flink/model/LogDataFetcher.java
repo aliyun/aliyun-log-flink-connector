@@ -99,7 +99,7 @@ public class LogDataFetcher<T> {
 
     private static int getMaximumPoolSize(Properties configProps) {
         int numberOfCPU = Runtime.getRuntime().availableProcessors();
-        return PropertiesUtil.getInt(configProps, ConfigConstants.LOG_CONSUMER_MAX_THREAD, numberOfCPU);
+        return PropertiesUtil.getInt(configProps, ConfigConstants.LOG_CONSUMER_MAX_POOL_SIZE, numberOfCPU);
     }
 
     private static class FetchThreadFactory implements ThreadFactory {

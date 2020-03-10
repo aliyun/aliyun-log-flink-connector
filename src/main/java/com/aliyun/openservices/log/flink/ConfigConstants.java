@@ -27,7 +27,7 @@ public class ConfigConstants {
     /**
      * Maximum thread used to fetch data. Defaults to number of CPU.
      */
-    public static String LOG_CONSUMER_MAX_THREAD = "CONSUMER_MAX_THREAD";
+    public static String LOG_CONSUMER_MAX_POOL_SIZE = "CONSUMER_MAX_POOL_SIZE";
 
     // for producer
     public static String LOG_SENDER_IO_THREAD_COUNT = "SENDER_IO_THREAD_COUNT";
