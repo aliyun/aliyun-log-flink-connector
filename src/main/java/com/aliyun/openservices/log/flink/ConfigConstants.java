@@ -24,6 +24,11 @@ public class ConfigConstants {
      */
     public static String LOG_CONSUMER_DEFAULT_POSITION = "CONSUMER_DEFAULT_POSITION";
 
+    /**
+     * Maximum thread used to fetch data. Defaults to number of CPU.
+     */
+    public static String LOG_CONSUMER_MAX_THREAD = "CONSUMER_MAX_THREAD";
+
     // for producer
     public static String LOG_SENDER_IO_THREAD_COUNT = "SENDER_IO_THREAD_COUNT";
     public static String LOG_PACKAGE_TIMEOUT_MILLIS = "PACKAGE_TIMEOUT_MILLIS";

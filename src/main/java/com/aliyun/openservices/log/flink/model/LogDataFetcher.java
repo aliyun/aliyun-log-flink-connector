@@ -7,19 +7,21 @@ import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.util.PropertiesUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -52,7 +54,7 @@ public class LogDataFetcher<T> {
 
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
-                          RuntimeContext runtimeContext,
+                          RuntimeContext context,
                           Properties configProps,
                           LogDeserializationSchema<T> deserializationSchema,
                           LogClientProxy logClient,
@@ -60,11 +62,11 @@ public class LogDataFetcher<T> {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializationSchema = deserializationSchema;
-        this.totalNumberOfSubtasks = runtimeContext.getNumberOfParallelSubtasks();
-        this.indexOfThisSubtask = runtimeContext.getIndexOfThisSubtask();
+        this.totalNumberOfSubtasks = context.getNumberOfParallelSubtasks();
+        this.indexOfThisSubtask = context.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
         this.subscribedShardsState = new LinkedList<LogstoreShardState>();
-        this.shardConsumersExecutor = createShardConsumersThreadPool(runtimeContext.getTaskNameWithSubtasks());
+        this.shardConsumersExecutor = createThreadPool(context.getTaskNameWithSubtasks(), configProps);
         this.error = new AtomicReference<Throwable>();
         this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
@@ -95,17 +97,36 @@ public class LogDataFetcher<T> {
         return (Math.abs(shard.hashCode() % totalNumberOfSubtasks)) == indexOfThisSubtask;
     }
 
-    private static ExecutorService createShardConsumersThreadPool(final String subtaskName) {
-        return Executors.newCachedThreadPool(new ThreadFactory() {
-            private final AtomicLong threadCount = new AtomicLong(0);
+    private static int getMaximumPoolSize(Properties configProps) {
+        int numberOfCPU = Runtime.getRuntime().availableProcessors();
+        return PropertiesUtil.getInt(configProps, ConfigConstants.LOG_CONSUMER_MAX_THREAD, numberOfCPU);
+    }
 
-            public Thread newThread(Runnable runnable) {
-                Thread thread = new Thread(runnable);
-                thread.setName("shardConsumers-" + subtaskName + "-thread-" + threadCount.getAndIncrement());
-                thread.setDaemon(true);
-                return thread;
-            }
-        });
+    private static class FetchThreadFactory implements ThreadFactory {
+        private final String subtaskName;
+        private final AtomicLong threadCount = new AtomicLong(0);
+
+        FetchThreadFactory(String subtaskName) {
+            this.subtaskName = subtaskName;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread thread = new Thread(r);
+            thread.setName("Consumer-" + subtaskName + "-thread-" + threadCount.getAndIncrement());
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
+
+    private static ExecutorService createThreadPool(final String subtaskName, Properties configProps) {
+        int maxPoolSize = getMaximumPoolSize(configProps);
+        return new ThreadPoolExecutor(0,
+                maxPoolSize,
+                60L,
+                TimeUnit.SECONDS,
+                new SynchronousQueue<Runnable>(),
+                new FetchThreadFactory(subtaskName));
     }
 
     private List<LogstoreShardMeta> listAssignedShards() throws Exception {
