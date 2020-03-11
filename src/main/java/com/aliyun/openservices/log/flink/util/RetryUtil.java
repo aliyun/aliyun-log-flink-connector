@@ -11,7 +11,7 @@ final class RetryUtil {
 
     private static final long INITIAL_BACKOFF = 200;
     private static final long MAX_BACKOFF = 5000;
-    private static final int MAX_ATTEMPTS = 12;
+    private static final int MAX_ATTEMPTS = 5;
 
     private RetryUtil() {
     }
