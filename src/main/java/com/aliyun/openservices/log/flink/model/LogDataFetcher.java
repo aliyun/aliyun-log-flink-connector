@@ -222,7 +222,7 @@ public class LogDataFetcher<T> {
         startCommitThreadIfNeeded();
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
-            if (!shardState.isFinished()) {
+            if (shardState.hasMoreData()) {
                 createConsumerForShard(index, shardState.getShardMeta().getShardId());
             }
         }
@@ -302,12 +302,13 @@ public class LogDataFetcher<T> {
         synchronized (checkpointLock) {
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
             state.setOffset(cursor);
-            if (state.isFinished()) {
-                if (this.numberOfActiveShards.decrementAndGet() == 0) {
-                    LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
-                            indexOfThisSubtask);
-                    sourceContext.markAsTemporarilyIdle();
-                }
+            if (state.hasMoreData()) {
+                return;
+            }
+            if (this.numberOfActiveShards.decrementAndGet() == 0) {
+                LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
+                        indexOfThisSubtask);
+                sourceContext.markAsTemporarilyIdle();
             }
         }
     }
