@@ -98,7 +98,7 @@ public class LogDataFetcher<T> {
     }
 
     private static int getMaximumPoolSize(Properties configProps) {
-        int numberOfCPU = Runtime.getRuntime().availableProcessors();
+        int numberOfCPU = Runtime.getRuntime().availableProcessors() * 2;
         return PropertiesUtil.getInt(configProps, ConfigConstants.LOG_CONSUMER_MAX_POOL_SIZE, numberOfCPU);
     }
 
