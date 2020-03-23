@@ -28,59 +28,53 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducer.class);
-    private final Properties configProps;
     private final LogSerializationSchema<T> schema;
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
     private transient ProducerCallback callback;
     private final String logProject;
-    private final String logStore;
+    private final String logstore;
     private ExecutorService executor;
     private AtomicLong buffered = new AtomicLong(0);
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
+        this(schema, configProps, null);
+    }
+
+    public FlinkLogProducer(final LogSerializationSchema<T> schema,
+                            Properties configProps,
+                            ProducerConfig producerConfig) {
         if (schema == null) {
             throw new IllegalArgumentException("schema cannot be null");
         }
         if (configProps == null) {
             throw new IllegalArgumentException("configProps cannot be null");
         }
-        this.configProps = configProps;
         this.schema = schema;
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logStore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
-    }
-
-    public Properties getConfigProps() {
-        return configProps;
-    }
-
-    public LogPartitioner<T> getCustomPartitioner() {
-        return customPartitioner;
+        this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
+        this.producer = createProducer(configProps, producerConfig);
     }
 
     public void setCustomPartitioner(LogPartitioner<T> customPartitioner) {
         this.customPartitioner = customPartitioner;
     }
 
-    public LogSerializationSchema<T> getSchema() {
-        return schema;
-    }
-
-    private Producer createProducer() {
-        ProducerConfig producerConfig = new ProducerConfig();
+    private Producer createProducer(Properties configProps, ProducerConfig producerConfig) {
+        if (producerConfig == null) {
+            producerConfig = new ProducerConfig();
+        }
         Producer producer = new LogProducer(producerConfig);
         ProjectConfig config = new ProjectConfig(logProject,
                 configProps.getProperty(ConfigConstants.LOG_ENDPOINT),
                 configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID),
                 configProps.getProperty(ConfigConstants.LOG_ACCESSKEY));
-        int numberOfIOThread = Integer.parseInt(configProps.getProperty(ConfigConstants.LOG_SENDER_IO_THREAD_COUNT, "4"));
-        producerConfig.setIoThreadCount(numberOfIOThread);
         producer.putProjectConfig(config);
         return producer;
     }
@@ -96,16 +90,15 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     getRuntimeContext().getIndexOfThisSubtask(),
                     getRuntimeContext().getNumberOfParallelSubtasks());
         }
-        producer = createProducer();
         executor = Executors.newSingleThreadExecutor();
-        LOG.info("Started log producer instance");
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
         if (producer != null) {
+            // TODO support flush in producer
             long lingerMs = producer.getProducerConfig().getLingerMs();
             while (buffered.get() > 0) {
-                LOG.info("Sleep {} ms to wait all records send to remote server", lingerMs);
+                LOG.info("Sleep {} ms to wait all records flushed", lingerMs);
                 Thread.sleep(lingerMs);
             }
         }
@@ -142,10 +135,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (logs.isEmpty()) {
             return;
         }
-        ListenableFuture<Result> future = null;
         try {
-            future = producer.send(logProject,
-                    logStore,
+            ListenableFuture<Result> future = producer.send(logProject,
+                    logstore,
                     logGroup.getTopic(),
                     logGroup.getSource(),
                     shardHashKey,
@@ -165,6 +157,15 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             producer.close();
             producer = null;
         }
+        if (executor != null) {
+            executor.shutdown();
+            if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
+                    LOG.warn("Stop executor failed");
+                }
+            }
+        }
         super.close();
         LOG.info("Flink log producer has been closed");
     }
@@ -172,7 +173,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     public static class ProducerCallback implements FutureCallback<Result> {
         private AtomicLong count;
 
-        public ProducerCallback(AtomicLong count) {
+        ProducerCallback(AtomicLong count) {
             this.count = count;
         }
 
@@ -180,7 +181,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         public void onSuccess(@Nullable Result result) {
             count.decrementAndGet();
             if (result != null && !result.isSuccessful()) {
-                LOG.error("Send logs failed, errorCode={}, errorMsg={}, attemptCount={}",
+                LOG.error("Send logs failed, code={}, errorMsg={}, retries={}",
                         result.getErrorCode(),
                         result.getErrorMessage(),
                         result.getAttemptCount());
