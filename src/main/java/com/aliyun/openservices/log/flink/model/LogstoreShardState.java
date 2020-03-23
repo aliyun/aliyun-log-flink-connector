@@ -26,9 +26,7 @@ public class LogstoreShardState {
     }
 
     boolean hasMoreData() {
-        return offset == null
-                || shardMeta.isReadWrite()
-                || !offset.equalsIgnoreCase(shardMeta.getEndCursor());
+        return shardMeta.isReadWrite() || !(offset != null && offset.equalsIgnoreCase(shardMeta.getEndCursor()));
     }
 
     @Override
