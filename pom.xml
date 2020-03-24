@@ -11,12 +11,12 @@
     <version>0.1.19-SNAPSHOT</version>
     <name>flink log connector</name>
     <url>http://www.aliyun.com</url>
-    <description>flink log connector</description>
+    <description>Flink Connector for Aliyun Log Service</description>
+
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>1.6</maven.compiler.source>
-        <maven.compiler.target>1.6</maven.compiler.target>
     </properties>
+
     <licenses>
         <license>
             <name />

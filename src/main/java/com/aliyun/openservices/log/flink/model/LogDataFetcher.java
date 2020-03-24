@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -110,7 +109,7 @@ public class LogDataFetcher<T> {
         @Override
         public Thread newThread(Runnable r) {
             Thread thread = new Thread(r);
-            thread.setName("Consumer-" + subtaskName + "-thread-" + threadCount.getAndIncrement());
+            thread.setName("Consumer-" + subtaskName + "-" + threadCount.getAndIncrement());
             thread.setDaemon(true);
             return thread;
         }
@@ -129,7 +128,6 @@ public class LogDataFetcher<T> {
 
     private List<LogstoreShardMeta> listAssignedShards() throws Exception {
         List<String> logstores = getLogstores();
-        LOG.info("Logstores = {}", Arrays.toString(logstores.toArray()));
         List<LogstoreShardMeta> shardMetas = new ArrayList<>();
         for (String logstore : logstores) {
             List<Shard> shards = logClient.listShards(project, logstore);
