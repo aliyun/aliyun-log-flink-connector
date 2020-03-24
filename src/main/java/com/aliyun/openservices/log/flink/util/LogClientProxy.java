@@ -10,6 +10,7 @@ import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
 import com.aliyun.openservices.log.response.ListLogStoresResponse;
 import com.aliyun.openservices.log.response.PullLogsResponse;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,6 +75,15 @@ public class LogClientProxy implements Serializable {
         return RetryUtil.call(() -> client.pullLogs(request), "Error while pulling logs");
     }
 
+    @VisibleForTesting
+    static void filter(List<String> logstores, Pattern pattern, List<String> result) {
+        for (String logstore : logstores) {
+            if (pattern == null || pattern.matcher(logstore).matches()) {
+                result.add(logstore);
+            }
+        }
+    }
+
     public List<String> listLogstores(String project, Pattern pattern) {
         List<String> logstores = new ArrayList<>();
         try {
@@ -81,11 +91,7 @@ public class LogClientProxy implements Serializable {
             int batchSize = 100;
             while (true) {
                 ListLogStoresResponse response = client.ListLogStores(project, offset, batchSize, "");
-                for (String logstore : response.GetLogStores()) {
-                    if (pattern == null || pattern.matcher(logstore).matches()) {
-                        logstores.add(logstore);
-                    }
-                }
+                filter(response.GetLogStores(), pattern, logstores);
                 if (response.GetCount() < batchSize) {
                     break;
                 }
