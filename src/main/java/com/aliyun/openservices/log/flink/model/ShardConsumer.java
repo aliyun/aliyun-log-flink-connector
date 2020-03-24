@@ -25,7 +25,6 @@ public class ShardConsumer<T> implements Runnable {
     private final long fetchIntervalMs;
     private final LogClientProxy logClient;
     private final String logProject;
-    private final String logstore;
     private String initialPosition;
     private final String defaultPosition;
     private final String consumerGroup;
@@ -46,8 +45,7 @@ public class ShardConsumer<T> implements Runnable {
         this.fetchIntervalMs = LogUtil.getFetchIntervalMillis(configProps);
         this.logClient = logClient;
         this.committer = committer;
-        this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
+        this.logProject = fetcher.getProject();
         this.initialPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)
@@ -60,7 +58,7 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
-    private String findInitialCursor(String position, int shardId) throws Exception {
+    private String findInitialCursor(String logstore, String position, int shardId) throws Exception {
         String cursor;
         if (Consts.LOG_BEGIN_CURSOR.equals(position)) {
             cursor = logClient.getBeginCursor(logProject, logstore, shardId);
@@ -78,7 +76,7 @@ public class ShardConsumer<T> implements Runnable {
                 LOG.info("No checkpoint available, fallthrough to default position {}", defaultPosition);
                 // FIXME change initialPosition as it will be used if pull logs return a InvalidCursor error
                 initialPosition = defaultPosition;
-                cursor = findInitialCursor(defaultPosition, shardId);
+                cursor = findInitialCursor(logstore, defaultPosition, shardId);
             }
         } else {
             int timestamp;
@@ -92,14 +90,14 @@ public class ShardConsumer<T> implements Runnable {
         return cursor;
     }
 
-    private String restoreCursorFromStateOrCheckpoint(LogstoreShardState state,
+    private String restoreCursorFromStateOrCheckpoint(String logstore,
+                                                      String cursor,
                                                       int shardId) throws Exception {
-        String cursor = state.getOffset();
         if (cursor != null) {
             LOG.info("Restored cursor from Flink state: {}, shard: {}", cursor, shardId);
             return cursor;
         }
-        cursor = findInitialCursor(initialPosition, shardId);
+        cursor = findInitialCursor(logstore, initialPosition, shardId);
         if (cursor == null) {
             throw new RuntimeException("Unable to find the initial cursor from: " + initialPosition);
         }
@@ -111,7 +109,8 @@ public class ShardConsumer<T> implements Runnable {
             LogstoreShardState state = fetcher.getShardState(subscribedShardStateIndex);
             final LogstoreShardMeta shardMeta = state.getShardMeta();
             final int shardId = shardMeta.getShardId();
-            String cursor = restoreCursorFromStateOrCheckpoint(state, shardId);
+            String logstore = shardMeta.getLogstore();
+            String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
             while (isRunning()) {
                 PullLogsResponse response;
@@ -126,11 +125,10 @@ public class ShardConsumer<T> implements Runnable {
                         LOG.warn("The shard {} already not exist, project {} logstore {}", shardId, logProject, logstore);
                         break;
                     }
-                    // TODO Remove the following code
                     if ("InvalidCursor".equalsIgnoreCase(errorCode)
                             && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
                         LOG.warn("Got invalid cursor error, start from default position {}", defaultPosition);
-                        cursor = findInitialCursor(defaultPosition, shardId);
+                        cursor = findInitialCursor(logstore, defaultPosition, shardId);
                         continue;
                     }
                     throw ex;
@@ -143,7 +141,7 @@ public class ShardConsumer<T> implements Runnable {
                     String nextCursor = response.getNextCursor();
                     if (response.getCount() > 0) {
                         long processingStartTimeMs = System.currentTimeMillis();
-                        processRecordsAndSaveOffset(response.getLogGroups(), shardId, nextCursor);
+                        processRecordsAndSaveOffset(response.getLogGroups(), shardMeta, nextCursor);
                         processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
                         LOG.debug("Processing records of shard {} cost {} ms.", shardId, processingTimeMs);
                         cursor = nextCursor;
@@ -181,11 +179,11 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
-    void setReadOnly() {
+    void markAsReadOnly() {
         this.readOnly = true;
     }
 
-    private void processRecordsAndSaveOffset(List<LogGroupData> records, int shardId, String nextCursor) {
+    private void processRecordsAndSaveOffset(List<LogGroupData> records, LogstoreShardMeta shard, String nextCursor) {
         final T value = deserializer.deserialize(records);
         long timestamp = System.currentTimeMillis();
         if (!records.isEmpty()) {
@@ -196,7 +194,7 @@ public class ShardConsumer<T> implements Runnable {
         }
         fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
         if (committer != null) {
-            committer.updateCheckpoint(shardId, nextCursor, readOnly);
+            committer.updateCheckpoint(shard, nextCursor, readOnly);
         }
     }
 

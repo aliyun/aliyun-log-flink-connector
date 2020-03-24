@@ -8,13 +8,16 @@ import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
+import com.aliyun.openservices.log.response.ListLogStoresResponse;
 import com.aliyun.openservices.log.response.PullLogsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.regex.Pattern;
 
 public class LogClientProxy implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
@@ -28,97 +31,89 @@ public class LogClientProxy implements Serializable {
     }
 
     public String getEndCursor(final String project, final String logstore, final int shard) throws LogException {
-        return RetryUtil.call(new Callable<String>() {
-            @Override
-            public String call() throws Exception {
-                return client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor();
-            }
-        }, "Error while getting end cursor");
+        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor(), "Error while getting end cursor");
     }
 
     public String getBeginCursor(final String project, final String logstore, final int shard) throws LogException {
-        return RetryUtil.call(new Callable<String>() {
-            @Override
-            public String call() throws Exception {
-                return client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor();
-            }
-        }, "Error while getting begin cursor");
+        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor(), "Error while getting begin cursor");
     }
 
     public String getCursorAtTimestamp(final String project, final String logstore, final int shard, final int ts) throws LogException {
-        return RetryUtil.call(new Callable<String>() {
-            @Override
-            public String call() throws Exception {
-                return client.GetCursor(project, logstore, shard, ts).GetCursor();
-            }
-        }, "Error while getting cursor with timestamp");
+        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, ts).GetCursor(), "Error while getting cursor with timestamp");
     }
 
     public String fetchCheckpoint(final String project,
                                   final String logstore,
                                   final String consumerGroup,
                                   final int shard) throws LogException {
-        return RetryUtil.call(new Callable<String>() {
-            @Override
-            public String call() throws Exception {
-                try {
-                    ConsumerGroupCheckPointResponse response = client.GetCheckPoint(project, logstore, consumerGroup, shard);
-                    List<ConsumerGroupShardCheckPoint> checkpoints = response.getCheckPoints();
-                    if (checkpoints == null || checkpoints.isEmpty()) {
-                        LOG.info("No checkpoint found for shard {}, consumer group {}", shard, consumerGroup);
-                        return null;
-                    }
-                    ConsumerGroupShardCheckPoint checkpoint = checkpoints.get(0);
-                    if (checkpoint != null) {
-                        LOG.info("Got checkpoint {} from consumer group {} for shard {}", checkpoint.getCheckPoint(), consumerGroup, shard);
-                        return checkpoint.getCheckPoint();
-                    }
-                } catch (LogException ex) {
-                    if (!ex.GetErrorCode().contains("NotExist")) {
-                        throw ex;
-                    }
+        return RetryUtil.call(() -> {
+            try {
+                ConsumerGroupCheckPointResponse response = client.GetCheckPoint(project, logstore, consumerGroup, shard);
+                List<ConsumerGroupShardCheckPoint> checkpoints = response.getCheckPoints();
+                if (checkpoints == null || checkpoints.isEmpty()) {
+                    LOG.info("No checkpoint found for shard {}, consumer group {}", shard, consumerGroup);
+                    return null;
                 }
-                return null;
+                ConsumerGroupShardCheckPoint checkpoint = checkpoints.get(0);
+                if (checkpoint != null) {
+                    LOG.info("Got checkpoint {} from consumer group {} for shard {}", checkpoint.getCheckPoint(), consumerGroup, shard);
+                    return checkpoint.getCheckPoint();
+                }
+            } catch (LogException ex) {
+                if (!ex.GetErrorCode().contains("NotExist")) {
+                    throw ex;
+                }
             }
+            return null;
         }, "Error while getting checkpoint");
     }
 
     public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, int count)
             throws LogException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor);
-        return RetryUtil.call(new Callable<PullLogsResponse>() {
-            @Override
-            public PullLogsResponse call() throws Exception {
-                return client.pullLogs(request);
+        return RetryUtil.call(() -> client.pullLogs(request), "Error while pulling logs");
+    }
+
+    public List<String> listLogstores(String project, Pattern pattern) {
+        List<String> logstores = new ArrayList<>();
+        try {
+            int offset = 0;
+            int batchSize = 100;
+            while (true) {
+                ListLogStoresResponse response = client.ListLogStores(project, offset, batchSize, "");
+                for (String logstore : response.GetLogStores()) {
+                    if (pattern == null || pattern.matcher(logstore).matches()) {
+                        logstores.add(logstore);
+                    }
+                }
+                if (response.GetCount() < batchSize) {
+                    break;
+                }
+                offset += batchSize;
             }
-        }, "Error while pulling logs");
+        } catch (LogException ex) {
+            LOG.warn("Error listing logstores", ex);
+        }
+        return logstores;
     }
 
     public List<Shard> listShards(final String project, final String logstore) throws LogException {
-        return RetryUtil.call(new Callable<List<Shard>>() {
-            @Override
-            public List<Shard> call() throws Exception {
-                return client.ListShard(project, logstore).GetShards();
-            }
-        }, "Error while listing shards");
+        return RetryUtil.call((Callable<List<Shard>>) () -> client.ListShard(project, logstore).GetShards(), "Error while listing shards");
     }
 
     public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)
             throws Exception {
-        RetryUtil.call(new Callable<Void>() {
-            @Override
-            public Void call() throws Exception {
-                ConsumerGroup consumerGroup = new ConsumerGroup(consumerGroupName, 100, false);
-                try {
-                    client.CreateConsumerGroup(project, logstore, consumerGroup);
-                } catch (LogException ex) {
-                    if ("ConsumerGroupAlreadyExist".equals(ex.GetErrorCode())) {
-                        return null;
-                    }
-                    throw ex;
+        RetryUtil.call((Callable<Void>) () -> {
+            ConsumerGroup consumerGroup = new ConsumerGroup(consumerGroupName, 100, false);
+            try {
+                client.CreateConsumerGroup(project, logstore, consumerGroup);
+            } catch (LogException ex) {
+                if ("ConsumerGroupAlreadyExist".equals(ex.GetErrorCode())) {
+                    return null;
                 }
-                return null;
+                throw ex;
             }
+            return null;
         }, "Error while creating consumer group");
     }
 
@@ -133,19 +128,24 @@ public class LogClientProxy implements Serializable {
             return;
         }
         try {
-            RetryUtil.call(new Callable<Void>() {
-                @Override
-                public Void call() throws LogException {
-                    client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
-                    return null;
-                }
+            RetryUtil.call((Callable<Void>) () -> {
+                client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
+                return null;
             }, "Error while updating checkpoint");
         } catch (LogException ex) {
-            if ("ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
+            if ("ConsumerGroupNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
+                LOG.warn("Consumer group not exist: {}", consumerGroup);
+            } else if ("ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
                 LOG.warn("Shard {} not exist, readonly = {}", shard, readOnly);
             } else {
                 throw ex;
             }
+        }
+    }
+
+    public void close() {
+        if (client != null) {
+            client.shutdown();
         }
     }
 }
