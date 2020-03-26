@@ -44,7 +44,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private AtomicLong buffered = new AtomicLong(0);
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
-        this(schema, configProps, null);
+        this(schema, configProps, new ProducerConfig());
     }
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema,
@@ -55,6 +55,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         }
         if (configProps == null) {
             throw new IllegalArgumentException("configProps cannot be null");
+        }
+        if (producerConfig == null) {
+            throw new IllegalArgumentException("Producer config cannot be null");
         }
         this.schema = schema;
         this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
@@ -67,9 +70,6 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     }
 
     private Producer createProducer(Properties configProps, ProducerConfig producerConfig) {
-        if (producerConfig == null) {
-            producerConfig = new ProducerConfig();
-        }
         Producer producer = new LogProducer(producerConfig);
         ProjectConfig config = new ProjectConfig(logProject,
                 configProps.getProperty(ConfigConstants.LOG_ENDPOINT),
