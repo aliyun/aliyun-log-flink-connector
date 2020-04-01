@@ -194,11 +194,7 @@ public class ShardConsumer<T> implements Runnable {
                 timestamp = logTimeStamp * 1000;
             }
         }
-        fetcher.emitRecordAndUpdateState(
-                value,
-                timestamp,
-                subscribedShardStateIndex,
-                nextCursor);
+        fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
         if (committer != null) {
             committer.updateCheckpoint(shardId, nextCursor, readOnly);
         }

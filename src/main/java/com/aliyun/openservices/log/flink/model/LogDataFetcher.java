@@ -12,7 +12,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +51,7 @@ public class LogDataFetcher<T> {
 
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
-                          RuntimeContext runtimeContext,
+                          RuntimeContext context,
                           Properties configProps,
                           LogDeserializationSchema<T> deserializationSchema,
                           LogClientProxy logClient,
@@ -60,11 +59,11 @@ public class LogDataFetcher<T> {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializationSchema = deserializationSchema;
-        this.totalNumberOfSubtasks = runtimeContext.getNumberOfParallelSubtasks();
-        this.indexOfThisSubtask = runtimeContext.getIndexOfThisSubtask();
+        this.totalNumberOfSubtasks = context.getNumberOfParallelSubtasks();
+        this.indexOfThisSubtask = context.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
         this.subscribedShardsState = new LinkedList<LogstoreShardState>();
-        this.shardConsumersExecutor = createShardConsumersThreadPool(runtimeContext.getTaskNameWithSubtasks());
+        this.shardConsumersExecutor = createThreadPool(context.getTaskNameWithSubtasks());
         this.error = new AtomicReference<Throwable>();
         this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
@@ -95,17 +94,25 @@ public class LogDataFetcher<T> {
         return (Math.abs(shard.hashCode() % totalNumberOfSubtasks)) == indexOfThisSubtask;
     }
 
-    private static ExecutorService createShardConsumersThreadPool(final String subtaskName) {
-        return Executors.newCachedThreadPool(new ThreadFactory() {
-            private final AtomicLong threadCount = new AtomicLong(0);
+    private static class FetchThreadFactory implements ThreadFactory {
+        private final String subtaskName;
+        private final AtomicLong threadCount = new AtomicLong(0);
 
-            public Thread newThread(Runnable runnable) {
-                Thread thread = new Thread(runnable);
-                thread.setName("shardConsumers-" + subtaskName + "-thread-" + threadCount.getAndIncrement());
-                thread.setDaemon(true);
-                return thread;
-            }
-        });
+        FetchThreadFactory(String subtaskName) {
+            this.subtaskName = subtaskName;
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread thread = new Thread(r);
+            thread.setName("Consumer-" + subtaskName + "-thread-" + threadCount.getAndIncrement());
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
+
+    private static ExecutorService createThreadPool(final String subtaskName) {
+        return Executors.newCachedThreadPool(new FetchThreadFactory(subtaskName));
     }
 
     private List<LogstoreShardMeta> listAssignedShards() throws Exception {
@@ -201,7 +208,7 @@ public class LogDataFetcher<T> {
         startCommitThreadIfNeeded();
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
-            if (!shardState.isFinished()) {
+            if (shardState.hasMoreData()) {
                 createConsumerForShard(index, shardState.getShardMeta().getShardId());
             }
         }
@@ -281,12 +288,13 @@ public class LogDataFetcher<T> {
         synchronized (checkpointLock) {
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
             state.setOffset(cursor);
-            if (state.isFinished()) {
-                if (this.numberOfActiveShards.decrementAndGet() == 0) {
-                    LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
-                            indexOfThisSubtask);
-                    sourceContext.markAsTemporarilyIdle();
-                }
+            if (state.hasMoreData()) {
+                return;
+            }
+            if (this.numberOfActiveShards.decrementAndGet() == 0) {
+                LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
+                        indexOfThisSubtask);
+                sourceContext.markAsTemporarilyIdle();
             }
         }
     }
