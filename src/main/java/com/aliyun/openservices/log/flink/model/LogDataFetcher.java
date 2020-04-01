@@ -7,7 +7,6 @@ import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
-import org.apache.flink.util.PropertiesUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,10 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -66,7 +63,7 @@ public class LogDataFetcher<T> {
         this.indexOfThisSubtask = context.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
         this.subscribedShardsState = new LinkedList<LogstoreShardState>();
-        this.shardConsumersExecutor = createThreadPool(context.getTaskNameWithSubtasks(), configProps);
+        this.shardConsumersExecutor = createThreadPool(context.getTaskNameWithSubtasks());
         this.error = new AtomicReference<Throwable>();
         this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
@@ -97,11 +94,6 @@ public class LogDataFetcher<T> {
         return (Math.abs(shard.hashCode() % totalNumberOfSubtasks)) == indexOfThisSubtask;
     }
 
-    private static int getMaximumPoolSize(Properties configProps) {
-        int numberOfCPU = Runtime.getRuntime().availableProcessors() * 2;
-        return PropertiesUtil.getInt(configProps, ConfigConstants.LOG_CONSUMER_MAX_POOL_SIZE, numberOfCPU);
-    }
-
     private static class FetchThreadFactory implements ThreadFactory {
         private final String subtaskName;
         private final AtomicLong threadCount = new AtomicLong(0);
@@ -119,14 +111,8 @@ public class LogDataFetcher<T> {
         }
     }
 
-    private static ExecutorService createThreadPool(final String subtaskName, Properties configProps) {
-        int maxPoolSize = getMaximumPoolSize(configProps);
-        return new ThreadPoolExecutor(0,
-                maxPoolSize,
-                60L,
-                TimeUnit.SECONDS,
-                new SynchronousQueue<Runnable>(),
-                new FetchThreadFactory(subtaskName));
+    private static ExecutorService createThreadPool(final String subtaskName) {
+        return Executors.newCachedThreadPool(new FetchThreadFactory(subtaskName));
     }
 
     private List<LogstoreShardMeta> listAssignedShards() throws Exception {
