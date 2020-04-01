@@ -182,7 +182,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             return;
         }
         if (cursorsToRestore != null) {
-            LOG.info("State has been restored already.");
+            LOG.info("Flink state has been restored already.");
             return;
         }
         createClientIfNecessary();
