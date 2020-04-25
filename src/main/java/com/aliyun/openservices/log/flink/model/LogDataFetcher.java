@@ -120,10 +120,7 @@ public class LogDataFetcher<T> {
     }
 
     private List<String> getLogstores() {
-        if (logstores != null) {
-            return logstores;
-        }
-        return logClient.listLogstores(project, logstorePattern);
+        return logstores != null ? logstores : logClient.listLogstores(project, logstorePattern);
     }
 
     private List<LogstoreShardMeta> listAssignedShards() throws Exception {

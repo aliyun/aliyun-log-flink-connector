@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <groupId>org.sonatype.oss</groupId>
         <artifactId>oss-parent</artifactId>
@@ -19,8 +20,8 @@
 
     <licenses>
         <license>
-            <name />
-            <url />
+            <name/>
+            <url/>
             <distribution>repo</distribution>
             <comments>Copyright (C) Alibaba Cloud Computing. All rights reserved.</comments>
         </license>
@@ -75,20 +76,16 @@
         <dependency>
             <groupId>com.aliyun.openservices</groupId>
             <artifactId>aliyun-log</artifactId>
-            <version>0.6.44</version>
+            <version>0.6.45</version>
         </dependency>
         <dependency>
             <groupId>com.aliyun.openservices</groupId>
-            <artifactId>log-loghub-producer</artifactId>
-            <version>0.1.8</version>
+            <artifactId>aliyun-log-producer</artifactId>
+            <version>0.3.4</version>
             <exclusions>
                 <exclusion>
                     <artifactId>aliyun-log</artifactId>
                     <groupId>com.aliyun.openservices</groupId>
-                </exclusion>
-                <exclusion>
-                    <artifactId>fastjson</artifactId>
-                    <groupId>com.alibaba</groupId>
                 </exclusion>
             </exclusions>
         </dependency>

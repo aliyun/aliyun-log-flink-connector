@@ -23,13 +23,6 @@ public class ConfigConstants {
      * and the cursor is not valid.
      */
     public static String LOG_CONSUMER_DEFAULT_POSITION = "CONSUMER_DEFAULT_POSITION";
-
-    // for producer
-    public static String LOG_SENDER_IO_THREAD_COUNT = "SENDER_IO_THREAD_COUNT";
-    public static String LOG_PACKAGE_TIMEOUT_MILLIS = "PACKAGE_TIMEOUT_MILLIS";
-    public static String LOG_LOGS_COUNT_PER_PACKAGE = "LOGS_COUNT_PER_PACKAGE";
-    public static String LOG_LOGS_BYTES_PER_PACKAGE = "LOGS_BYTES_PER_PACKAGE";
-    public static String LOG_MEM_POOL_BYTES = "MEM_POOL_SIZE_IN_BYTES";
     public static String LOG_CHECKPOINT_MODE = "LOG_CHECKPOINT_MODE";
     public static String LOG_COMMIT_INTERVAL_MILLIS = "LOG_COMMIT_INTERVAL";
 }
