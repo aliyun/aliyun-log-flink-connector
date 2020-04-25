@@ -14,23 +14,20 @@ public class CheckpointCommitter extends Thread {
     private final LogClientProxy logClient;
     private final long commitInterval;
     private final LogDataFetcher fetcher;
-    private final Map<Integer, ShardInfo> checkpoints;
+    private final Map<LogstoreShardMeta, ShardInfo> checkpoints;
     private final String project;
-    private final String logstore;
     private final String consumerGroup;
 
     CheckpointCommitter(LogClientProxy client,
                         long commitInterval,
                         LogDataFetcher fetcher,
                         String project,
-                        String logstore,
                         String consumerGroup) {
-        this.checkpoints = new ConcurrentHashMap<Integer, ShardInfo>();
+        this.checkpoints = new ConcurrentHashMap<>();
         this.logClient = client;
         this.commitInterval = commitInterval;
         this.fetcher = fetcher;
         this.project = project;
-        this.logstore = logstore;
         this.consumerGroup = consumerGroup;
     }
 
@@ -63,13 +60,15 @@ public class CheckpointCommitter extends Thread {
 
     private void commitCheckpoints() throws Exception {
         LOG.debug("Committing checkpoint to remote server");
-        for (Integer shard : checkpoints.keySet()) {
+        for (LogstoreShardMeta shard : checkpoints.keySet()) {
             final ShardInfo shardInfo = checkpoints.remove(shard);
-            logClient.updateCheckpoint(project, logstore, consumerGroup, shard, shardInfo.readOnly, shardInfo.cursor);
+            logClient.updateCheckpoint(project, shard.getLogstore(),
+                    consumerGroup,
+                    shard.getShardId(), shardInfo.readOnly, shardInfo.cursor);
         }
     }
 
-    void updateCheckpoint(Integer shard, String cursor, boolean readOnly) {
+    void updateCheckpoint(LogstoreShardMeta shard, String cursor, boolean readOnly) {
         LOG.debug("Updating checkpoint for shard {}, cursor {}", shard, cursor);
         checkpoints.put(shard, new ShardInfo(cursor, readOnly));
     }
@@ -90,7 +89,7 @@ public class CheckpointCommitter extends Thread {
         private String cursor;
         private boolean readOnly;
 
-        public ShardInfo(String cursor, boolean readOnly) {
+        ShardInfo(String cursor, boolean readOnly) {
             this.cursor = cursor;
             this.readOnly = readOnly;
         }

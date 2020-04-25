@@ -6,7 +6,7 @@ public class Consts {
 
     public static int DEFAULT_NUMBER_PER_FETCH = 100;
     public static long DEFAULT_FETCH_INTERVAL_MILLIS = 100;
-    public static long DEFAULT_SHARDS_DISCOVERY_INTERVAL_MILLIS = 30 * 1000;
+    public static long DEFAULT_SHARDS_DISCOVERY_INTERVAL_MILLIS = 60 * 1000;
     public static long DEFAULT_COMMIT_INTERVAL_MILLIS = 10 * 1000;
 
     public static String LOG_BEGIN_CURSOR = "begin_cursor";

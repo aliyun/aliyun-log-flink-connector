@@ -1,11 +1,9 @@
 package com.aliyun.openservices.log.flink;
 
-import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
-import com.aliyun.openservices.log.flink.model.LogstoreShardState;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
@@ -24,10 +22,12 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Pattern;
 
 public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implements ResultTypeQueryable<T>,
         CheckpointedFunction, CheckpointListener {
@@ -37,27 +37,51 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private static final String CURSOR_STATE_STORE_NAME = "LogStore-Shard-State";
 
     private final Properties configProps;
+    private final LogDeserializationSchema<T> deserializer;
     private transient LogDataFetcher<T> fetcher;
     private volatile boolean running = true;
     private transient ListState<Tuple2<LogstoreShardMeta, String>> cursorStateForCheckpoint;
-    private final LogDeserializationSchema<T> deserializer;
     private transient HashMap<LogstoreShardMeta, String> cursorsToRestore;
     private final String consumerGroup;
     private LogClientProxy logClient;
-    private final String logProject;
-    private final String logstore;
+    private final String project;
+    private List<String> logstores;
+    private Pattern logstorePattern;
     private final CheckpointMode checkpointMode;
 
+    @Deprecated
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
         this.configProps = configProps;
         this.deserializer = deserializer;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
-        this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
+        this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
+        this.logstores = Collections.singletonList(configProps.getProperty(ConfigConstants.LOG_LOGSTORE));
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
     }
 
-    private void createClientIfNecessary() {
+    public FlinkLogConsumer(String project, List<String> logstores, LogDeserializationSchema<T> deserializer, Properties configProps) {
+        this.configProps = configProps;
+        this.deserializer = deserializer;
+        this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
+        this.project = project;
+        this.logstores = logstores;
+        this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
+    }
+
+    public FlinkLogConsumer(String project, String logstore, LogDeserializationSchema<T> deserializer, Properties configProps) {
+        this(project, Collections.singletonList(logstore), deserializer, configProps);
+    }
+
+    public FlinkLogConsumer(String project, Pattern logstorePattern, LogDeserializationSchema<T> deserializer, Properties configProps) {
+        this.configProps = configProps;
+        this.deserializer = deserializer;
+        this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
+        this.project = project;
+        this.logstorePattern = logstorePattern;
+        this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
+    }
+
+    private void createClientIfNeeded() {
         if (logClient != null) {
             return;
         }
@@ -72,20 +96,19 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     @Override
     public void run(SourceContext<T> sourceContext) throws Exception {
-        createClientIfNecessary();
+        createClientIfNeeded();
         final RuntimeContext ctx = getRuntimeContext();
         LOG.debug("NumberOfTotalTask={}, IndexOfThisSubtask={}", ctx.getNumberOfParallelSubtasks(), ctx.getIndexOfThisSubtask());
-        LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, configProps, deserializer, logClient, checkpointMode);
-        if (consumerGroup != null) {
-            logClient.createConsumerGroup(fetcher.getProject(), fetcher.getLogstore(), consumerGroup);
-        }
+        LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, project,
+                logstores, logstorePattern,
+                configProps, deserializer, logClient, checkpointMode);
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
         for (LogstoreShardMeta shard : newShards) {
             String checkpoint = null;
             if (cursorsToRestore != null && cursorsToRestore.containsKey(shard)) {
                 checkpoint = cursorsToRestore.get(shard);
             }
-            fetcher.registerNewSubscribedShardState(new LogstoreShardState(shard, checkpoint));
+            fetcher.registerNewSubscribedShard(shard, checkpoint);
         }
         if (!running) {
             return;
@@ -93,6 +116,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.fetcher = fetcher;
         fetcher.runFetcher();
         fetcher.awaitTermination();
+        logClient.close();
         sourceContext.close();
     }
 
@@ -114,6 +138,9 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 LOG.warn("Error while closing log data fetcher", e);
             }
         }
+        if (logClient != null) {
+            logClient.close();
+        }
     }
 
     @Override
@@ -125,7 +152,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
         LOG.info("Snapshotting state ...");
         cursorStateForCheckpoint.clear();
-        createClientIfNecessary();
+        createClientIfNeeded();
         if (fetcher == null) {
             if (cursorsToRestore != null) {
                 for (Map.Entry<LogstoreShardMeta, String> entry : cursorsToRestore.entrySet()) {
@@ -135,37 +162,38 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                             entry.getKey(),
                             getRuntimeContext().getNumberOfParallelSubtasks(),
                             getRuntimeContext().getIndexOfThisSubtask())) {
-                        updateCursorState(entry.getKey(), entry.getValue());
+                        // Save to local state only. No need to sync with remote server
+                        cursorStateForCheckpoint.add(Tuple2.of(entry.getKey(), entry.getValue()));
                     }
                 }
             }
             return;
         }
-        Map<LogstoreShardMeta, String> lastStateSnapshot = fetcher.snapshotState();
+        Map<LogstoreShardMeta, String> snapshotState = fetcher.snapshotState();
         if (LOG.isDebugEnabled()) {
             StringBuilder strb = new StringBuilder();
-            for (Map.Entry<LogstoreShardMeta, String> entry : lastStateSnapshot.entrySet()) {
+            for (Map.Entry<LogstoreShardMeta, String> entry : snapshotState.entrySet()) {
                 strb.append("shard: ").append(entry.getKey().getShardId()).append(", cursor: ").append(entry.getValue());
             }
             LOG.debug("Snapshotted state, last processed cursor: {}, checkpoint id: {}, timestamp: {}",
                     strb, context.getCheckpointId(), context.getCheckpointTimestamp());
         }
-        for (Map.Entry<LogstoreShardMeta, String> entry : lastStateSnapshot.entrySet()) {
+        for (Map.Entry<LogstoreShardMeta, String> entry : snapshotState.entrySet()) {
             updateCursorState(entry.getKey(), entry.getValue());
         }
     }
 
     private void updateCursorState(LogstoreShardMeta shardMeta, String cursor) throws Exception {
         cursorStateForCheckpoint.add(Tuple2.of(shardMeta, cursor));
-        // NOTE: The cursor of new discovered shard maybe null
         if (cursor != null && consumerGroup != null && checkpointMode == CheckpointMode.ON_CHECKPOINTS) {
-            updateCheckpoint(shardMeta.getShardId(), shardMeta.isReadOnly(), cursor);
+            updateCheckpoint(shardMeta, cursor);
         }
     }
 
-    private void updateCheckpoint(int shardId, boolean readOnly, String cursor) throws Exception {
-        LOG.debug("Updating checkpoint of shard {} to {}, project {}, logstore {}", shardId, cursor, logProject, logstore);
-        logClient.updateCheckpoint(logProject, logstore, consumerGroup, shardId, readOnly, cursor);
+    private void updateCheckpoint(LogstoreShardMeta meta, String cursor) throws Exception {
+        logClient.updateCheckpoint(project, meta.getLogstore(),
+                consumerGroup, meta.getShardId(), meta.isReadOnly(),
+                cursor);
     }
 
     @Override
@@ -176,7 +204,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 TypeInformation.of(LogstoreShardMeta.class),
                 TypeInformation.of(String.class));
         cursorStateForCheckpoint = context.getOperatorStateStore().getUnionListState(
-                new ListStateDescriptor<Tuple2<LogstoreShardMeta, String>>(CURSOR_STATE_STORE_NAME, shardsStateTypeInfo));
+                new ListStateDescriptor<>(CURSOR_STATE_STORE_NAME, shardsStateTypeInfo));
         if (!context.isRestored()) {
             LOG.info("No state restored for FlinkLogConsumer.");
             return;
@@ -185,33 +213,12 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             LOG.info("Flink state has been restored already.");
             return;
         }
-        createClientIfNecessary();
-        cursorsToRestore = new HashMap<LogstoreShardMeta, String>();
-        List<Shard> shards = logClient.listShards(logProject, logstore);
-        Map<Integer, Shard> allShards = new HashMap<Integer, Shard>(shards.size());
-        for (Shard shard : shards) {
-            allShards.put(shard.GetShardId(), shard);
-        }
+        createClientIfNeeded();
+        cursorsToRestore = new HashMap<>();
         for (Tuple2<LogstoreShardMeta, String> cursor : cursorStateForCheckpoint.get()) {
             final LogstoreShardMeta shardMeta = cursor.f0;
             final String checkpoint = cursor.f1;
-            LOG.info("initializeState, project: {}, logstore: {}, shard: {}, checkpoint: {}", logProject, logstore, shardMeta, checkpoint);
-            int shardId = shardMeta.getShardId();
-            if (!allShards.containsKey(shardId)) {
-                LOG.warn("The shard {} already been removed", shardId);
-                continue;
-            }
             cursorsToRestore.put(shardMeta, checkpoint);
-            if (consumerGroup == null) {
-                continue;
-            }
-            Shard shard = allShards.get(shardId);
-            boolean readOnly = "readonly".equalsIgnoreCase(shard.getStatus());
-            try {
-                updateCheckpoint(shardId, readOnly, checkpoint);
-            } catch (Exception ex) {
-                LOG.warn("Unable to update restored checkpoint to server", ex);
-            }
         }
         LOG.info("The following offsets restored from Flink state: {}", cursorsToRestore);
     }

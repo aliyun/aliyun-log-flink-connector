@@ -1,11 +1,11 @@
 package com.aliyun.openservices.log.flink.sample;
 
+import com.aliyun.openservices.log.common.FastLog;
+import com.aliyun.openservices.log.common.FastLogGroup;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.FlinkLogConsumer;
-import com.aliyun.openservices.log.flink.data.RawLog;
-import com.aliyun.openservices.log.flink.data.RawLogGroup;
-import com.aliyun.openservices.log.flink.data.RawLogGroupList;
-import com.aliyun.openservices.log.flink.data.RawLogGroupListDeserializer;
+import com.aliyun.openservices.log.flink.data.FastLogGroupDeserializer;
+import com.aliyun.openservices.log.flink.data.FastLogGroupList;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.util.Consts;
 import org.apache.flink.api.common.functions.FlatMapFunction;
@@ -17,7 +17,6 @@ import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.util.Collector;
 
 import java.util.Properties;
 
@@ -48,29 +47,26 @@ public class ConsumerSample {
         configProps.put(ConfigConstants.LOG_ENDPOINT, SLS_ENDPOINT);
         configProps.put(ConfigConstants.LOG_ACCESSSKEYID, ACCESS_KEY_ID);
         configProps.put(ConfigConstants.LOG_ACCESSKEY, ACCESS_KEY_SECRET);
-        configProps.put(ConfigConstants.LOG_PROJECT, SLS_PROJECT);
-        configProps.put(ConfigConstants.LOG_LOGSTORE, SLS_LOGSTORE);
         configProps.put(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, "10");
         configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_FROM_CHECKPOINT);
         configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "23_ots_sla_etl_product1");
         configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.ON_CHECKPOINTS.name());
         configProps.put(ConfigConstants.LOG_COMMIT_INTERVAL_MILLIS, "10000");
-        RawLogGroupListDeserializer deserializer = new RawLogGroupListDeserializer();
-        DataStream<RawLogGroupList> stream = env.addSource(
-                new FlinkLogConsumer<RawLogGroupList>(deserializer, configProps));
 
-        stream.flatMap(new FlatMapFunction<RawLogGroupList, String>() {
-            @Override
-            public void flatMap(RawLogGroupList value, Collector<String> out) throws Exception {
-                for (RawLogGroup logGroup : value.getRawLogGroups()) {
-                    for (RawLog log : logGroup.getLogs()) {
-                        out.collect(log.getContents().get("content"));
-                    }
+        FastLogGroupDeserializer deserializer = new FastLogGroupDeserializer();
+        DataStream<FastLogGroupList> stream = env.addSource(
+                new FlinkLogConsumer<>(SLS_PROJECT, SLS_LOGSTORE, deserializer, configProps));
+
+        stream.flatMap((FlatMapFunction<FastLogGroupList, String>) (value, out) -> {
+            for (FastLogGroup logGroup : value.getLogGroups()) {
+                int logCount = logGroup.getLogsCount();
+                for (int i = 0; i < logCount; i++) {
+                    FastLog log = logGroup.getLogs(i);
+                    // processing log
                 }
             }
         });
-
-        stream.writeAsText("/Users/kel/Github/flink3/aliyun-log-flink-connector/flink/newb.txt." + System.nanoTime());
-        env.execute("Flink-log-connector");
+        stream.writeAsText("log-" + System.nanoTime());
+        env.execute("Flink consumer");
     }
 }
