@@ -8,6 +8,7 @@ import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
+import com.aliyun.openservices.log.response.ListConsumerGroupResponse;
 import com.aliyun.openservices.log.response.ListLogStoresResponse;
 import com.aliyun.openservices.log.response.PullLogsResponse;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -105,6 +106,18 @@ public class LogClientProxy implements Serializable {
 
     public List<Shard> listShards(final String project, final String logstore) throws LogException {
         return RetryUtil.call((Callable<List<Shard>>) () -> client.ListShard(project, logstore).GetShards(), "Error while listing shards");
+    }
+
+    public boolean checkConsumerGroupExists(String project, String logstore, String consumerGroup) throws Exception {
+        ListConsumerGroupResponse response = client.ListConsumerGroup(project, logstore);
+        if (response != null) {
+            for (ConsumerGroup item : response.GetConsumerGroups()) {
+                if (item.getConsumerGroupName().equalsIgnoreCase(consumerGroup)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)

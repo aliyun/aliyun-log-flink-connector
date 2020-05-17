@@ -174,15 +174,30 @@ public class LogDataFetcher<T> {
         return newShards;
     }
 
-    public int registerNewSubscribedShard(LogstoreShardMeta shard, String checkpoint) {
-        String logstore = shard.getLogstore();
-        if (!subscribedLogstores.contains(logstore)) {
-            subscribedLogstores.add(logstore);
+    private void createConsumerGroupIfNotExist(String logstore) {
+        boolean exist = false;
+        try {
+            // TODO add get consumer group API
+            exist = logClient.checkConsumerGroupExists(project, logstore, consumerGroup);
+        } catch (Exception ex) {
+            LOG.warn("Unable to check if consumer exist {}", ex.getMessage());
+            // do not throw exception here for bwc
+        }
+        if (!exist) {
+            LOG.info("Consumer group not found, need to create it.");
             try {
                 logClient.createConsumerGroup(project, logstore, consumerGroup);
             } catch (Exception ex) {
                 LOG.warn("Error creating consumer group - {}", ex.getMessage());
             }
+        }
+    }
+
+    public int registerNewSubscribedShard(LogstoreShardMeta shard, String checkpoint) {
+        String logstore = shard.getLogstore();
+        if (!subscribedLogstores.contains(logstore)) {
+            subscribedLogstores.add(logstore);
+            createConsumerGroupIfNotExist(logstore);
         }
         synchronized (checkpointLock) {
             subscribedShardsState.add(new LogstoreShardState(shard, checkpoint));
