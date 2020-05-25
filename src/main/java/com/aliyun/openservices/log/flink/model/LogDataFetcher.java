@@ -3,6 +3,7 @@ package com.aliyun.openservices.log.flink.model;
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.ShardAssigner;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
@@ -29,6 +30,7 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 
 public class LogDataFetcher<T> {
     private static final Logger LOG = LoggerFactory.getLogger(LogDataFetcher.class);
+    public static final ShardAssigner DEFAULT_SHARD_ASSIGNER = new DefaultShardAssigner();
 
     private final Properties configProps;
     private final LogDeserializationSchema<T> deserializer;
@@ -52,6 +54,7 @@ public class LogDataFetcher<T> {
     private Pattern logstorePattern;
     private List<String> logstores;
     private Set<String> subscribedLogstores;
+    private final ShardAssigner shardAssigner;
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
                           RuntimeContext context,
@@ -61,13 +64,15 @@ public class LogDataFetcher<T> {
                           Properties configProps,
                           LogDeserializationSchema<T> deserializer,
                           LogClientProxy logClient,
-                          CheckpointMode checkpointMode) {
+                          CheckpointMode checkpointMode,
+                          ShardAssigner shardAssigner) {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializer = deserializer;
         this.totalNumberOfSubtasks = context.getNumberOfParallelSubtasks();
         this.indexOfThisSubtask = context.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
+        this.shardAssigner = shardAssigner;
         this.subscribedShardsState = new ArrayList<>();
         this.shardConsumersExecutor = createThreadPool(context.getTaskNameWithSubtasks());
         this.error = new AtomicReference<>();
@@ -130,7 +135,7 @@ public class LogDataFetcher<T> {
             List<Shard> shards = logClient.listShards(project, logstore);
             for (Shard shard : shards) {
                 LogstoreShardMeta shardMeta = new LogstoreShardMeta(logstore, shard.GetShardId(), shard.getStatus());
-                if (isThisSubtaskShouldSubscribeTo(shardMeta, totalNumberOfSubtasks, indexOfThisSubtask)) {
+                if (shardAssigner.assign(shardMeta, totalNumberOfSubtasks) % totalNumberOfSubtasks == indexOfThisSubtask) {
                     shardMetas.add(shardMeta);
                 }
             }

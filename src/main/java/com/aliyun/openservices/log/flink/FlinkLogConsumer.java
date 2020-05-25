@@ -48,6 +48,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private List<String> logstores;
     private Pattern logstorePattern;
     private final CheckpointMode checkpointMode;
+    private ShardAssigner shardAssigner = LogDataFetcher.DEFAULT_SHARD_ASSIGNER;
 
     @Deprecated
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -94,6 +95,10 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 userAgent);
     }
 
+    public void setShardAssigner(ShardAssigner shardAssigner) {
+        this.shardAssigner = shardAssigner;
+    }
+
     @Override
     public void run(SourceContext<T> sourceContext) throws Exception {
         createClientIfNeeded();
@@ -101,7 +106,10 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         LOG.debug("NumberOfTotalTask={}, IndexOfThisSubtask={}", ctx.getNumberOfParallelSubtasks(), ctx.getIndexOfThisSubtask());
         LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, project,
                 logstores, logstorePattern,
-                configProps, deserializer, logClient, checkpointMode);
+                configProps, deserializer,
+                logClient,
+                checkpointMode,
+                shardAssigner);
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
         for (LogstoreShardMeta shard : newShards) {
             String checkpoint = null;
@@ -154,17 +162,17 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         cursorStateForCheckpoint.clear();
         createClientIfNeeded();
         if (fetcher == null) {
-            if (cursorsToRestore != null) {
-                for (Map.Entry<LogstoreShardMeta, String> entry : cursorsToRestore.entrySet()) {
-                    // cursorsToRestore is the restored global union state;
-                    // should only snapshot shards that actually belong to us
-                    if (LogDataFetcher.isThisSubtaskShouldSubscribeTo(
-                            entry.getKey(),
-                            getRuntimeContext().getNumberOfParallelSubtasks(),
-                            getRuntimeContext().getIndexOfThisSubtask())) {
-                        // Save to local state only. No need to sync with remote server
-                        cursorStateForCheckpoint.add(Tuple2.of(entry.getKey(), entry.getValue()));
-                    }
+            if (cursorsToRestore == null)
+                return;
+            final RuntimeContext ctx = getRuntimeContext();
+            int numberOfParallelTasks = ctx.getNumberOfParallelSubtasks();
+            int indexOfThisTask = ctx.getIndexOfThisSubtask();
+            for (Map.Entry<LogstoreShardMeta, String> entry : cursorsToRestore.entrySet()) {
+                // cursorsToRestore is the restored global union state;
+                // should only snapshot shards that actually belong to us
+                if (shardAssigner.assign(entry.getKey(), numberOfParallelTasks) % numberOfParallelTasks == indexOfThisTask) {
+                    // Save to local state only. No need to sync with remote server
+                    cursorStateForCheckpoint.add(Tuple2.of(entry.getKey(), entry.getValue()));
                 }
             }
             return;
