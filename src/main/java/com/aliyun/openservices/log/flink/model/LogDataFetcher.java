@@ -97,12 +97,6 @@ public class LogDataFetcher<T> {
         return project;
     }
 
-    public static boolean isThisSubtaskShouldSubscribeTo(LogstoreShardMeta shard,
-                                                         int totalNumberOfSubtasks,
-                                                         int indexOfThisSubtask) {
-        return (Math.abs(shard.hashCode() % totalNumberOfSubtasks)) == indexOfThisSubtask;
-    }
-
     private static class GetDataThreadFactory implements ThreadFactory {
         private final String subtaskName;
         private final AtomicLong threadCount = new AtomicLong(0);
