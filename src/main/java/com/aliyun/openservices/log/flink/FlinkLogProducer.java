@@ -38,9 +38,11 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
     private transient ProducerCallback callback;
-    private final String logProject;
-    private final String logstore;
+    private String logProject;
+    private String logstore;
     private ExecutorService executor;
+    private Properties properties;
+    private ProducerConfig producerConfig;
     private AtomicLong buffered = new AtomicLong(0);
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
@@ -60,9 +62,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             throw new IllegalArgumentException("Producer config cannot be null");
         }
         this.schema = schema;
-        this.logProject = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logstore = configProps.getProperty(ConfigConstants.LOG_LOGSTORE);
-        this.producer = createProducer(configProps, producerConfig);
+        this.properties = configProps;
+        this.producerConfig = producerConfig;
     }
 
     public void setCustomPartitioner(LogPartitioner<T> customPartitioner) {
@@ -90,7 +91,12 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     getRuntimeContext().getIndexOfThisSubtask(),
                     getRuntimeContext().getNumberOfParallelSubtasks());
         }
+        if (producer == null) {
+            this.producer = createProducer(properties, producerConfig);
+        }
         executor = Executors.newSingleThreadExecutor();
+        this.logProject = properties.getProperty(ConfigConstants.LOG_PROJECT);
+        this.logstore = properties.getProperty(ConfigConstants.LOG_LOGSTORE);
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
@@ -104,7 +110,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         }
     }
 
-    public void initializeState(FunctionInitializationContext context) {
+    @Override
+    public void initializeState(FunctionInitializationContext functionInitializationContext) throws Exception {
     }
 
     @Override
@@ -121,7 +128,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (customPartitioner != null) {
             shardHashKey = customPartitioner.getHashKey(value);
         }
-        List<LogItem> logs = new ArrayList<LogItem>();
+        List<LogItem> logs = new ArrayList<>();
         for (RawLog rawLog : logGroup.getLogs()) {
             if (rawLog == null) {
                 continue;
@@ -146,8 +153,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             buffered.incrementAndGet();
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
-        } catch (ProducerException e) {
-            throw new RuntimeException(e);
+        } catch (ProducerException ex) {
+            throw new RuntimeException(ex);
         }
     }
 
