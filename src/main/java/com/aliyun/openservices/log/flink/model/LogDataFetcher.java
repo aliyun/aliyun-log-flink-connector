@@ -338,11 +338,7 @@ public class LogDataFetcher {
             this.shardIdleIntervalMillis = Long.parseLong(
                     configProps.getProperty(ConfigConstants.SHARD_IDLE_INTERVAL_MILLIS,
                             Long.toString(ConfigConstants.DEFAULT_SHARD_IDLE_INTERVAL_MILLIS)));
-//            // run record emitter in separate thread since main thread is used for discovery
-//            Thread thread = new Thread(this.recordEmitter);
-//            thread.setName("recordEmitter-" + runtimeContext.getTaskNameWithSubtasks());
-//            thread.setDaemon(true);
-//            thread.start();
+           // run record emitter in separate thread since main thread is used for discovery
         }
 
         final long discoveryIntervalMs = LogUtil.getDiscoveryIntervalMs(configProps);
