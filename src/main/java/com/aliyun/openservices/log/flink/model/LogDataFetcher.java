@@ -4,7 +4,6 @@ import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.ShardAssigner;
-import com.aliyun.openservices.log.flink.internal.RecordEmitter;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -275,7 +274,7 @@ public class LogDataFetcher {
                 } catch (Exception e) {
                     throw new RuntimeException("Failed to instantiate new WatermarkAssigner", e);
                 }
-                sws.emitQueue = new RecordEmitter.RecordQueue<RecordWrapper>() {
+                sws.emitQueue = new RecordQueue<RecordWrapper>() {
                     @Override
                     public void put(RecordWrapper record) {
                     }
@@ -524,7 +523,7 @@ public class LogDataFetcher {
                 potentialWatermark = Math.min(potentialWatermark, w.getTimestamp());
                 // for sync, use the watermark of the next record, when available
                 // otherwise watermark may stall when record is blocked by synchronization
-                RecordEmitter.RecordQueue<RecordWrapper> q = e.getValue().emitQueue;
+                RecordQueue<RecordWrapper> q = e.getValue().emitQueue;
                 RecordWrapper nextRecord = q.peek();
                 Watermark nextWatermark = (nextRecord != null) ? nextRecord.watermark : w;
                 potentialNextWatermark = Math.min(potentialNextWatermark, nextWatermark.getTimestamp());
@@ -551,11 +550,25 @@ public class LogDataFetcher {
     }
 
     /**
+     * Accepts records from readers.
+     *
+     * @param <T>
+     */
+    public interface RecordQueue<T> {
+        void put(T record) throws InterruptedException;
+
+        int getSize();
+
+        T peek();
+    }
+
+
+    /**
      * Per shard tracking of watermark and last activity.
      */
     private static class ShardWatermarkState {
         private AssignerWithPeriodicWatermarks<SourceRecord> periodicWatermarkAssigner;
-        private RecordEmitter.RecordQueue<RecordWrapper> emitQueue;
+        private RecordQueue<RecordWrapper> emitQueue;
         private volatile long lastRecordTimestamp;
         private volatile long lastUpdated;
         private volatile Watermark lastEmittedRecordWatermark;
