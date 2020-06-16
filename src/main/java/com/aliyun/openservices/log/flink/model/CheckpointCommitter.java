@@ -14,7 +14,7 @@ public class CheckpointCommitter extends Thread {
     private final LogClientProxy logClient;
     private final long commitInterval;
     private final LogDataFetcher fetcher;
-    private final Map<LogstoreShardMeta, ShardInfo> checkpoints;
+    private final Map<LogstoreShardHandle, ShardInfo> checkpoints;
     private final String project;
     private final String consumerGroup;
 
@@ -60,7 +60,7 @@ public class CheckpointCommitter extends Thread {
 
     private void commitCheckpoints() throws Exception {
         LOG.debug("Committing checkpoint to remote server");
-        for (LogstoreShardMeta shard : checkpoints.keySet()) {
+        for (LogstoreShardHandle shard : checkpoints.keySet()) {
             final ShardInfo shardInfo = checkpoints.remove(shard);
             logClient.updateCheckpoint(project, shard.getLogstore(),
                     consumerGroup,
@@ -68,7 +68,7 @@ public class CheckpointCommitter extends Thread {
         }
     }
 
-    void updateCheckpoint(LogstoreShardMeta shard, String cursor, boolean readOnly) {
+    void updateCheckpoint(LogstoreShardHandle shard, String cursor, boolean readOnly) {
         LOG.debug("Updating checkpoint for shard {}, cursor {}", shard, cursor);
         checkpoints.put(shard, new ShardInfo(cursor, readOnly));
     }

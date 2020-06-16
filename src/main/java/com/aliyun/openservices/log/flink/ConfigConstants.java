@@ -25,4 +25,7 @@ public class ConfigConstants {
     public static String LOG_CONSUMER_DEFAULT_POSITION = "CONSUMER_DEFAULT_POSITION";
     public static String LOG_CHECKPOINT_MODE = "LOG_CHECKPOINT_MODE";
     public static String LOG_COMMIT_INTERVAL_MILLIS = "LOG_COMMIT_INTERVAL";
+
+    public static final long DEFAULT_SHARD_IDLE_INTERVAL_MILLIS = -1;
+    public static final String SHARD_IDLE_INTERVAL_MILLIS = "flink.shard.idle.interval";
 }
