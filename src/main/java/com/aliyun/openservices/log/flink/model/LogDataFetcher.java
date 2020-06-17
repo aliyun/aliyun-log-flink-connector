@@ -420,32 +420,15 @@ public class LogDataFetcher {
         for (int i = 0, numOfRecords = records.size(); i < numOfRecords; i++) {
             Watermark watermark = null;
             SourceRecord record = records.get(i);
-            long timestamp = record.getTimestamp();
+            long timestamp = record.getTimestamp() * 1000;
             if (sws.periodicWatermarkAssigner != null) {
-                timestamp =
-                        sws.periodicWatermarkAssigner.extractTimestamp(record, sws.lastRecordTimestamp);
+                timestamp = sws.periodicWatermarkAssigner.extractTimestamp(record, sws.lastRecordTimestamp);
                 // track watermark per record since extractTimestamp has side effect
                 watermark = sws.periodicWatermarkAssigner.getCurrentWatermark();
             }
             sws.lastRecordTimestamp = timestamp;
             sws.lastUpdated = getCurrentTimeMillis();
-            if (i < numOfRecords - 1) {
-                // Not the last record
-                emitRecord(record, timestamp, shardStateIndex, watermark);
-            } else {
-                emitRecordAndUpdateState(record, timestamp, shardStateIndex, watermark, offset);
-            }
-        }
-    }
-
-    private void emitRecord(SourceRecord record,
-                            long timestamp,
-                            int shardStateIndex,
-                            Watermark watermark) {
-        synchronized (checkpointLock) {
-            sourceContext.collectWithTimestamp(record, timestamp);
-            ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
-            sws.lastEmittedRecordWatermark = watermark;
+            emitRecordAndUpdateState(record, timestamp, shardStateIndex, watermark, i < numOfRecords - 1 ? null : offset);
         }
     }
 
