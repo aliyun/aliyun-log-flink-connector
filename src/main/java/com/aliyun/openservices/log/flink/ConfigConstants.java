@@ -1,7 +1,6 @@
 package com.aliyun.openservices.log.flink;
 
 public class ConfigConstants {
-    //common
     public static String LOG_ENDPOINT = "ENDPOINT";
     public static String LOG_ACCESSSKEYID = "ACCESSKEYID";
     public static String LOG_ACCESSKEY = "ACCESSKEY";
@@ -28,4 +27,28 @@ public class ConfigConstants {
 
     public static final long DEFAULT_SHARD_IDLE_INTERVAL_MILLIS = -1;
     public static final String SHARD_IDLE_INTERVAL_MILLIS = "flink.shard.idle.interval";
+
+    public static final String FLUSH_INTERVAL_MS = "flush.interval.ms";
+    public static final String MAX_RETRIES = "max.retries";
+
+    /**
+     * initial retry back off time.
+     */
+    public static final String BASE_RETRY_BACK_OFF_TIME_MS =
+            "base.retry.backoff.time.ms";
+
+    /**
+     * max retry back off time.
+     */
+    public static final String MAX_RETRY_BACK_OFF_TIME_MS = "max.retry.backoff.time.ms";
+
+    /**
+     * wait forever while sending record.
+     */
+    public static final String MAX_BLOCK_TIME_MS = "max.block.time.ms";
+
+    /**
+     * io thread num of sls producer
+     */
+    public static final String IO_THREAD_NUM = "io.thread.num";
 }

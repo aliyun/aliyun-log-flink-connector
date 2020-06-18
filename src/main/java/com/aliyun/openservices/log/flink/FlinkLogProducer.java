@@ -9,13 +9,14 @@ import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.flink.data.RawLog;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
+import com.aliyun.openservices.log.flink.internal.ConfigWrapper;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.state.FunctionInitializationContext;
-import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.state.FunctionInitializationContext;
+import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.slf4j.Logger;
@@ -31,6 +32,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static com.aliyun.openservices.log.flink.ConfigConstants.BASE_RETRY_BACK_OFF_TIME_MS;
+import static com.aliyun.openservices.log.flink.ConfigConstants.FLUSH_INTERVAL_MS;
+import static com.aliyun.openservices.log.flink.ConfigConstants.IO_THREAD_NUM;
+import static com.aliyun.openservices.log.flink.ConfigConstants.MAX_BLOCK_TIME_MS;
+import static com.aliyun.openservices.log.flink.ConfigConstants.MAX_RETRIES;
+import static com.aliyun.openservices.log.flink.ConfigConstants.MAX_RETRY_BACK_OFF_TIME_MS;
+
 public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducer.class);
@@ -38,44 +46,47 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
     private transient ProducerCallback callback;
-    private String logProject;
+    private String project;
     private String logstore;
     private ExecutorService executor;
     private Properties properties;
-    private ProducerConfig producerConfig;
     private AtomicLong buffered = new AtomicLong(0);
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
-        this(schema, configProps, new ProducerConfig());
-    }
-
-    public FlinkLogProducer(final LogSerializationSchema<T> schema,
-                            Properties configProps,
-                            ProducerConfig producerConfig) {
         if (schema == null) {
             throw new IllegalArgumentException("schema cannot be null");
         }
         if (configProps == null) {
             throw new IllegalArgumentException("configProps cannot be null");
         }
-        if (producerConfig == null) {
-            throw new IllegalArgumentException("Producer config cannot be null");
-        }
         this.schema = schema;
         this.properties = configProps;
-        this.producerConfig = producerConfig;
     }
 
     public void setCustomPartitioner(LogPartitioner<T> customPartitioner) {
         this.customPartitioner = customPartitioner;
     }
 
-    private Producer createProducer(Properties configProps, ProducerConfig producerConfig) {
+    private Producer createProducer(ConfigWrapper configWrapper) {
+        ProducerConfig producerConfig = new ProducerConfig();
+        producerConfig.setLingerMs(configWrapper.getInt(FLUSH_INTERVAL_MS,
+                ProducerConfig.DEFAULT_LINGER_MS));
+        producerConfig.setRetries(configWrapper.getInt(MAX_RETRIES,
+                ProducerConfig.DEFAULT_RETRIES));
+        producerConfig.setBaseRetryBackoffMs(
+                configWrapper.getLong(BASE_RETRY_BACK_OFF_TIME_MS,
+                        ProducerConfig.DEFAULT_BASE_RETRY_BACKOFF_MS));
+        producerConfig.setMaxRetryBackoffMs(
+                configWrapper.getLong(MAX_RETRY_BACK_OFF_TIME_MS, ProducerConfig.DEFAULT_MAX_RETRY_BACKOFF_MS));
+        producerConfig.setMaxBlockMs(
+                configWrapper.getLong(MAX_BLOCK_TIME_MS, ProducerConfig.DEFAULT_MAX_BLOCK_MS));
+        producerConfig.setIoThreadCount(
+                configWrapper.getInt(IO_THREAD_NUM, ProducerConfig.DEFAULT_IO_THREAD_COUNT));
         Producer producer = new LogProducer(producerConfig);
-        ProjectConfig config = new ProjectConfig(logProject,
-                configProps.getProperty(ConfigConstants.LOG_ENDPOINT),
-                configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID),
-                configProps.getProperty(ConfigConstants.LOG_ACCESSKEY));
+        ProjectConfig config = new ProjectConfig(project,
+                configWrapper.getString(ConfigConstants.LOG_ENDPOINT),
+                configWrapper.getString(ConfigConstants.LOG_ACCESSSKEYID),
+                configWrapper.getString(ConfigConstants.LOG_ACCESSKEY));
         producer.putProjectConfig(config);
         return producer;
     }
@@ -91,12 +102,13 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     getRuntimeContext().getIndexOfThisSubtask(),
                     getRuntimeContext().getNumberOfParallelSubtasks());
         }
+        ConfigWrapper configWrapper = new ConfigWrapper(properties);
+        project = configWrapper.getString(ConfigConstants.LOG_PROJECT);
+        logstore = configWrapper.getString(ConfigConstants.LOG_LOGSTORE);
         if (producer == null) {
-            this.producer = createProducer(properties, producerConfig);
+            producer = createProducer(configWrapper);
         }
         executor = Executors.newSingleThreadExecutor();
-        this.logProject = properties.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logstore = properties.getProperty(ConfigConstants.LOG_LOGSTORE);
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
@@ -143,7 +155,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             return;
         }
         try {
-            ListenableFuture<Result> future = producer.send(logProject,
+            ListenableFuture<Result> future = producer.send(project,
                     logstore,
                     logGroup.getTopic(),
                     logGroup.getSource(),
@@ -151,10 +163,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     logs);
             Futures.addCallback(future, callback, executor);
             buffered.incrementAndGet();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | ProducerException e) {
+            LOG.error("Error while sending logs", e);
             throw new RuntimeException(e);
-        } catch (ProducerException ex) {
-            throw new RuntimeException(ex);
         }
     }
 
