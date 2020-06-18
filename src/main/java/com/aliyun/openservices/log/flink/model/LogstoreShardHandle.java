@@ -61,10 +61,6 @@ public class LogstoreShardHandle implements Serializable {
         return Consts.READONLY_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
     }
 
-    public boolean isReadWrite() {
-        return Consts.READWRITE_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -85,7 +81,7 @@ public class LogstoreShardHandle implements Serializable {
 
     @Override
     public String toString() {
-        return "LogstoreShardMeta{" +
+        return "LogstoreShardHandle{" +
                 "logstore='" + logstore + '\'' +
                 ", shardId=" + shardId +
                 ", shardStatus='" + shardStatus + '\'' +

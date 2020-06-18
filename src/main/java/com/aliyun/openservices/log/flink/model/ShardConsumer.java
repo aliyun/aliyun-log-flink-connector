@@ -1,6 +1,5 @@
 package com.aliyun.openservices.log.flink.model;
 
-import com.aliyun.openservices.log.common.FastLog;
 import com.aliyun.openservices.log.common.FastLogGroup;
 import com.aliyun.openservices.log.common.FastLogTag;
 import com.aliyun.openservices.log.common.LogGroupData;
@@ -20,7 +19,9 @@ import java.util.Properties;
 public class ShardConsumer implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
 
-    private static final int FORCE_SLEEP_THRESHOLD = 512 * 1024;
+    private static final long ONE_MB_IN_BYTES = 1024 * 1024;
+    private static final long TWO_MB_IN_BYTES = 2 * 1024 * 1024;
+    private static final long FOUR_MB_IN_BYTES = 4 * 1024 * 1024;
 
     private final LogDataFetcher fetcher;
     private final int subscribedShardStateIndex;
@@ -154,7 +155,7 @@ public class ShardConsumer implements Runnable {
                             break;
                         }
                     }
-                    adjustFetchFrequency(response.getRawSize(), processingTimeMs);
+                    adjustFetchFrequency(response.getRawSize(), response.getCount(), processingTimeMs);
                 }
             }
         } catch (Throwable t) {
@@ -163,20 +164,31 @@ public class ShardConsumer implements Runnable {
         }
     }
 
-    private void adjustFetchFrequency(int responseSize, long processingTimeMs) throws InterruptedException {
-        long sleepTime = 0;
-        if (responseSize == 0) {
-            sleepTime = 1000;
-        } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
-            sleepTime = 200;
+    private static long getThrottlingInterval(int lastFetchSize,
+                                              int lastFetchCount,
+                                              int batchGetSize) {
+        if (lastFetchSize < ONE_MB_IN_BYTES && lastFetchCount < batchGetSize) {
+            return 500;
+        } else if (lastFetchSize < TWO_MB_IN_BYTES && lastFetchCount < batchGetSize) {
+            return 200;
+        } else if (lastFetchSize < FOUR_MB_IN_BYTES && lastFetchCount < batchGetSize) {
+            return 50;
+        } else {
+            return 0;
         }
-        if (sleepTime < fetchIntervalMs) {
-            sleepTime = fetchIntervalMs;
+    }
+
+    private void adjustFetchFrequency(int responseSize,
+                                      int responseCount,
+                                      long processingTimeMs) throws InterruptedException {
+        long sleepTimeInMs = getThrottlingInterval(responseSize, responseCount, fetchSize);
+        if (sleepTimeInMs < fetchIntervalMs) {
+            sleepTimeInMs = fetchIntervalMs;
         }
-        sleepTime -= processingTimeMs;
-        if (sleepTime > 0) {
-            LOG.debug("Wait {} ms before next fetching", sleepTime);
-            Thread.sleep(sleepTime);
+        sleepTimeInMs -= processingTimeMs;
+        if (sleepTimeInMs > 0) {
+            LOG.debug("Wait {} ms before next fetching", sleepTimeInMs);
+            Thread.sleep(sleepTimeInMs);
         }
     }
 
