@@ -417,9 +417,8 @@ public class LogDataFetcher {
         ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
         Preconditions.checkNotNull(
                 sws, "shard watermark state initialized in registerNewSubscribedShardState");
-        for (int i = 0, numOfRecords = records.size(); i < numOfRecords; i++) {
+        for (SourceRecord record : records) {
             Watermark watermark = null;
-            SourceRecord record = records.get(i);
             long timestamp = record.getTimestamp() * 1000;
             if (sws.periodicWatermarkAssigner != null) {
                 timestamp = sws.periodicWatermarkAssigner.extractTimestamp(record, sws.lastRecordTimestamp);
@@ -428,7 +427,11 @@ public class LogDataFetcher {
             }
             sws.lastRecordTimestamp = timestamp;
             sws.lastUpdated = getCurrentTimeMillis();
-            emitRecordAndUpdateState(record, timestamp, shardStateIndex, watermark, i < numOfRecords - 1 ? null : offset);
+            emitRecordAndUpdateState(record, timestamp, shardStateIndex, watermark);
+        }
+        // Ensure state updated even no records emitted
+        synchronized (checkpointLock) {
+            updateState(shardStateIndex, offset);
         }
     }
 
@@ -442,15 +445,11 @@ public class LogDataFetcher {
     private void emitRecordAndUpdateState(SourceRecord record,
                                           long timestamp,
                                           int shardStateIndex,
-                                          Watermark watermark,
-                                          String offset) {
+                                          Watermark watermark) {
         synchronized (checkpointLock) {
             sourceContext.collectWithTimestamp(record, timestamp);
             ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
             sws.lastEmittedRecordWatermark = watermark;
-            if (offset != null) {
-                updateState(shardStateIndex, offset);
-            }
         }
     }
 
