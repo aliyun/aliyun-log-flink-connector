@@ -1,7 +1,6 @@
 package com.aliyun.openservices.log.flink.model;
 
 import com.aliyun.openservices.log.common.FastLogGroup;
-import com.aliyun.openservices.log.common.FastLogTag;
 import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
@@ -12,7 +11,6 @@ import com.aliyun.openservices.log.response.PullLogsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
@@ -196,28 +194,20 @@ public class ShardConsumer implements Runnable {
         this.readOnly = true;
     }
 
-    private void processRecordsAndSaveOffset(List<LogGroupData> allLogGroups, LogstoreShardHandle shard, String nextCursor) {
-        List<SourceRecord> records = new ArrayList<>();
+    private void processRecordsAndSaveOffset(List<LogGroupData> allLogGroups,
+                                             LogstoreShardHandle shard,
+                                             String nextCursor) {
         if (allLogGroups != null) {
-            for (LogGroupData logGroup : allLogGroups) {
+            for (int i = 0, numOfGroup = allLogGroups.size(); i < numOfGroup; i++) {
+                LogGroupData logGroup = allLogGroups.get(i);
                 FastLogGroup fastLogGroup = logGroup.GetFastLogGroup();
-                int n = fastLogGroup.getLogsCount();
-                int numOfTags = fastLogGroup.getLogTagsCount();
-                List<FastLogTag> tags = new ArrayList<>(numOfTags);
-                for (int j = 0; j < numOfTags; j++) {
-                    tags.add(fastLogGroup.getLogTags(j));
-                }
-                for (int i = 0; i < n; i++) {
-                    SourceRecord record = new SourceRecord(
-                            fastLogGroup.getTopic(),
-                            fastLogGroup.getSource(),
-                            tags,
-                            fastLogGroup.getLogs(i));
-                    records.add(record);
-                }
+                SourceRecord record = new SourceRecord(fastLogGroup.getTopic(),
+                        fastLogGroup.getSource(),
+                        fastLogGroup.getTags(),
+                        fastLogGroup.getLogs());
+                fetcher.emitRecordAndUpdateState(record, subscribedShardStateIndex, i == numOfGroup - 1 ? nextCursor : null);
             }
         }
-        fetcher.emitRecordAndUpdateState(records, subscribedShardStateIndex, nextCursor);
         if (committer != null) {
             committer.updateCheckpoint(shard, nextCursor, readOnly);
         }

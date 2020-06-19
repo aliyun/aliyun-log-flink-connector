@@ -413,26 +413,20 @@ public class LogDataFetcher {
         }
     }
 
-    protected void emitRecordAndUpdateState(List<SourceRecord> records, int shardStateIndex, String offset) {
+    protected void emitRecordAndUpdateState(SourceRecord record, int shardStateIndex, String offset) {
         ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
         Preconditions.checkNotNull(
                 sws, "shard watermark state initialized in registerNewSubscribedShardState");
-        for (SourceRecord record : records) {
-            Watermark watermark = null;
-            long timestamp = record.getTimestamp() * 1000;
-            if (sws.periodicWatermarkAssigner != null) {
-                timestamp = sws.periodicWatermarkAssigner.extractTimestamp(record, sws.lastRecordTimestamp);
-                // track watermark per record since extractTimestamp has side effect
-                watermark = sws.periodicWatermarkAssigner.getCurrentWatermark();
-            }
-            sws.lastRecordTimestamp = timestamp;
-            sws.lastUpdated = getCurrentTimeMillis();
-            emitRecordAndUpdateState(record, timestamp, shardStateIndex, watermark);
+        Watermark watermark = null;
+        long timestamp = record.getTimestamp() * 1000;
+        if (sws.periodicWatermarkAssigner != null) {
+            timestamp = sws.periodicWatermarkAssigner.extractTimestamp(record, sws.lastRecordTimestamp);
+            // track watermark per record since extractTimestamp has side effect
+            watermark = sws.periodicWatermarkAssigner.getCurrentWatermark();
         }
-        // Ensure state updated even no records emitted
-        synchronized (checkpointLock) {
-            updateState(shardStateIndex, offset);
-        }
+        sws.lastRecordTimestamp = timestamp;
+        sws.lastUpdated = getCurrentTimeMillis();
+        emitRecordAndUpdateState(record, timestamp, shardStateIndex, watermark, offset);
     }
 
     /**
@@ -445,11 +439,15 @@ public class LogDataFetcher {
     private void emitRecordAndUpdateState(SourceRecord record,
                                           long timestamp,
                                           int shardStateIndex,
-                                          Watermark watermark) {
+                                          Watermark watermark,
+                                          String offset) {
         synchronized (checkpointLock) {
             sourceContext.collectWithTimestamp(record, timestamp);
             ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
             sws.lastEmittedRecordWatermark = watermark;
+            if (offset != null) {
+                updateState(shardStateIndex, offset);
+            }
         }
     }
 

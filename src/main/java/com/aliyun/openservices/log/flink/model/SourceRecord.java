@@ -10,7 +10,7 @@ public class SourceRecord implements Serializable {
     private String topic;
     private String source;
     private List<FastLogTag> tags;
-    private FastLog record;
+    private List<FastLog> records;
 
     public SourceRecord() {
     }
@@ -18,11 +18,11 @@ public class SourceRecord implements Serializable {
     public SourceRecord(String topic,
                         String source,
                         List<FastLogTag> tags,
-                        FastLog record) {
+                        List<FastLog> records) {
         this.topic = topic;
         this.source = source;
         this.tags = tags;
-        this.record = record;
+        this.records = records;
     }
 
     public String getTopic() {
@@ -49,15 +49,16 @@ public class SourceRecord implements Serializable {
         this.tags = tags;
     }
 
-    public FastLog getRecord() {
-        return record;
+    public List<FastLog> getRecords() {
+        return records;
     }
 
-    public void setRecord(FastLog record) {
-        this.record = record;
+    public void setRecords(List<FastLog> records) {
+        this.records = records;
     }
 
     public long getTimestamp() {
-        return record.getTime();
+        // records must not be empty
+        return records.get(0).getTime();
     }
 }
