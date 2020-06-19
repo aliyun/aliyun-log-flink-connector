@@ -113,6 +113,7 @@ public class FlinkLogConsumer extends RichParallelSourceFunction<SourceRecord> i
     /**
      * Set the assigner that will extract the timestamp from {@link SourceRecord} and calculate the
      * watermark.
+     *
      * @param periodicWatermarkAssigner periodic watermark assigner
      */
     public void setPeriodicWatermarkAssigner(
@@ -211,21 +212,20 @@ public class FlinkLogConsumer extends RichParallelSourceFunction<SourceRecord> i
                     strb, context.getCheckpointId(), context.getCheckpointTimestamp());
         }
         for (Map.Entry<LogstoreShardHandle, String> entry : snapshotState.entrySet()) {
-            updateCursorState(entry.getKey(), entry.getValue());
+            updateState(entry.getKey(), entry.getValue());
         }
     }
 
-    private void updateCursorState(LogstoreShardHandle shardMeta, String cursor) throws Exception {
-        cursorStateForCheckpoint.add(Tuple2.of(shardMeta, cursor));
+    private void updateState(LogstoreShardHandle shardHandle, String cursor) throws Exception {
+        cursorStateForCheckpoint.add(Tuple2.of(shardHandle, cursor));
         if (cursor != null && consumerGroup != null && checkpointMode == CheckpointMode.ON_CHECKPOINTS) {
-            updateCheckpoint(shardMeta, cursor);
+            logClient.updateCheckpoint(project,
+                    shardHandle.getLogstore(),
+                    consumerGroup,
+                    shardHandle.getShardId(),
+                    shardHandle.isReadOnly(),
+                    cursor);
         }
-    }
-
-    private void updateCheckpoint(LogstoreShardHandle meta, String cursor) throws Exception {
-        logClient.updateCheckpoint(project, meta.getLogstore(),
-                consumerGroup, meta.getShardId(), meta.isReadOnly(),
-                cursor);
     }
 
     @Override
@@ -247,10 +247,8 @@ public class FlinkLogConsumer extends RichParallelSourceFunction<SourceRecord> i
         }
         createClientIfNeeded();
         cursorsToRestore = new HashMap<>();
-        for (Tuple2<LogstoreShardHandle, String> cursor : cursorStateForCheckpoint.get()) {
-            final LogstoreShardHandle shardMeta = cursor.f0;
-            final String checkpoint = cursor.f1;
-            cursorsToRestore.put(shardMeta, checkpoint);
+        for (Tuple2<LogstoreShardHandle, String> offset : cursorStateForCheckpoint.get()) {
+            cursorsToRestore.put(offset.f0, offset.f1);
         }
         LOG.info("The following offsets restored from Flink state: {}", cursorsToRestore);
     }

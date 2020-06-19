@@ -182,23 +182,23 @@ public class LogDataFetcher {
 
     private List<LogstoreShardHandle> listAssignedShards() throws Exception {
         List<String> logstores = getLogstores();
-        List<LogstoreShardHandle> shardMetas = new ArrayList<>();
+        List<LogstoreShardHandle> shardHandles = new ArrayList<>();
         for (String logstore : logstores) {
             List<Shard> shards = logClient.listShards(project, logstore);
             for (Shard shard : shards) {
                 LogstoreShardHandle shardHandle = new LogstoreShardHandle(logstore, shard.GetShardId(), shard.getStatus());
                 if (shardAssigner.assign(shardHandle, totalNumberOfSubtasks) % totalNumberOfSubtasks == indexOfThisSubtask) {
-                    shardMetas.add(shardHandle);
+                    shardHandles.add(shardHandle);
                 }
             }
         }
-        return shardMetas;
+        return shardHandles;
     }
 
     public List<LogstoreShardHandle> discoverNewShardsToSubscribe() throws Exception {
-        List<LogstoreShardHandle> shardMetas = listAssignedShards();
+        List<LogstoreShardHandle> shardHandles = listAssignedShards();
         List<LogstoreShardHandle> newShards = new ArrayList<>();
-        for (LogstoreShardHandle shard : shardMetas) {
+        for (LogstoreShardHandle shard : shardHandles) {
             boolean add = true;
             String status = shard.getShardStatus();
             int shardID = shard.getShardId();
@@ -338,7 +338,7 @@ public class LogDataFetcher {
             this.shardIdleIntervalMillis = Long.parseLong(
                     configProps.getProperty(ConfigConstants.SHARD_IDLE_INTERVAL_MILLIS,
                             Long.toString(ConfigConstants.DEFAULT_SHARD_IDLE_INTERVAL_MILLIS)));
-           // run record emitter in separate thread since main thread is used for discovery
+            // run record emitter in separate thread since main thread is used for discovery
         }
 
         final long discoveryIntervalMs = LogUtil.getDiscoveryIntervalMs(configProps);
