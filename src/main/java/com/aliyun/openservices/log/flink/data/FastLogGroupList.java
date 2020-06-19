@@ -8,6 +8,9 @@ import java.util.List;
 public class FastLogGroupList {
     private List<FastLogGroup> logGroups;
 
+    public FastLogGroupList() {
+    }
+
     public FastLogGroupList(int capacity) {
         logGroups = new ArrayList<>(capacity);
     }

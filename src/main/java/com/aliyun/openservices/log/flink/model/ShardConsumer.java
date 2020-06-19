@@ -1,5 +1,6 @@
 package com.aliyun.openservices.log.flink.model;
 
+import com.aliyun.openservices.log.common.FastLogGroup;
 import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
@@ -13,13 +14,14 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Properties;
 
-public class ShardConsumer<T> implements Runnable {
+public class ShardConsumer implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
 
-    private static final int FORCE_SLEEP_THRESHOLD = 512 * 1024;
+    private static final long ONE_MB_IN_BYTES = 1024 * 1024;
+    private static final long TWO_MB_IN_BYTES = 2 * 1024 * 1024;
+    private static final long FOUR_MB_IN_BYTES = 4 * 1024 * 1024;
 
-    private final LogDataFetcher<T> fetcher;
-    private final LogDeserializationSchema<T> deserializer;
+    private final LogDataFetcher fetcher;
     private final int subscribedShardStateIndex;
     private final int fetchSize;
     private final long fetchIntervalMs;
@@ -31,14 +33,12 @@ public class ShardConsumer<T> implements Runnable {
     private final CheckpointCommitter committer;
     private volatile boolean readOnly = false;
 
-    ShardConsumer(LogDataFetcher<T> fetcher,
-                  LogDeserializationSchema<T> deserializer,
+    ShardConsumer(LogDataFetcher fetcher,
                   int subscribedShardStateIndex,
                   Properties configProps,
                   LogClientProxy logClient,
                   CheckpointCommitter committer) {
         this.fetcher = fetcher;
-        this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
         // TODO Move configs to a class
         this.fetchSize = LogUtil.getNumberPerFetch(configProps);
@@ -107,9 +107,9 @@ public class ShardConsumer<T> implements Runnable {
     public void run() {
         try {
             LogstoreShardState state = fetcher.getShardState(subscribedShardStateIndex);
-            final LogstoreShardMeta shardMeta = state.getShardMeta();
-            final int shardId = shardMeta.getShardId();
-            String logstore = shardMeta.getLogstore();
+            final LogstoreShardHandle shardHandle = state.getShardHandle();
+            final int shardId = shardHandle.getShardId();
+            String logstore = shardHandle.getLogstore();
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
             while (isRunning()) {
@@ -141,7 +141,7 @@ public class ShardConsumer<T> implements Runnable {
                     String nextCursor = response.getNextCursor();
                     if (response.getCount() > 0) {
                         long processingStartTimeMs = System.currentTimeMillis();
-                        processRecordsAndSaveOffset(response.getLogGroups(), shardMeta, nextCursor);
+                        processRecordsAndSaveOffset(response.getLogGroups(), shardHandle, nextCursor);
                         processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
                         LOG.debug("Processing records of shard {} cost {} ms.", shardId, processingTimeMs);
                         cursor = nextCursor;
@@ -153,7 +153,7 @@ public class ShardConsumer<T> implements Runnable {
                             break;
                         }
                     }
-                    adjustFetchFrequency(response.getRawSize(), processingTimeMs);
+                    adjustFetchFrequency(response.getRawSize(), response.getCount(), processingTimeMs);
                 }
             }
         } catch (Throwable t) {
@@ -162,20 +162,31 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
-    private void adjustFetchFrequency(int responseSize, long processingTimeMs) throws InterruptedException {
-        long sleepTime = 0;
-        if (responseSize == 0) {
-            sleepTime = 1000;
-        } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
-            sleepTime = 200;
+    private static long getThrottlingInterval(int lastFetchSize,
+                                              int lastFetchCount,
+                                              int batchGetSize) {
+        if (lastFetchSize < ONE_MB_IN_BYTES && lastFetchCount < batchGetSize) {
+            return 500;
+        } else if (lastFetchSize < TWO_MB_IN_BYTES && lastFetchCount < batchGetSize) {
+            return 200;
+        } else if (lastFetchSize < FOUR_MB_IN_BYTES && lastFetchCount < batchGetSize) {
+            return 50;
+        } else {
+            return 0;
         }
-        if (sleepTime < fetchIntervalMs) {
-            sleepTime = fetchIntervalMs;
+    }
+
+    private void adjustFetchFrequency(int responseSize,
+                                      int responseCount,
+                                      long processingTimeMs) throws InterruptedException {
+        long sleepTimeInMs = getThrottlingInterval(responseSize, responseCount, fetchSize);
+        if (sleepTimeInMs < fetchIntervalMs) {
+            sleepTimeInMs = fetchIntervalMs;
         }
-        sleepTime -= processingTimeMs;
-        if (sleepTime > 0) {
-            LOG.debug("Wait {} ms before next fetching", sleepTime);
-            Thread.sleep(sleepTime);
+        sleepTimeInMs -= processingTimeMs;
+        if (sleepTimeInMs > 0) {
+            LOG.debug("Wait {} ms before next fetching", sleepTimeInMs);
+            Thread.sleep(sleepTimeInMs);
         }
     }
 
@@ -183,16 +194,20 @@ public class ShardConsumer<T> implements Runnable {
         this.readOnly = true;
     }
 
-    private void processRecordsAndSaveOffset(List<LogGroupData> records, LogstoreShardMeta shard, String nextCursor) {
-        final T value = deserializer.deserialize(records);
-        long timestamp = System.currentTimeMillis();
-        if (!records.isEmpty()) {
-            if (records.get(0).GetFastLogGroup().getLogsCount() > 0) {
-                long logTimeStamp = records.get(0).GetFastLogGroup().getLogs(0).getTime();
-                timestamp = logTimeStamp * 1000;
+    private void processRecordsAndSaveOffset(List<LogGroupData> allLogGroups,
+                                             LogstoreShardHandle shard,
+                                             String nextCursor) {
+        if (allLogGroups != null) {
+            for (int i = 0, numOfGroup = allLogGroups.size(); i < numOfGroup; i++) {
+                LogGroupData logGroup = allLogGroups.get(i);
+                FastLogGroup fastLogGroup = logGroup.GetFastLogGroup();
+                SourceRecord record = new SourceRecord(fastLogGroup.getTopic(),
+                        fastLogGroup.getSource(),
+                        fastLogGroup.getTags(),
+                        fastLogGroup.getLogs());
+                fetcher.emitRecordAndUpdateState(record, subscribedShardStateIndex, i == numOfGroup - 1 ? nextCursor : null);
             }
         }
-        fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
         if (committer != null) {
             committer.updateCheckpoint(shard, nextCursor, readOnly);
         }

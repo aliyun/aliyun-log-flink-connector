@@ -5,17 +5,17 @@ import com.aliyun.openservices.log.flink.util.Consts;
 import java.io.Serializable;
 import java.util.Objects;
 
-public class LogstoreShardMeta implements Serializable {
+public class LogstoreShardHandle implements Serializable {
     private String logstore;
     private int shardId;
     private String shardStatus;
     private String endCursor;
 
     // DO NOT remove
-    public LogstoreShardMeta() {
+    public LogstoreShardHandle() {
     }
 
-    public LogstoreShardMeta(String logstore, int shardId, String shardStatus) {
+    public LogstoreShardHandle(String logstore, int shardId, String shardStatus) {
         this.logstore = logstore;
         this.shardId = shardId;
         this.shardStatus = shardStatus;
@@ -61,19 +61,15 @@ public class LogstoreShardMeta implements Serializable {
         return Consts.READONLY_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
     }
 
-    public boolean isReadWrite() {
-        return Consts.READWRITE_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
 
-        LogstoreShardMeta shardMeta = (LogstoreShardMeta) o;
+        LogstoreShardHandle handle = (LogstoreShardHandle) o;
 
-        if (shardId != shardMeta.shardId) return false;
-        return Objects.equals(logstore, shardMeta.logstore);
+        if (shardId != handle.shardId) return false;
+        return Objects.equals(logstore, handle.logstore);
     }
 
     @Override
@@ -85,7 +81,7 @@ public class LogstoreShardMeta implements Serializable {
 
     @Override
     public String toString() {
-        return "LogstoreShardMeta{" +
+        return "LogstoreShardHandle{" +
                 "logstore='" + logstore + '\'' +
                 ", shardId=" + shardId +
                 ", shardStatus='" + shardStatus + '\'' +

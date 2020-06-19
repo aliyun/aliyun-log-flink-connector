@@ -1,11 +1,11 @@
 package com.aliyun.openservices.log.flink.model;
 
 public class LogstoreShardState {
-    private LogstoreShardMeta shardMeta;
+    private LogstoreShardHandle shardHandle;
     private String offset;
 
-    public LogstoreShardState(LogstoreShardMeta shardMeta, String checkpoint) {
-        this.shardMeta = shardMeta;
+    public LogstoreShardState(LogstoreShardHandle shardHandle, String checkpoint) {
+        this.shardHandle = shardHandle;
         this.offset = checkpoint;
     }
 
@@ -13,26 +13,26 @@ public class LogstoreShardState {
         this.offset = offset;
     }
 
-    public void setShardMeta(LogstoreShardMeta shardMeta) {
-        this.shardMeta = shardMeta;
+    public LogstoreShardHandle getShardHandle() {
+        return shardHandle;
     }
 
-    public LogstoreShardMeta getShardMeta() {
-        return shardMeta;
+    public void setShardHandle(LogstoreShardHandle shardHandle) {
+        this.shardHandle = shardHandle;
     }
 
     public String getOffset() {
         return offset;
     }
 
-    boolean hasMoreData() {
-        return shardMeta.isReadWrite() || !(offset != null && offset.equalsIgnoreCase(shardMeta.getEndCursor()));
+    boolean isIdle() {
+        return shardHandle.isReadOnly() && (offset != null && offset.equalsIgnoreCase(shardHandle.getEndCursor()));
     }
 
     @Override
     public String toString() {
         return "LogstoreShardState{" +
-                "shardMeta=" + shardMeta.toString() +
+                "shardHandle=" + shardHandle.toString() +
                 ", offset='" + offset + '\'' +
                 '}';
     }
