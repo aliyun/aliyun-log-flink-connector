@@ -63,21 +63,13 @@ public class ConsumerSample {
         stream.addSink(new SinkFunction<SourceRecord>() {
             @Override
             public void invoke(SourceRecord value, Context context) throws Exception {
-
+                System.out.println("Got " + value.getRecords().size() + " records");
             }
         });
-
-//        stream.flatMap((FlatMapFunction<FastLogGroupList, String>) (value, out) -> {
-//            for (FastLogGroup logGroup : value.getLogGroups()) {
-//                int logCount = logGroup.getLogsCount();
-//                for (int i = 0; i < logCount; i++) {
-//                    FastLog log = logGroup.getLogs(i);
-//                    // processing log
-//                }
-//            }
-//        });
         stream.writeAsText("log-" + System.nanoTime());
         env.execute("Flink consumer");
+
+
     }
 
     /**
