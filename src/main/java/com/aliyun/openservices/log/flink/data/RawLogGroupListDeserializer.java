@@ -9,9 +9,21 @@ import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class RawLogGroupListDeserializer implements LogDeserializationSchema<RawLogGroupList> {
+
+    private final String charsetName;
+
+    public RawLogGroupListDeserializer() {
+        this(StandardCharsets.UTF_8.name());
+    }
+
+    public RawLogGroupListDeserializer(String charsetName) {
+        this.charsetName = charsetName;
+    }
 
     public RawLogGroupList deserialize(List<LogGroupData> logGroups) {
         RawLogGroupList logGroupList = new RawLogGroupList();
@@ -30,7 +42,11 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
                 rlog.setTime(log.getTime());
                 for (int cIdx = 0; cIdx < log.getContentsCount(); ++cIdx) {
                     FastLogContent content = log.getContents(cIdx);
-                    rlog.addContent(content.getKey(), content.getValue());
+                    try {
+                        rlog.addContent(content.getKey(charsetName), content.getValue(charsetName));
+                    } catch (UnsupportedEncodingException e) {
+                        throw new IllegalArgumentException("Unsupported charset: " + charsetName, e);
+                    }
                 }
                 rawLogGroup.addLog(rlog);
             }
