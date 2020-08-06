@@ -91,6 +91,18 @@ public class LogDataFetcher<T> {
         this.logstores = logstores;
         this.logstorePattern = logstorePattern;
         this.subscribedLogstores = new HashSet<>();
+        String stopTime = configProps.getProperty(ConfigConstants.STOP_TIME);
+        validateStopTime(stopTime);
+    }
+
+    private static void validateStopTime(String stopTime) {
+        if (stopTime != null && !stopTime.isEmpty()) {
+            try {
+                Integer.parseInt(stopTime);
+            } catch (NumberFormatException ex) {
+                throw new IllegalArgumentException("Invalid " + ConfigConstants.STOP_TIME + ": " + stopTime);
+            }
+        }
     }
 
     public String getProject() {

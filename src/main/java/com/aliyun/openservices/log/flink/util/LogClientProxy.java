@@ -70,9 +70,9 @@ public class LogClientProxy implements Serializable {
         }, "Error while getting checkpoint");
     }
 
-    public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, int count)
+    public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, String stopCursor, int count)
             throws LogException {
-        final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor);
+        final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
         return RetryUtil.call(() -> client.pullLogs(request), "Error while pulling logs");
     }
 
