@@ -30,6 +30,7 @@ public class ShardConsumer<T> implements Runnable {
     private final String consumerGroup;
     private final CheckpointCommitter committer;
     private volatile boolean readOnly = false;
+    private int stopTimeSec = -1;
 
     ShardConsumer(LogDataFetcher<T> fetcher,
                   LogDeserializationSchema<T> deserializer,
@@ -55,6 +56,10 @@ public class ShardConsumer<T> implements Runnable {
         defaultPosition = LogUtil.getDefaultPosition(configProps);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(defaultPosition)) {
             throw new IllegalArgumentException(Consts.LOG_FROM_CHECKPOINT + " cannot be used as default position");
+        }
+        String stopTime = configProps.getProperty(ConfigConstants.STOP_TIME);
+        if (stopTime != null && !stopTime.isEmpty()) {
+            stopTimeSec = Integer.parseInt(stopTime);
         }
     }
 
@@ -93,15 +98,26 @@ public class ShardConsumer<T> implements Runnable {
     private String restoreCursorFromStateOrCheckpoint(String logstore,
                                                       String cursor,
                                                       int shardId) throws Exception {
-        if (cursor != null) {
+        if (cursor != null && !cursor.isEmpty()) {
             LOG.info("Restored cursor from Flink state: {}, shard: {}", cursor, shardId);
             return cursor;
         }
         cursor = findInitialCursor(logstore, initialPosition, shardId);
-        if (cursor == null) {
+        if (cursor == null || cursor.isEmpty()) {
             throw new RuntimeException("Unable to find the initial cursor from: " + initialPosition);
         }
         return cursor;
+    }
+
+    private String getStopCursor(String logstore, int shard) {
+        if (stopTimeSec > 0) {
+            try {
+                return logClient.getCursorAtTimestamp(logProject, logstore, shard, stopTimeSec);
+            } catch (LogException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+        return null;
     }
 
     public void run() {
@@ -111,12 +127,13 @@ public class ShardConsumer<T> implements Runnable {
             final int shardId = shardMeta.getShardId();
             String logstore = shardMeta.getLogstore();
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
+            String stopCursor = getStopCursor(logstore, shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
             while (isRunning()) {
                 PullLogsResponse response;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
-                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, fetchSize);
+                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, stopCursor, fetchSize);
                 } catch (LogException ex) {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
                     String errorCode = ex.GetErrorCode();
@@ -136,25 +153,26 @@ public class ShardConsumer<T> implements Runnable {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Fetch request cost {} ms", System.currentTimeMillis() - fetchStartTimeMs);
                 }
-                if (response != null) {
-                    long processingTimeMs;
-                    String nextCursor = response.getNextCursor();
-                    if (response.getCount() > 0) {
-                        long processingStartTimeMs = System.currentTimeMillis();
-                        processRecordsAndSaveOffset(response.getLogGroups(), shardMeta, nextCursor);
-                        processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
-                        LOG.debug("Processing records of shard {} cost {} ms.", shardId, processingTimeMs);
-                        cursor = nextCursor;
-                    } else {
-                        processingTimeMs = 0;
-                        LOG.debug("No records of shard {} has been responded.", shardId);
-                        if (cursor.equals(nextCursor) && readOnly) {
-                            LOG.info("Shard {} is finished", shardId);
-                            break;
-                        }
-                    }
-                    adjustFetchFrequency(response.getRawSize(), processingTimeMs);
+                if (response == null) {
+                    continue;
                 }
+                long processingTimeMs;
+                String nextCursor = response.getNextCursor();
+                if (response.getCount() > 0) {
+                    long processingStartTimeMs = System.currentTimeMillis();
+                    processRecordsAndSaveOffset(response.getLogGroups(), shardMeta, nextCursor);
+                    processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
+                    LOG.debug("Processing records of shard {} cost {} ms.", shardId, processingTimeMs);
+                    cursor = nextCursor;
+                } else {
+                    processingTimeMs = 0;
+                    LOG.debug("No records of shard {} has been responded.", shardId);
+                    if ((cursor.equals(nextCursor) && readOnly) || cursor.equals(stopCursor)) {
+                        LOG.info("Shard {} is finished, readonly {}", shardId, readOnly);
+                        break;
+                    }
+                }
+                adjustFetchFrequency(response.getRawSize(), processingTimeMs);
             }
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);

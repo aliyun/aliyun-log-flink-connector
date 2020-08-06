@@ -103,7 +103,6 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     public void run(SourceContext<T> sourceContext) throws Exception {
         createClientIfNeeded();
         final RuntimeContext ctx = getRuntimeContext();
-        LOG.debug("NumberOfTotalTask={}, IndexOfThisSubtask={}", ctx.getNumberOfParallelSubtasks(), ctx.getIndexOfThisSubtask());
         LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, project,
                 logstores, logstorePattern,
                 configProps, deserializer,
@@ -124,7 +123,10 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.fetcher = fetcher;
         fetcher.runFetcher();
         fetcher.awaitTermination();
-        logClient.close();
+        if (logClient != null) {
+            logClient.close();
+            logClient = null;
+        }
         sourceContext.close();
     }
 
@@ -148,6 +150,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
         if (logClient != null) {
             logClient.close();
+            logClient = null;
         }
     }
 
