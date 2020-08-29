@@ -24,6 +24,8 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -50,7 +52,8 @@ public class LogDataFetcher<T> {
     private final String consumerGroup;
     private CheckpointCommitter autoCommitter;
     private long commitInterval;
-    private Map<LogstoreShardMeta, ShardConsumer<T>> activeConsumers;
+    private ReadWriteLock rwLock;
+    private Map<Integer, ShardConsumer<T>> allConsumers;
     private Pattern logstorePattern;
     private List<String> logstores;
     private Set<String> subscribedLogstores;
@@ -87,7 +90,8 @@ public class LogDataFetcher<T> {
             checkArgument(consumerGroup != null && !consumerGroup.isEmpty(),
                     "Missing parameter: " + ConfigConstants.LOG_CONSUMERGROUP);
         }
-        this.activeConsumers = new HashMap<>();
+        this.rwLock = new ReentrantReadWriteLock();
+        this.allConsumers = new HashMap<>();
         this.logstores = logstores;
         this.logstorePattern = logstorePattern;
         this.subscribedLogstores = new HashSet<>();
@@ -152,6 +156,7 @@ public class LogDataFetcher<T> {
     public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
         List<LogstoreShardMeta> shardMetas = listAssignedShards();
         List<LogstoreShardMeta> newShards = new ArrayList<>();
+        List<Integer> readonlyShards = new ArrayList<>();
         for (LogstoreShardMeta shard : shardMetas) {
             boolean add = true;
             String status = shard.getShardStatus();
@@ -167,12 +172,7 @@ public class LogDataFetcher<T> {
                     String endCursor = logClient.getEndCursor(project, shardMeta.getLogstore(), shardID);
                     shardMeta.setEndCursor(endCursor);
                     shardMeta.setShardStatus(status);
-                    LOG.info("change shard status to {}, shard: {}", status, shard.toString());
-                    ShardConsumer<T> consumer = activeConsumers.get(shardMeta);
-                    if (consumer != null) {
-                        consumer.markAsReadOnly();
-                        activeConsumers.remove(shardMeta);
-                    }
+                    readonlyShards.add(shardMeta.getShardId());
                 }
                 add = false;
                 break;
@@ -182,7 +182,21 @@ public class LogDataFetcher<T> {
                 newShards.add(shard);
             }
         }
+        if (!readonlyShards.isEmpty()) {
+            markConsumersAsReadOnly(readonlyShards);
+        }
         return newShards;
+    }
+
+    private void markConsumersAsReadOnly(List<Integer> shards) {
+        rwLock.readLock();
+        for (Integer shard : shards) {
+            LOG.info("Mark shard {} as readonly", shard);
+            ShardConsumer<T> consumer = allConsumers.get(shard);
+            if (consumer != null) {
+                consumer.markAsReadOnly();
+            }
+        }
     }
 
     private void createConsumerGroupIfNotExist(String logstore) {
@@ -228,8 +242,13 @@ public class LogDataFetcher<T> {
 
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
         ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, autoCommitter);
+        rwLock.writeLock();
+        if (!running) {
+            // Do not create consumer any more
+            return;
+        }
+        allConsumers.put(shard.getShardId(), consumer);
         shardConsumersExecutor.submit(consumer);
-        activeConsumers.put(shard, consumer);
         numberOfActiveShards.incrementAndGet();
     }
 
@@ -265,6 +284,7 @@ public class LogDataFetcher<T> {
                 }
             }
         }
+        stopBackgroundThreads();
         awaitTermination();
         Throwable throwable = this.error.get();
         if (throwable != null) {
@@ -290,6 +310,7 @@ public class LogDataFetcher<T> {
 
     public void awaitTermination() throws InterruptedException {
         while (!shardConsumersExecutor.isTerminated()) {
+            LOG.warn("Executor is stilling running, check again after 50ms.");
             Thread.sleep(50);
         }
         LOG.warn("LogDataFetcher exit awaitTermination");
@@ -300,6 +321,19 @@ public class LogDataFetcher<T> {
         if (mainThread != null) {
             mainThread.interrupt(); // the main thread may be sleeping for the discovery interval
         }
+        stopBackgroundThreads();
+    }
+
+    private void stopAllConsumers() {
+        LOG.warn("Stopping all consumers..");
+        rwLock.readLock();
+        for (ShardConsumer<T> consumer : allConsumers.values()) {
+            consumer.stop();
+        }
+    }
+
+    private void stopBackgroundThreads() {
+        stopAllConsumers();
         LOG.warn("Shutting down the shard consumer threads of subtask {}", indexOfThisSubtask);
         shardConsumersExecutor.shutdownNow();
         if (autoCommitter != null) {

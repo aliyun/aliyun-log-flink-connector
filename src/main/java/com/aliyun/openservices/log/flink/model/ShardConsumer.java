@@ -1,5 +1,6 @@
 package com.aliyun.openservices.log.flink.model;
 
+import com.aliyun.openservices.log.common.FastLogGroup;
 import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
@@ -29,7 +30,8 @@ public class ShardConsumer<T> implements Runnable {
     private final String defaultPosition;
     private final String consumerGroup;
     private final CheckpointCommitter committer;
-    private volatile boolean readOnly = false;
+    private volatile boolean isReadOnly = false;
+    private volatile boolean isRunning = true;
     private int stopTimeSec = -1;
 
     ShardConsumer(LogDataFetcher<T> fetcher,
@@ -129,7 +131,7 @@ public class ShardConsumer<T> implements Runnable {
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             String stopCursor = getStopCursor(logstore, shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
-            while (isRunning()) {
+            while (isRunning) {
                 PullLogsResponse response;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
@@ -167,8 +169,8 @@ public class ShardConsumer<T> implements Runnable {
                 } else {
                     processingTimeMs = 0;
                     LOG.debug("No records of shard {} has been responded.", shardId);
-                    if ((cursor.equals(nextCursor) && readOnly) || cursor.equals(stopCursor)) {
-                        LOG.info("Shard {} is finished, readonly {}", shardId, readOnly);
+                    if ((cursor.equals(nextCursor) && isReadOnly) || cursor.equals(stopCursor)) {
+                        LOG.info("Shard {} is finished, readonly {}", shardId, isReadOnly);
                         break;
                     }
                 }
@@ -198,26 +200,27 @@ public class ShardConsumer<T> implements Runnable {
     }
 
     void markAsReadOnly() {
-        this.readOnly = true;
+        isReadOnly = true;
+    }
+
+    void stop() {
+        isRunning = false;
     }
 
     private void processRecordsAndSaveOffset(List<LogGroupData> records, LogstoreShardMeta shard, String nextCursor) {
         final T value = deserializer.deserialize(records);
         long timestamp = System.currentTimeMillis();
         if (!records.isEmpty()) {
-            if (records.get(0).GetFastLogGroup().getLogsCount() > 0) {
-                long logTimeStamp = records.get(0).GetFastLogGroup().getLogs(0).getTime();
+            // Use the timestamp of first log for perf consideration.
+            FastLogGroup logGroup = records.get(0).GetFastLogGroup();
+            if (logGroup.getLogsCount() > 0) {
+                long logTimeStamp = logGroup.getLogs(0).getTime();
                 timestamp = logTimeStamp * 1000;
             }
         }
         fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
         if (committer != null) {
-            committer.updateCheckpoint(shard, nextCursor, readOnly);
+            committer.updateCheckpoint(shard, nextCursor, isReadOnly);
         }
     }
-
-    private boolean isRunning() {
-        return !Thread.interrupted();
-    }
-
 }
