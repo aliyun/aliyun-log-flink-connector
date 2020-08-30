@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -58,6 +59,7 @@ public class LogDataFetcher<T> {
     private List<String> logstores;
     private Set<String> subscribedLogstores;
     private final ShardAssigner shardAssigner;
+    private boolean exitAfterAllShardFinished = false;
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
                           RuntimeContext context,
@@ -96,16 +98,18 @@ public class LogDataFetcher<T> {
         this.logstorePattern = logstorePattern;
         this.subscribedLogstores = new HashSet<>();
         String stopTime = configProps.getProperty(ConfigConstants.STOP_TIME);
-        validateStopTime(stopTime);
+        if (stopTime != null && !stopTime.isEmpty()) {
+            validateStopTime(stopTime);
+            // Quit task on all shard reached stop time.
+            exitAfterAllShardFinished = true;
+        }
     }
 
     private static void validateStopTime(String stopTime) {
-        if (stopTime != null && !stopTime.isEmpty()) {
-            try {
-                Integer.parseInt(stopTime);
-            } catch (NumberFormatException ex) {
-                throw new IllegalArgumentException("Invalid " + ConfigConstants.STOP_TIME + ": " + stopTime);
-            }
+        try {
+            Integer.parseInt(stopTime);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid " + ConfigConstants.STOP_TIME + ": " + stopTime);
         }
     }
 
@@ -276,6 +280,13 @@ public class LogDataFetcher<T> {
                         shard.toString(), indexOfThisSubtask, totalNumberOfSubtasks);
                 createConsumerForShard(newStateIndex, shard);
             }
+            if (exitAfterAllShardFinished) {
+                rwLock.readLock();
+                if (allConsumers.isEmpty()) {
+                    LOG.info("All shard consumers exited");
+                    break;
+                }
+            }
             if (running && discoveryIntervalMs > 0) {
                 try {
                     Thread.sleep(discoveryIntervalMs);
@@ -309,9 +320,8 @@ public class LogDataFetcher<T> {
     }
 
     public void awaitTermination() throws InterruptedException {
-        while (!shardConsumersExecutor.isTerminated()) {
-            LOG.warn("Executor is stilling running, check again after 50ms.");
-            Thread.sleep(50);
+        while (!shardConsumersExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+            LOG.warn("Executor is stilling running, check again after 1s.");
         }
         LOG.warn("LogDataFetcher exit awaitTermination");
     }
@@ -338,8 +348,8 @@ public class LogDataFetcher<T> {
         shardConsumersExecutor.shutdownNow();
         if (autoCommitter != null) {
             LOG.info("Stopping checkpoint committer thread.");
-            autoCommitter.interrupt();
             autoCommitter.shutdown();
+            autoCommitter.interrupt();
         }
     }
 
@@ -370,6 +380,12 @@ public class LogDataFetcher<T> {
             LOG.error("LogDataFetcher stopWithError: {}", throwable.toString());
             shutdownFetcher();
         }
+    }
+
+    void onShardFinished(int shard) {
+        LOG.info("Remove shard {} from fetcher", shard);
+        rwLock.writeLock();
+        allConsumers.remove(shard);
     }
 
     LogstoreShardState getShardState(int index) {

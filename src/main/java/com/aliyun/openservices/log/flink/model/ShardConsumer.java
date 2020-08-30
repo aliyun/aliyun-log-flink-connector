@@ -144,6 +144,7 @@ public class ShardConsumer<T> implements Runnable {
                         LOG.warn("The shard {} already not exist, project {} logstore {}", shardId, logProject, logstore);
                         break;
                     }
+                    // TODO PullData will never throw InvalidCursor
                     if ("InvalidCursor".equalsIgnoreCase(errorCode)
                             && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
                         LOG.warn("Got invalid cursor error, start from default position {}", defaultPosition);
@@ -176,6 +177,8 @@ public class ShardConsumer<T> implements Runnable {
                 }
                 adjustFetchFrequency(response.getRawSize(), processingTimeMs);
             }
+            LOG.warn("Consumer for shard {} stopped", shardId);
+            fetcher.onShardFinished(shardId);
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);
