@@ -321,7 +321,7 @@ public class LogDataFetcher<T> {
 
     public void awaitTermination() throws InterruptedException {
         while (!shardConsumersExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-            LOG.warn("Executor is stilling running, check again after 1s.");
+            LOG.warn("Executor is still running, check again after 1s.");
         }
         LOG.warn("LogDataFetcher exit awaitTermination");
     }
@@ -377,7 +377,7 @@ public class LogDataFetcher<T> {
 
     void stopWithError(Throwable throwable) {
         if (this.error.compareAndSet(null, throwable)) {
-            LOG.error("LogDataFetcher stopWithError: {}", throwable.toString());
+            LOG.error("Stop fetcher due to exception", throwable);
             shutdownFetcher();
         }
     }
