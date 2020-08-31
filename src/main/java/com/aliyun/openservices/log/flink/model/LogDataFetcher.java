@@ -326,12 +326,12 @@ public class LogDataFetcher<T> {
         LOG.warn("LogDataFetcher exit awaitTermination");
     }
 
-    public void shutdownFetcher() {
+    public void cancel() {
         running = false;
         if (mainThread != null) {
-            mainThread.interrupt(); // the main thread may be sleeping for the discovery interval
+            // the main thread may be sleeping for the discovery interval
+            mainThread.interrupt();
         }
-        stopBackgroundThreads();
     }
 
     private void stopAllConsumers() {
@@ -356,12 +356,6 @@ public class LogDataFetcher<T> {
     void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor) {
         synchronized (checkpointLock) {
             sourceContext.collectWithTimestamp(record, recordTimestamp);
-            updateState(shardStateIndex, cursor);
-        }
-    }
-
-    private void updateState(int shardStateIndex, String cursor) {
-        synchronized (checkpointLock) {
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
             state.setOffset(cursor);
             if (state.hasMoreData()) {
@@ -378,7 +372,7 @@ public class LogDataFetcher<T> {
     void stopWithError(Throwable throwable) {
         if (this.error.compareAndSet(null, throwable)) {
             LOG.error("Stop fetcher due to exception", throwable);
-            shutdownFetcher();
+            cancel();
         }
     }
 

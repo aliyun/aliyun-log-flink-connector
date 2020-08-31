@@ -133,24 +133,9 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     @Override
     public void cancel() {
         running = false;
-
-        LogDataFetcher<T> fetcher = this.fetcher;
-        this.fetcher = null;
-
-        // this method might be called before the subtask actually starts running,
-        // so we must check if the fetcher is actually created
         if (fetcher != null) {
-            try {
-                // interrupt the fetcher of any work
-                fetcher.shutdownFetcher();
-                fetcher.awaitTermination();
-            } catch (Exception e) {
-                LOG.warn("Error while closing log data fetcher", e);
-            }
-        }
-        if (logClient != null) {
-            logClient.close();
-            logClient = null;
+            fetcher.cancel();
+            LOG.warn("Log fetcher has been canceled");
         }
     }
 
