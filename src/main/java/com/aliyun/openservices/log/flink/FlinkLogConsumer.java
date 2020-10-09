@@ -1,9 +1,7 @@
 package com.aliyun.openservices.log.flink;
 
-import com.aliyun.openservices.log.flink.data.FastLogGroupList;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
-import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.LogstoreShardHandle;
 import com.aliyun.openservices.log.flink.model.SourceRecord;
 import com.aliyun.openservices.log.flink.util.Consts;
