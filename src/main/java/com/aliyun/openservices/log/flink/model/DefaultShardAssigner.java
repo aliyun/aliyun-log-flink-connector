@@ -6,6 +6,6 @@ public class DefaultShardAssigner implements ShardAssigner {
 
     @Override
     public int assign(LogstoreShardMeta shard, int numParallelSubtasks) {
-        return (Math.abs(shard.hashCode() % numParallelSubtasks));
+        return shard.getShardId() % numParallelSubtasks;
     }
 }
