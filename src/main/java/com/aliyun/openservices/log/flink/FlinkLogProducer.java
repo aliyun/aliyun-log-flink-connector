@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.aliyun.openservices.log.flink.ConfigConstants.BASE_RETRY_BACK_OFF_TIME_MS;
+import static com.aliyun.openservices.log.flink.ConfigConstants.BUCKETS;
 import static com.aliyun.openservices.log.flink.ConfigConstants.FLUSH_INTERVAL_MS;
 import static com.aliyun.openservices.log.flink.ConfigConstants.IO_THREAD_NUM;
 import static com.aliyun.openservices.log.flink.ConfigConstants.MAX_BLOCK_TIME_MS;
@@ -82,6 +83,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 configWrapper.getLong(MAX_BLOCK_TIME_MS, ProducerConfig.DEFAULT_MAX_BLOCK_MS));
         producerConfig.setIoThreadCount(
                 configWrapper.getInt(IO_THREAD_NUM, ProducerConfig.DEFAULT_IO_THREAD_COUNT));
+        producerConfig.setBuckets(
+                configWrapper.getInt(BUCKETS, ProducerConfig.DEFAULT_BUCKETS));
         Producer producer = new LogProducer(producerConfig);
         ProjectConfig config = new ProjectConfig(project,
                 configWrapper.getString(ConfigConstants.LOG_ENDPOINT),

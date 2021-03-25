@@ -50,4 +50,9 @@ public class ConfigConstants {
      * io thread num of sls producer
      */
     public static final String IO_THREAD_NUM = "io.thread.num";
+
+    /**
+     * Producer bucket.
+     */
+    public static final String BUCKETS = "producer.buckets";
 }
