@@ -7,7 +7,7 @@ import java.io.Serializable;
 public interface LogDeserializationSchema<T> extends Serializable, ResultTypeQueryable<T> {
 
     /**
-     * Deserialize LogGroup to Flink records.
+     * Deserialize pull logs result to Flink records.
      *
      * @param record LogGroup list.
      * @return
