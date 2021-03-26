@@ -2,6 +2,7 @@ package com.aliyun.openservices.log.flink.data;
 
 import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
+import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 
@@ -10,7 +11,8 @@ import java.util.List;
 public class FastLogGroupDeserializer implements LogDeserializationSchema<FastLogGroupList> {
 
     @Override
-    public FastLogGroupList deserialize(List<LogGroupData> logGroupDataList) {
+    public FastLogGroupList deserialize(PullLogsResult record) {
+        List<LogGroupData> logGroupDataList = record.getLogGroupList();
         int count = logGroupDataList == null ? 0 : logGroupDataList.size();
         FastLogGroupList logGroupList = new FastLogGroupList(count);
         if (logGroupDataList != null && !logGroupDataList.isEmpty()) {

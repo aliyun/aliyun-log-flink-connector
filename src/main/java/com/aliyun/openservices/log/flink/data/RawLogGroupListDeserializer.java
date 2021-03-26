@@ -6,17 +6,42 @@ import com.aliyun.openservices.log.common.FastLogGroup;
 import com.aliyun.openservices.log.common.FastLogTag;
 import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
+import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 
 public class RawLogGroupListDeserializer implements LogDeserializationSchema<RawLogGroupList> {
 
-    public RawLogGroupList deserialize(List<LogGroupData> logGroups) {
+    private String sequenceNumberKey;
+
+    public String getSequenceNumberKey() {
+        return sequenceNumberKey;
+    }
+
+    public void setSequenceNumberKey(String sequenceNumberKey) {
+        this.sequenceNumberKey = sequenceNumberKey;
+    }
+
+    private static long decodeCursor(String cursor) {
+        byte[] timestampAsBytes = Base64.getDecoder().decode(cursor.getBytes(StandardCharsets.UTF_8));
+        String timestamp = new String(timestampAsBytes, StandardCharsets.UTF_8);
+        return Long.parseLong(timestamp);
+    }
+
+    public RawLogGroupList deserialize(PullLogsResult record) {
         RawLogGroupList logGroupList = new RawLogGroupList();
+        List<LogGroupData> logGroups = record.getLogGroupList();
+        long offset = decodeCursor(record.getCursor());
+        String seqNoPrefix = record.getShard() + "_" + offset + "_";
+        int logGroupOffset = 0;
         for (LogGroupData logGroup : logGroups) {
             FastLogGroup flg = logGroup.GetFastLogGroup();
+            String seqNoPrefixForLogGroup = seqNoPrefix + logGroupOffset + "_";
+            ++logGroupOffset;
             RawLogGroup rawLogGroup = new RawLogGroup();
             rawLogGroup.setSource(flg.getSource());
             rawLogGroup.setTopic(flg.getTopic());
@@ -31,6 +56,9 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
                 for (int cIdx = 0; cIdx < log.getContentsCount(); ++cIdx) {
                     FastLogContent content = log.getContents(cIdx);
                     rlog.addContent(content.getKey(), content.getValue());
+                }
+                if (sequenceNumberKey != null) {
+                    rlog.addContent(sequenceNumberKey, seqNoPrefixForLogGroup + lIdx);
                 }
                 rawLogGroup.addLog(rlog);
             }
