@@ -163,7 +163,11 @@ public class ShardConsumer<T> implements Runnable {
                 String nextCursor = response.getNextCursor();
                 if (response.getCount() > 0) {
                     long processingStartTimeMs = System.currentTimeMillis();
-                    processRecordsAndSaveOffset(response.getLogGroups(), shardMeta, nextCursor);
+                    processRecordsAndSaveOffset(
+                            response.getLogGroups(),
+                            cursor,
+                            shardMeta,
+                            nextCursor);
                     processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
                     LOG.debug("Processing records of shard {} cost {} ms.", shardId, processingTimeMs);
                     cursor = nextCursor;
@@ -210,8 +214,12 @@ public class ShardConsumer<T> implements Runnable {
         isRunning = false;
     }
 
-    private void processRecordsAndSaveOffset(List<LogGroupData> records, LogstoreShardMeta shard, String nextCursor) {
-        final T value = deserializer.deserialize(records);
+    private void processRecordsAndSaveOffset(List<LogGroupData> records,
+                                             String cursor,
+                                             LogstoreShardMeta shard,
+                                             String nextCursor) {
+        PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
+        final T value = deserializer.deserialize(record);
         long timestamp = System.currentTimeMillis();
         if (!records.isEmpty()) {
             // Use the timestamp of first log for perf consideration.

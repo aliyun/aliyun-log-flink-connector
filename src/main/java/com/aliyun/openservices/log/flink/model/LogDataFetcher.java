@@ -209,15 +209,16 @@ public class LogDataFetcher<T> {
             // TODO add get consumer group API
             exist = logClient.checkConsumerGroupExists(project, logstore, consumerGroup);
         } catch (Exception ex) {
-            LOG.warn("Unable to check if consumer exist {}", ex.getMessage());
+            LOG.warn("Error checking consumer group exists {}", ex.getMessage());
             // do not throw exception here for bwc
         }
         if (!exist) {
-            LOG.info("Consumer group not found, need to create it.");
+            LOG.info("Creating consumer group {} for project {} logstore {}",
+                    consumerGroup, project, logstore);
             try {
                 logClient.createConsumerGroup(project, logstore, consumerGroup);
             } catch (Exception ex) {
-                LOG.warn("Error creating consumer group - {}", ex.getMessage());
+                LOG.warn("Error creating consumer group {} - {}", consumerGroup, ex.getMessage());
             }
         }
     }
