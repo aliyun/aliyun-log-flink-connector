@@ -4,7 +4,6 @@ import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
-import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
@@ -82,17 +81,28 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
     }
 
-    private void createClientIfNeeded() {
+    private String getOrCreateUserAgent(int indexOfSubTask) {
+        String userAgent = configProps.getProperty(ConfigConstants.LOG_USER_AGENT);
+        if (userAgent != null && !userAgent.isEmpty()) {
+            return userAgent;
+        }
+        if (consumerGroup != null) {
+            userAgent = "Flink-Connector-" + consumerGroup + "/" + indexOfSubTask;
+        } else {
+            userAgent = "Flink-Connector" + "/" + indexOfSubTask;
+        }
+        return userAgent;
+    }
+
+    private void createClientIfNeeded(int indexOfSubTask) {
         if (logClient != null) {
             return;
         }
-        final String userAgent = configProps.getProperty(ConfigConstants.LOG_USER_AGENT,
-                Consts.LOG_CONNECTOR_USER_AGENT);
         logClient = new LogClientProxy(
                 configProps.getProperty(ConfigConstants.LOG_ENDPOINT),
                 configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID),
                 configProps.getProperty(ConfigConstants.LOG_ACCESSKEY),
-                userAgent);
+                getOrCreateUserAgent(indexOfSubTask));
     }
 
     public void setShardAssigner(ShardAssigner shardAssigner) {
@@ -101,9 +111,9 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     @Override
     public void run(SourceContext<T> sourceContext) throws Exception {
-        createClientIfNeeded();
         final RuntimeContext ctx = getRuntimeContext();
-        LogDataFetcher<T> fetcher = new LogDataFetcher<T>(sourceContext, ctx, project,
+        createClientIfNeeded(ctx.getIndexOfThisSubtask());
+        LogDataFetcher<T> fetcher = new LogDataFetcher<>(sourceContext, ctx, project,
                 logstores, logstorePattern,
                 configProps, deserializer,
                 logClient,
@@ -148,11 +158,11 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
         LOG.info("Snapshotting state ...");
         cursorStateForCheckpoint.clear();
-        createClientIfNeeded();
+        final RuntimeContext ctx = getRuntimeContext();
+        createClientIfNeeded(ctx.getIndexOfThisSubtask());
         if (fetcher == null) {
             if (cursorsToRestore == null)
                 return;
-            final RuntimeContext ctx = getRuntimeContext();
             int numberOfParallelTasks = ctx.getNumberOfParallelSubtasks();
             int indexOfThisTask = ctx.getIndexOfThisSubtask();
             for (Map.Entry<LogstoreShardMeta, String> entry : cursorsToRestore.entrySet()) {
@@ -209,7 +219,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             LOG.info("Flink state has been restored already.");
             return;
         }
-        createClientIfNeeded();
+        RuntimeContext ctx = getRuntimeContext();
+        createClientIfNeeded(ctx.getIndexOfThisSubtask());
         cursorsToRestore = new HashMap<>();
         for (Tuple2<LogstoreShardMeta, String> cursor : cursorStateForCheckpoint.get()) {
             final LogstoreShardMeta shardMeta = cursor.f0;
