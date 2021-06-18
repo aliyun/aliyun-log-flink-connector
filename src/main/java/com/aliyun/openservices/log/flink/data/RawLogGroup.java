@@ -65,9 +65,16 @@ public class RawLogGroup implements Serializable {
     @Override
     public String toString() {
         StringBuilder strb = new StringBuilder();
-        if (logs.size() > 0) {
-            strb.append(logs.get(0).toString());
+        strb.append("[");
+        if (logs != null && !logs.isEmpty()) {
+            for (RawLog log : logs) {
+                if (strb.length() > 0) {
+                    strb.append(",");
+                }
+                strb.append(log.toString());
+            }
         }
+        strb.append("]");
         return "RawLogGroup{" +
                 "source='" + source + '\'' +
                 ", topic='" + topic + '\'' +
