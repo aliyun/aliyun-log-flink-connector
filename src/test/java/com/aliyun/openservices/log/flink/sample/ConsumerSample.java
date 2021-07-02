@@ -57,15 +57,16 @@ public class ConsumerSample {
         DataStream<FastLogGroupList> stream = env.addSource(
                 new FlinkLogConsumer<>(SLS_PROJECT, SLS_LOGSTORE, deserializer, configProps));
 
-        stream.flatMap((FlatMapFunction<FastLogGroupList, String>) (value, out) -> {
+        stream.flatMap((FlatMapFunction<FastLogGroupList, FastLog>) (value, out) -> {
             for (FastLogGroup logGroup : value.getLogGroups()) {
                 int logCount = logGroup.getLogsCount();
                 for (int i = 0; i < logCount; i++) {
                     FastLog log = logGroup.getLogs(i);
-                    // processing log
+                    out.collect(log);
                 }
             }
-        });
+        }).returns(FastLog.class);
+
         stream.writeAsText("log-" + System.nanoTime());
         env.execute("Flink consumer");
     }
