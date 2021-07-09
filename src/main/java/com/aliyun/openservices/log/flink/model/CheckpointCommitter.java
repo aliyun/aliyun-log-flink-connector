@@ -52,6 +52,7 @@ public class CheckpointCommitter extends Thread {
             try {
                 Thread.sleep(commitInterval);
             } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
                 LOG.warn("Interrupt signal received, quiting loop now...");
                 break;
             }
