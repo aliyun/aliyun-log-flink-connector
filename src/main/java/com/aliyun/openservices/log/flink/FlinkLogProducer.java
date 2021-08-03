@@ -88,7 +88,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         Producer producer = new LogProducer(producerConfig);
         ProjectConfig config = new ProjectConfig(project,
                 configWrapper.getString(ConfigConstants.LOG_ENDPOINT),
-                configWrapper.getString(ConfigConstants.LOG_ACCESSSKEYID),
+                configWrapper.getString(ConfigConstants.LOG_ACCESSKEYID),
                 configWrapper.getString(ConfigConstants.LOG_ACCESSKEY));
         producer.putProjectConfig(config);
         return producer;
