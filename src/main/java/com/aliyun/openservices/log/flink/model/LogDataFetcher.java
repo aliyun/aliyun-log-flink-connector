@@ -194,12 +194,16 @@ public class LogDataFetcher<T> {
 
     private void markConsumersAsReadOnly(List<Integer> shards) {
         rwLock.readLock();
-        for (Integer shard : shards) {
-            LOG.info("Mark shard {} as readonly", shard);
-            ShardConsumer<T> consumer = allConsumers.get(shard);
-            if (consumer != null) {
-                consumer.markAsReadOnly();
+        try {
+            for (Integer shard : shards) {
+                LOG.info("Mark shard {} as readonly", shard);
+                ShardConsumer<T> consumer = allConsumers.get(shard);
+                if (consumer != null) {
+                    consumer.markAsReadOnly();
+                }
             }
+        } finally {
+            rwLock.readLock().unlock();
         }
     }
 
@@ -248,13 +252,18 @@ public class LogDataFetcher<T> {
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
         ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, autoCommitter);
         rwLock.writeLock();
-        if (!running) {
-            // Do not create consumer any more
-            return;
+        try {
+            if (!running) {
+                // Do not create consumer any more
+                return;
+            }
+            allConsumers.put(shard.getShardId(), consumer);
+            shardConsumersExecutor.submit(consumer);
+            numberOfActiveShards.incrementAndGet();
+        } finally {
+            rwLock.writeLock().unlock();
         }
-        allConsumers.put(shard.getShardId(), consumer);
-        shardConsumersExecutor.submit(consumer);
-        numberOfActiveShards.incrementAndGet();
+
     }
 
     public void runFetcher() throws Exception {
@@ -283,9 +292,13 @@ public class LogDataFetcher<T> {
             }
             if (exitAfterAllShardFinished) {
                 rwLock.readLock();
-                if (allConsumers.isEmpty()) {
-                    LOG.info("All shard consumers exited");
-                    break;
+                try {
+                    if (allConsumers.isEmpty()) {
+                        LOG.info("All shard consumers exited");
+                        break;
+                    }
+                } finally {
+                    rwLock.readLock().unlock();
                 }
             }
             if (running && discoveryIntervalMs > 0) {
@@ -337,10 +350,15 @@ public class LogDataFetcher<T> {
 
     private void stopAllConsumers() {
         LOG.warn("Stopping all consumers..");
-        rwLock.readLock();
-        for (ShardConsumer<T> consumer : allConsumers.values()) {
-            consumer.stop();
+        rwLock.readLock().lock();
+        try {
+            for (ShardConsumer<T> consumer : allConsumers.values()) {
+                consumer.stop();
+            }
+        } finally {
+            rwLock.readLock().unlock();
         }
+
     }
 
     private void stopBackgroundThreads() {
@@ -379,8 +397,12 @@ public class LogDataFetcher<T> {
 
     void onShardFinished(int shard) {
         LOG.info("Remove shard {} from fetcher", shard);
-        rwLock.writeLock();
-        allConsumers.remove(shard);
+        rwLock.writeLock().lock();
+        try {
+            allConsumers.remove(shard);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
     }
 
     LogstoreShardState getShardState(int index) {
