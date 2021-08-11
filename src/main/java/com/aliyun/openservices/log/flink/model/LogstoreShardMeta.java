@@ -8,6 +8,7 @@ import java.util.Objects;
 public class LogstoreShardMeta implements Serializable {
     private String logstore;
     private int shardId;
+    private int shardIndex;
     private String shardStatus;
     private String endCursor;
 
@@ -15,10 +16,15 @@ public class LogstoreShardMeta implements Serializable {
     public LogstoreShardMeta() {
     }
 
-    public LogstoreShardMeta(String logstore, int shardId, String shardStatus) {
+    public LogstoreShardMeta(String logstore, int shardId, int shardIndex, String shardStatus) {
         this.logstore = logstore;
         this.shardId = shardId;
+        this.shardIndex = shardIndex;
         this.shardStatus = shardStatus;
+    }
+
+    public int getShardIndex() {
+        return shardIndex;
     }
 
     public String getLogstore() {

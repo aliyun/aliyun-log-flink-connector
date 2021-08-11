@@ -147,12 +147,19 @@ public class LogDataFetcher<T> {
         List<LogstoreShardMeta> shardMetas = new ArrayList<>();
         for (String logstore : logstores) {
             List<Shard> shards = logClient.listShards(project, logstore);
-            for (Shard shard : shards) {
-                LogstoreShardMeta shardMeta = new LogstoreShardMeta(logstore, shard.GetShardId(), shard.getStatus());
+            shards.sort((o1, o2) -> {
+                int scoreO1 = o1.getCreateTime() + o1.GetShardId();
+                int scoreO2 = o2.getCreateTime() + o2.GetShardId();
+                return scoreO1 - scoreO2;
+            });
+            for (int shardIndex = 0; shardIndex < shards.size(); shardIndex++) {
+                Shard shard = shards.get(shardIndex);
+                LogstoreShardMeta shardMeta = new LogstoreShardMeta(logstore, shard.GetShardId(), shardIndex, shard.getStatus());
                 if (shardAssigner.assign(shardMeta, totalNumberOfSubtasks) % totalNumberOfSubtasks == indexOfThisSubtask) {
                     shardMetas.add(shardMeta);
                 }
             }
+
         }
         return shardMetas;
     }
