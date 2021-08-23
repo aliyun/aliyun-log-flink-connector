@@ -29,6 +29,7 @@ public class ConfigConstants {
     public static final String FLUSH_INTERVAL_MS = "flush.interval.ms";
     public static final String MAX_RETRIES = "max.retries";
     public static final String STOP_TIME = "stop.time";
+    public static final String DIRECT_MODE = "direct.mode";
 
     /**
      * initial retry back off time.
