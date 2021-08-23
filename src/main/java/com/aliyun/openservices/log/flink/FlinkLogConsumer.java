@@ -103,6 +103,9 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 configProps.getProperty(ConfigConstants.LOG_ACCESSSKEYID),
                 configProps.getProperty(ConfigConstants.LOG_ACCESSKEY),
                 getOrCreateUserAgent(indexOfSubTask));
+        if (Boolean.parseBoolean(configProps.getProperty(ConfigConstants.DIRECT_MODE))) {
+            logClient.enableDirectMode(project);
+        }
     }
 
     public void setShardAssigner(ShardAssigner shardAssigner) {
