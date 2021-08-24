@@ -1,9 +1,9 @@
 package com.aliyun.openservices.log.flink.model;
 
-import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.ShardAssigner;
+import com.aliyun.openservices.log.flink.internal.ShardDiscover;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -55,11 +56,9 @@ public class LogDataFetcher<T> {
     private long commitInterval;
     private ReadWriteLock rwLock;
     private Map<Integer, ShardConsumer<T>> allConsumers;
-    private Pattern logstorePattern;
-    private List<String> logstores;
     private Set<String> subscribedLogstores;
-    private final ShardAssigner shardAssigner;
     private boolean exitAfterAllShardFinished = false;
+    private final ShardDiscover shardDiscover;
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
                           RuntimeContext context,
@@ -77,7 +76,6 @@ public class LogDataFetcher<T> {
         this.totalNumberOfSubtasks = context.getNumberOfParallelSubtasks();
         this.indexOfThisSubtask = context.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
-        this.shardAssigner = shardAssigner;
         this.subscribedShardsState = new ArrayList<>();
         this.shardConsumersExecutor = createThreadPool(context.getTaskNameWithSubtasks());
         this.error = new AtomicReference<>();
@@ -94,8 +92,6 @@ public class LogDataFetcher<T> {
         }
         this.rwLock = new ReentrantReadWriteLock();
         this.allConsumers = new HashMap<>();
-        this.logstores = logstores;
-        this.logstorePattern = logstorePattern;
         this.subscribedLogstores = new HashSet<>();
         String stopTime = configProps.getProperty(ConfigConstants.STOP_TIME);
         if (stopTime != null && !stopTime.isEmpty()) {
@@ -103,6 +99,7 @@ public class LogDataFetcher<T> {
             // Quit task on all shard reached stop time.
             exitAfterAllShardFinished = true;
         }
+        this.shardDiscover = new ShardDiscover(shardAssigner, logClient, project, logstores, logstorePattern, totalNumberOfSubtasks, indexOfThisSubtask);
     }
 
     private static void validateStopTime(String stopTime) {
@@ -138,27 +135,11 @@ public class LogDataFetcher<T> {
         return Executors.newCachedThreadPool(new GetDataThreadFactory(subtaskName));
     }
 
-    private List<String> getLogstores() {
-        return logstores != null ? logstores : logClient.listLogstores(project, logstorePattern);
-    }
-
-    private List<LogstoreShardMeta> listAssignedShards() throws Exception {
-        List<String> logstores = getLogstores();
-        List<LogstoreShardMeta> shardMetas = new ArrayList<>();
-        for (String logstore : logstores) {
-            List<Shard> shards = logClient.listShards(project, logstore);
-            for (Shard shard : shards) {
-                LogstoreShardMeta shardMeta = new LogstoreShardMeta(logstore, shard.GetShardId(), shard.getStatus());
-                if (shardAssigner.assign(shardMeta, totalNumberOfSubtasks) % totalNumberOfSubtasks == indexOfThisSubtask) {
-                    shardMetas.add(shardMeta);
-                }
-            }
-        }
-        return shardMetas;
-    }
-
     public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
-        List<LogstoreShardMeta> shardMetas = listAssignedShards();
+        List<LogstoreShardMeta> shardMetas = shardDiscover.discoverShards();
+        if (shardMetas.isEmpty()) {
+            return Collections.emptyList();
+        }
         List<LogstoreShardMeta> newShards = new ArrayList<>();
         List<Integer> readonlyShards = new ArrayList<>();
         for (LogstoreShardMeta shard : shardMetas) {
@@ -225,8 +206,7 @@ public class LogDataFetcher<T> {
 
     public int registerNewSubscribedShard(LogstoreShardMeta shard, String checkpoint) {
         String logstore = shard.getLogstore();
-        if (!subscribedLogstores.contains(logstore)) {
-            subscribedLogstores.add(logstore);
+        if (subscribedLogstores.add(logstore)) {
             createConsumerGroupIfNotExist(logstore);
         }
         synchronized (checkpointLock) {

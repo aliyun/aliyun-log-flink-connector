@@ -11,6 +11,9 @@ import com.aliyun.openservices.log.response.PullLogsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
 
@@ -122,6 +125,16 @@ public class ShardConsumer<T> implements Runnable {
         return null;
     }
 
+    private static long decodeCursorToTimestamp(String cursor) {
+        byte[] decodedBytes = Base64.getDecoder().decode(cursor.getBytes(StandardCharsets.UTF_8));
+        String decodedString = new String(decodedBytes, StandardCharsets.UTF_8);
+        return Long.parseLong(decodedString);
+    }
+
+    private static boolean isCursorGteStopCursor(String cursor, String stopCursor) {
+        return decodeCursorToTimestamp(cursor) >= decodeCursorToTimestamp(stopCursor);
+    }
+
     public void run() {
         try {
             LogstoreShardState state = fetcher.getShardState(subscribedShardStateIndex);
@@ -174,8 +187,11 @@ public class ShardConsumer<T> implements Runnable {
                 } else {
                     processingTimeMs = 0;
                     LOG.debug("No records of shard {} has been responded.", shardId);
-                    if ((cursor.equals(nextCursor) && isReadOnly) || cursor.equals(stopCursor)) {
-                        LOG.info("Shard {} is finished, readonly {}", shardId, isReadOnly);
+                    if (isReadOnly && cursor.equals(nextCursor)) {
+                        LOG.info("Read only shard {} has no more data.", shardId);
+                        break;
+                    } else if (stopCursor != null && isCursorGteStopCursor(cursor, stopCursor)) {
+                        LOG.info("Shard {} cursor [{}] >= stop cursor [{}], no more data.", shardId, cursor, stopCursor);
                         break;
                     }
                 }
