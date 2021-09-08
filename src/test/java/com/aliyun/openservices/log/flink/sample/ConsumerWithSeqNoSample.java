@@ -46,7 +46,7 @@ public class ConsumerWithSeqNoSample {
         env.setStateBackend(new FsStateBackend("file:///Users/kel/Github/flink3/aliyun-log-flink-connector/flink"));
         Properties configProps = new Properties();
         configProps.put(ConfigConstants.LOG_ENDPOINT, SLS_ENDPOINT);
-        configProps.put(ConfigConstants.LOG_ACCESSSKEYID, ACCESS_KEY_ID);
+        configProps.put(ConfigConstants.LOG_ACCESSKEYID, ACCESS_KEY_ID);
         configProps.put(ConfigConstants.LOG_ACCESSKEY, ACCESS_KEY_SECRET);
         configProps.put(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, "10");
         configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_FROM_CHECKPOINT);

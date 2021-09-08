@@ -45,13 +45,14 @@ public class ConsumerSample {
         env.setStateBackend(new FsStateBackend("file:///Users/kel/Github/flink3/aliyun-log-flink-connector/flink"));
         Properties configProps = new Properties();
         configProps.put(ConfigConstants.LOG_ENDPOINT, SLS_ENDPOINT);
-        configProps.put(ConfigConstants.LOG_ACCESSSKEYID, ACCESS_KEY_ID);
+        configProps.put(ConfigConstants.LOG_ACCESSKEYID, ACCESS_KEY_ID);
         configProps.put(ConfigConstants.LOG_ACCESSKEY, ACCESS_KEY_SECRET);
         configProps.put(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, "10");
         configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_FROM_CHECKPOINT);
         configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "23_ots_sla_etl_product1");
         configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.ON_CHECKPOINTS.name());
         configProps.put(ConfigConstants.LOG_COMMIT_INTERVAL_MILLIS, "10000");
+        configProps.put(ConfigConstants.STOP_TIME, "1627878020");
 
         FastLogGroupDeserializer deserializer = new FastLogGroupDeserializer();
         DataStream<FastLogGroupList> stream = env.addSource(

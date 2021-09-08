@@ -29,7 +29,7 @@ public class ProducerSample {
         DataStream<String> stream = env.addSource(new EventsGenerator());
         Properties configProps = new Properties();
         configProps.put(ConfigConstants.LOG_ENDPOINT, SLS_ENDPOINT);
-        configProps.put(ConfigConstants.LOG_ACCESSSKEYID, ACCESS_KEY_ID);
+        configProps.put(ConfigConstants.LOG_ACCESSKEYID, ACCESS_KEY_ID);
         configProps.put(ConfigConstants.LOG_ACCESSKEY, ACCESS_KEY);
         configProps.put(ConfigConstants.LOG_PROJECT, SLS_PROJECT);
         configProps.put(ConfigConstants.LOG_LOGSTORE, SLS_LOGSTORE);
