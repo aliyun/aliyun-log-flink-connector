@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -25,8 +26,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -53,8 +52,7 @@ public class LogDataFetcher<T> {
     private final String consumerGroup;
     private CheckpointCommitter autoCommitter;
     private long commitInterval;
-    private ReadWriteLock rwLock;
-    private Map<Integer, ShardConsumer<T>> allConsumers;
+    private Map<Integer, ShardConsumer<T>> consumerCache;
     private Pattern logstorePattern;
     private List<String> logstores;
     private Set<String> subscribedLogstores;
@@ -92,8 +90,7 @@ public class LogDataFetcher<T> {
             checkArgument(consumerGroup != null && !consumerGroup.isEmpty(),
                     "Missing parameter: " + ConfigConstants.LOG_CONSUMERGROUP);
         }
-        this.rwLock = new ReentrantReadWriteLock();
-        this.allConsumers = new HashMap<>();
+        this.consumerCache = new ConcurrentHashMap<>();
         this.logstores = logstores;
         this.logstorePattern = logstorePattern;
         this.subscribedLogstores = new HashSet<>();
@@ -193,17 +190,12 @@ public class LogDataFetcher<T> {
     }
 
     private void markConsumersAsReadOnly(List<Integer> shards) {
-        rwLock.readLock();
-        try {
-            for (Integer shard : shards) {
-                LOG.info("Mark shard {} as readonly", shard);
-                ShardConsumer<T> consumer = allConsumers.get(shard);
-                if (consumer != null) {
-                    consumer.markAsReadOnly();
-                }
+        for (Integer shard : shards) {
+            LOG.info("Mark shard {} as readonly", shard);
+            ShardConsumer<T> consumer = consumerCache.get(shard);
+            if (consumer != null) {
+                consumer.markAsReadOnly();
             }
-        } finally {
-            rwLock.readLock().unlock();
         }
     }
 
@@ -251,19 +243,13 @@ public class LogDataFetcher<T> {
 
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
         ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, autoCommitter);
-        rwLock.writeLock();
-        try {
-            if (!running) {
-                // Do not create consumer any more
-                return;
-            }
-            allConsumers.put(shard.getShardId(), consumer);
-            shardConsumersExecutor.submit(consumer);
-            numberOfActiveShards.incrementAndGet();
-        } finally {
-            rwLock.writeLock().unlock();
+        if (!running) {
+            // Do not create consumer any more
+            return;
         }
-
+        consumerCache.put(shard.getShardId(), consumer);
+        shardConsumersExecutor.submit(consumer);
+        numberOfActiveShards.incrementAndGet();
     }
 
     public void runFetcher() throws Exception {
@@ -291,14 +277,9 @@ public class LogDataFetcher<T> {
                 createConsumerForShard(newStateIndex, shard);
             }
             if (exitAfterAllShardFinished) {
-                rwLock.readLock();
-                try {
-                    if (allConsumers.isEmpty()) {
-                        LOG.info("All shard consumers exited");
-                        break;
-                    }
-                } finally {
-                    rwLock.readLock().unlock();
+                if (consumerCache.isEmpty()) {
+                    LOG.info("All shard consumers exited");
+                    break;
                 }
             }
             if (running && discoveryIntervalMs > 0) {
@@ -350,15 +331,9 @@ public class LogDataFetcher<T> {
 
     private void stopAllConsumers() {
         LOG.warn("Stopping all consumers..");
-        rwLock.readLock().lock();
-        try {
-            for (ShardConsumer<T> consumer : allConsumers.values()) {
-                consumer.stop();
-            }
-        } finally {
-            rwLock.readLock().unlock();
+        for (ShardConsumer<T> consumer : consumerCache.values()) {
+            consumer.stop();
         }
-
     }
 
     private void stopBackgroundThreads() {
@@ -397,12 +372,7 @@ public class LogDataFetcher<T> {
 
     void onShardFinished(int shard) {
         LOG.info("Remove shard {} from fetcher", shard);
-        rwLock.writeLock().lock();
-        try {
-            allConsumers.remove(shard);
-        } finally {
-            rwLock.writeLock().unlock();
-        }
+        consumerCache.remove(shard);
     }
 
     LogstoreShardState getShardState(int index) {

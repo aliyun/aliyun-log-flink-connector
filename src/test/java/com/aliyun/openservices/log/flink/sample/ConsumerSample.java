@@ -1,5 +1,6 @@
 package com.aliyun.openservices.log.flink.sample;
 
+import com.alibaba.fastjson.JSONObject;
 import com.aliyun.openservices.log.common.FastLog;
 import com.aliyun.openservices.log.common.FastLogGroup;
 import com.aliyun.openservices.log.flink.ConfigConstants;
@@ -58,15 +59,19 @@ public class ConsumerSample {
         DataStream<FastLogGroupList> stream = env.addSource(
                 new FlinkLogConsumer<>(SLS_PROJECT, SLS_LOGSTORE, deserializer, configProps));
 
-        stream.flatMap((FlatMapFunction<FastLogGroupList, FastLog>) (value, out) -> {
+        stream.flatMap((FlatMapFunction<FastLogGroupList, String>) (value, out) -> {
             for (FastLogGroup logGroup : value.getLogGroups()) {
                 int logCount = logGroup.getLogsCount();
                 for (int i = 0; i < logCount; i++) {
                     FastLog log = logGroup.getLogs(i);
-                    out.collect(log);
+                    JSONObject jsonObject = new JSONObject();
+                    for (int j = 0; j < log.getContentsCount(); j++) {
+                        jsonObject.put(log.getContents(j).getKey(), log.getContents(j).getValue());
+                    }
+                    out.collect(jsonObject.toJSONString());
                 }
             }
-        }).returns(FastLog.class);
+        }).returns(String.class);
 
         stream.writeAsText("log-" + System.nanoTime());
         env.execute("Flink consumer");
