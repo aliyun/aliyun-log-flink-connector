@@ -189,7 +189,7 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
-    private void adjustFetchFrequency(int responseSize, long processingTimeMs) throws InterruptedException {
+    private void adjustFetchFrequency(int responseSize, long processingTimeMs) {
         long sleepTime = 0;
         if (responseSize == 0) {
             sleepTime = 1000;
@@ -202,7 +202,12 @@ public class ShardConsumer<T> implements Runnable {
         sleepTime -= processingTimeMs;
         if (sleepTime > 0) {
             LOG.debug("Wait {} ms before next fetching", sleepTime);
-            Thread.sleep(sleepTime);
+            try {
+                Thread.sleep(sleepTime);
+            } catch (InterruptedException ex) {
+                LOG.warn("Adjust fetch frequency has been interrupted.");
+                Thread.currentThread().interrupt();
+            }
         }
     }
 

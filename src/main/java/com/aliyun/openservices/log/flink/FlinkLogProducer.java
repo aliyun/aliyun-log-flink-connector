@@ -116,11 +116,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
         if (producer != null) {
-            // TODO support flush in producer
-            long lingerMs = producer.getProducerConfig().getLingerMs();
             while (buffered.get() > 0) {
-                LOG.info("Sleep {} ms to wait all records flushed", lingerMs);
-                Thread.sleep(lingerMs);
+                LOG.info("Sleep 200 ms to wait all records flushed");
+                Thread.sleep(200);
             }
         }
     }
