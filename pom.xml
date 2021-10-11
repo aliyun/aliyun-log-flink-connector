@@ -8,7 +8,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector</artifactId>
-    <version>0.1.27-SNAPSHOT</version>
+    <version>0.1.28-SNAPSHOT</version>
     <name>flink log connector</name>
     <url>http://www.aliyun.com</url>
     <description>Flink Connector for Aliyun Log Service</description>
@@ -37,17 +37,28 @@
             <email>aliyunsdk@aliyun.com</email>
         </developer>
     </developers>
+    <distributionManagement>
+        <snapshotRepository>
+            <id>ossrh</id>
+            <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
+        <repository>
+            <id>ossrh</id>
+            <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+    </distributionManagement>
+
     <dependencies>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-streaming-java_2.11</artifactId>
-            <version>1.10.1</version>
+            <version>1.13.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-runtime-web_2.12</artifactId>
-            <version>1.10.1</version>
+            <version>1.13.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>

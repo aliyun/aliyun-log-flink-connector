@@ -2,7 +2,7 @@ package com.aliyun.openservices.log.flink;
 
 public class ConfigConstants {
     public static String LOG_ENDPOINT = "ENDPOINT";
-    public static String LOG_ACCESSSKEYID = "ACCESSKEYID";
+    public static String LOG_ACCESSKEYID = "ACCESSKEYID";
     public static String LOG_ACCESSKEY = "ACCESSKEY";
     public static String LOG_PROJECT = "PROJECT";
     public static String LOG_LOGSTORE = "LOGSTORE";
@@ -29,6 +29,7 @@ public class ConfigConstants {
     public static final String FLUSH_INTERVAL_MS = "flush.interval.ms";
     public static final String MAX_RETRIES = "max.retries";
     public static final String STOP_TIME = "stop.time";
+    public static final String DIRECT_MODE = "direct.mode";
 
     /**
      * initial retry back off time.
