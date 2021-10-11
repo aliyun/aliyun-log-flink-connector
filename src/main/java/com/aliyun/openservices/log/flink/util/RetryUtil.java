@@ -24,7 +24,7 @@ final class RetryUtil {
         }
     }
 
-    static <T> T call(Callable<T> callable, String errorMsg) throws LogException {
+    static <T> T call(Callable<T> callable, String action) throws LogException {
         long backoff = INITIAL_BACKOFF;
         int retries = 0;
         do {
@@ -34,20 +34,21 @@ final class RetryUtil {
                 if (ex.GetHttpCode() == 400) {
                     throw ex;
                 }
-                if (ex.GetHttpCode() >= 500) {
-                    LOG.error("{}: {}, retry after {} ms", errorMsg, ex.GetErrorMessage(), backoff);
+                // for read operation, no other way to handle 403
+                if (ex.GetHttpCode() >= 500 || ex.GetHttpCode() == 403) {
+                    LOG.error("{} fail: {}, retry after {} ms", action, ex.GetErrorMessage(), backoff);
                     retries = 0;
                 } else if (retries < MAX_ATTEMPTS) {
-                    LOG.error("{}: {}, retry {}/{}", errorMsg, ex.GetErrorMessage(), retries, MAX_ATTEMPTS);
+                    LOG.error("{} fail: {}, retry {}/{}", action, ex.GetErrorMessage(), retries, MAX_ATTEMPTS);
                     retries++;
                 } else {
                     throw ex;
                 }
             } catch (Exception ex) {
                 if (retries >= MAX_ATTEMPTS) {
-                    throw new LogException("UnknownError", errorMsg, ex, "");
+                    throw new LogException("UnknownError", ex.getMessage(), ex, "");
                 }
-                LOG.error("{}, retry {}/{}", errorMsg, retries, MAX_ATTEMPTS, ex);
+                LOG.error("{} fail: {}, retry {}/{}", action, ex.getMessage(), retries, MAX_ATTEMPTS, ex);
                 retries++;
             }
             waitForMs(backoff);

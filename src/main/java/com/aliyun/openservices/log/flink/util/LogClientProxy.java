@@ -33,15 +33,15 @@ public class LogClientProxy implements Serializable {
     }
 
     public String getEndCursor(final String project, final String logstore, final int shard) throws LogException {
-        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor(), "Error while getting end cursor");
+        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor(), "getEndCursor");
     }
 
     public String getBeginCursor(final String project, final String logstore, final int shard) throws LogException {
-        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor(), "Error while getting begin cursor");
+        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor(), "getBeginCursor");
     }
 
     public String getCursorAtTimestamp(final String project, final String logstore, final int shard, final int ts) throws LogException {
-        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, ts).GetCursor(), "Error while getting cursor with timestamp");
+        return RetryUtil.call(() -> client.GetCursor(project, logstore, shard, ts).GetCursor(), "getCursorAtTimestamp");
     }
 
     public String fetchCheckpoint(final String project,
@@ -67,13 +67,13 @@ public class LogClientProxy implements Serializable {
                 }
             }
             return null;
-        }, "Error while getting checkpoint");
+        }, "fetchCheckpoint");
     }
 
     public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, String stopCursor, int count)
             throws LogException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
-        return RetryUtil.call(() -> client.pullLogs(request), "Error while pulling logs");
+        return RetryUtil.call(() -> client.pullLogs(request), "pullLogs");
     }
 
     @VisibleForTesting
@@ -105,7 +105,7 @@ public class LogClientProxy implements Serializable {
     }
 
     public List<Shard> listShards(final String project, final String logstore) throws LogException {
-        return RetryUtil.call((Callable<List<Shard>>) () -> client.ListShard(project, logstore).GetShards(), "Error while listing shards");
+        return RetryUtil.call((Callable<List<Shard>>) () -> client.ListShard(project, logstore).GetShards(), "listShards");
     }
 
     public boolean checkConsumerGroupExists(String project, String logstore, String consumerGroup) throws Exception {
@@ -133,7 +133,7 @@ public class LogClientProxy implements Serializable {
                 throw ex;
             }
             return null;
-        }, "Error while creating consumer group");
+        }, "createConsumerGroup");
     }
 
     public void updateCheckpoint(final String project,
@@ -150,7 +150,7 @@ public class LogClientProxy implements Serializable {
             RetryUtil.call((Callable<Void>) () -> {
                 client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
                 return null;
-            }, "Error while updating checkpoint");
+            }, "updateCheckpoint");
         } catch (LogException ex) {
             if ("ConsumerGroupNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
                 LOG.warn("Consumer group not exist: {}", consumerGroup);
