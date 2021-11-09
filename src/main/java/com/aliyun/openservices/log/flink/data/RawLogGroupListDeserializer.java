@@ -55,13 +55,13 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
                     rlog.addContent(content.getKey(), content.getValue());
                 }
                 if (sequenceNumberKey != null) {
-                    String logGroupId = seqNoPrefix + offset + "_";
-                    ++offset;
-                    rlog.addContent(sequenceNumberKey, logGroupId + lIdx);
+                    String seqNum = seqNoPrefix + offset + "_" + lIdx;
+                    rlog.addContent(sequenceNumberKey, seqNum);
                 }
                 rawLogGroup.addLog(rlog);
             }
             logGroupList.add(rawLogGroup);
+            ++offset;
         }
         return logGroupList;
     }
