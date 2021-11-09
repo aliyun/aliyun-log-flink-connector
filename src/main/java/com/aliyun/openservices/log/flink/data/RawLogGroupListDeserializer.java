@@ -36,12 +36,9 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
         RawLogGroupList logGroupList = new RawLogGroupList();
         List<LogGroupData> logGroups = record.getLogGroupList();
         long offset = decodeCursor(record.getCursor());
-        String seqNoPrefix = record.getShard() + "_" + offset + "_";
-        int logGroupOffset = 0;
+        String seqNoPrefix = record.getShard() + "_";
         for (LogGroupData logGroup : logGroups) {
             FastLogGroup flg = logGroup.GetFastLogGroup();
-            String seqNoPrefixForLogGroup = seqNoPrefix + logGroupOffset + "_";
-            ++logGroupOffset;
             RawLogGroup rawLogGroup = new RawLogGroup();
             rawLogGroup.setSource(flg.getSource());
             rawLogGroup.setTopic(flg.getTopic());
@@ -58,7 +55,9 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
                     rlog.addContent(content.getKey(), content.getValue());
                 }
                 if (sequenceNumberKey != null) {
-                    rlog.addContent(sequenceNumberKey, seqNoPrefixForLogGroup + lIdx);
+                    String logGroupId = seqNoPrefix + offset + "_";
+                    ++offset;
+                    rlog.addContent(sequenceNumberKey, logGroupId + lIdx);
                 }
                 rawLogGroup.addLog(rlog);
             }
