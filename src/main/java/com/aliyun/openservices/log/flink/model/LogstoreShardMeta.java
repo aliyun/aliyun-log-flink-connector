@@ -65,6 +65,10 @@ public class LogstoreShardMeta implements Serializable {
         return Consts.READWRITE_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
     }
 
+    public String getId() {
+        return logstore + "$" + shardId;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

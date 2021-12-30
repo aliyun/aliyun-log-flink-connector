@@ -175,14 +175,14 @@ public class ShardConsumer<T> implements Runnable {
                     processingTimeMs = 0;
                     LOG.debug("No records of shard {} has been responded.", shardId);
                     if ((cursor.equals(nextCursor) && isReadOnly) || cursor.equals(stopCursor)) {
-                        LOG.info("Shard {} is finished, readonly {}", shardId, isReadOnly);
+                        LOG.info("Shard [{}] is finished, readonly {}", shardMeta.getId(), isReadOnly);
                         break;
                     }
                 }
                 adjustFetchFrequency(response.getRawSize(), processingTimeMs);
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
-            fetcher.onShardFinished(shardId);
+            fetcher.onShardFinished(shardMeta.getId());
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);

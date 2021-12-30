@@ -52,7 +52,7 @@ public class LogDataFetcher<T> {
     private final String consumerGroup;
     private CheckpointCommitter autoCommitter;
     private long commitInterval;
-    private Map<Integer, ShardConsumer<T>> consumerCache;
+    private Map<String, ShardConsumer<T>> consumerCache;
     private Pattern logstorePattern;
     private List<String> logstores;
     private Set<String> subscribedLogstores;
@@ -157,7 +157,7 @@ public class LogDataFetcher<T> {
     public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
         List<LogstoreShardMeta> shardMetas = listAssignedShards();
         List<LogstoreShardMeta> newShards = new ArrayList<>();
-        List<Integer> readonlyShards = new ArrayList<>();
+        List<String> readonlyShards = new ArrayList<>();
         for (LogstoreShardMeta shard : shardMetas) {
             boolean add = true;
             String status = shard.getShardStatus();
@@ -173,7 +173,7 @@ public class LogDataFetcher<T> {
                     String endCursor = logClient.getEndCursor(project, shardMeta.getLogstore(), shardID);
                     shardMeta.setEndCursor(endCursor);
                     shardMeta.setShardStatus(status);
-                    readonlyShards.add(shardMeta.getShardId());
+                    readonlyShards.add(shardMeta.getId());
                 }
                 add = false;
                 break;
@@ -189,8 +189,8 @@ public class LogDataFetcher<T> {
         return newShards;
     }
 
-    private void markConsumersAsReadOnly(List<Integer> shards) {
-        for (Integer shard : shards) {
+    private void markConsumersAsReadOnly(List<String> shards) {
+        for (String shard : shards) {
             LOG.info("Mark shard {} as readonly", shard);
             ShardConsumer<T> consumer = consumerCache.get(shard);
             if (consumer != null) {
@@ -247,7 +247,7 @@ public class LogDataFetcher<T> {
             // Do not create consumer any more
             return;
         }
-        consumerCache.put(shard.getShardId(), consumer);
+        consumerCache.put(shard.getId(), consumer);
         shardConsumersExecutor.submit(consumer);
         numberOfActiveShards.incrementAndGet();
     }
@@ -308,7 +308,7 @@ public class LogDataFetcher<T> {
 
     private void startCommitThreadIfNeeded() {
         if (checkpointMode == CheckpointMode.PERIODIC) {
-            autoCommitter = new CheckpointCommitter(logClient, commitInterval, this, project, consumerGroup);
+            autoCommitter = new CheckpointCommitter(logClient, commitInterval, project, consumerGroup);
             autoCommitter.start();
             LOG.info("Checkpoint periodic committer thread started");
         }
@@ -370,9 +370,9 @@ public class LogDataFetcher<T> {
         }
     }
 
-    void onShardFinished(int shard) {
-        LOG.info("Remove shard {} from fetcher", shard);
-        consumerCache.remove(shard);
+    void onShardFinished(String shardId) {
+        LOG.info("Remove shard [{}] from fetcher", shardId);
+        consumerCache.remove(shardId);
     }
 
     LogstoreShardState getShardState(int index) {
