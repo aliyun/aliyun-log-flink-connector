@@ -4,8 +4,10 @@ import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class CheckpointCommitter extends Thread {
     private static final Logger LOG = LoggerFactory.getLogger(CheckpointCommitter.class);
@@ -13,22 +15,21 @@ public class CheckpointCommitter extends Thread {
     private volatile boolean running = false;
     private final LogClientProxy logClient;
     private final long commitInterval;
-    private final LogDataFetcher fetcher;
-    private final Map<LogstoreShardMeta, ShardInfo> checkpoints;
+    private Map<String, ShardInfo> checkpoints;
     private final String project;
     private final String consumerGroup;
+    private final Lock lock;
 
     CheckpointCommitter(LogClientProxy client,
                         long commitInterval,
-                        LogDataFetcher fetcher,
                         String project,
                         String consumerGroup) {
-        this.checkpoints = new ConcurrentHashMap<>();
+        this.checkpoints = new HashMap<>();
         this.logClient = client;
         this.commitInterval = commitInterval;
-        this.fetcher = fetcher;
         this.project = project;
         this.consumerGroup = consumerGroup;
+        this.lock = new ReentrantLock();
     }
 
     @Override
@@ -38,21 +39,20 @@ public class CheckpointCommitter extends Thread {
             return;
         }
         running = true;
-        try {
-            commitCheckpointPeriodic();
-        } catch (Throwable t) {
-            LOG.error("Error while committing checkpoint", t);
-            fetcher.stopWithError(t);
-        }
+        commitCheckpointPeriodic();
     }
 
-    private void commitCheckpointPeriodic() throws Exception {
+    private void commitCheckpointPeriodic() {
         while (running) {
-            commitCheckpoints();
+            try {
+                commitCheckpoints();
+            } catch (Throwable t) {
+                LOG.error("Error while committing checkpoint", t);
+            }
             try {
                 Thread.sleep(commitInterval);
             } catch (InterruptedException ex) {
-                LOG.warn("Interrupt signal received, quiting loop now...");
+                LOG.warn("Thread interrupted");
                 break;
             }
         }
@@ -60,38 +60,61 @@ public class CheckpointCommitter extends Thread {
 
     private void commitCheckpoints() throws Exception {
         LOG.debug("Committing checkpoint to remote server");
-        for (LogstoreShardMeta shard : checkpoints.keySet()) {
-            final ShardInfo shardInfo = checkpoints.remove(shard);
-            logClient.updateCheckpoint(project, shard.getLogstore(),
+        Map<String, ShardInfo> backup = null;
+        lock.lock();
+        try {
+            if (checkpoints.isEmpty()) {
+                return;
+            }
+            backup = checkpoints;
+            checkpoints = new HashMap<>();
+        } finally {
+            lock.unlock();
+        }
+        for (Map.Entry<String, ShardInfo> entry : backup.entrySet()) {
+            final ShardInfo shardInfo = entry.getValue();
+            logClient.updateCheckpoint(project,
+                    shardInfo.logstore,
                     consumerGroup,
-                    shard.getShardId(), shardInfo.readOnly, shardInfo.cursor);
+                    shardInfo.shard,
+                    shardInfo.readOnly,
+                    shardInfo.cursor);
         }
     }
 
     void updateCheckpoint(LogstoreShardMeta shard, String cursor, boolean readOnly) {
         LOG.debug("Updating checkpoint for shard {}, cursor {}", shard, cursor);
-        checkpoints.put(shard, new ShardInfo(cursor, readOnly));
+        lock.lock();
+        try {
+            checkpoints.put(shard.getId(), new ShardInfo(cursor, readOnly, shard.getLogstore(), shard.getShardId()));
+        } finally {
+            lock.unlock();
+        }
     }
 
     void shutdown() {
         if (!running) {
             return;
         }
+        running = false;
         try {
             commitCheckpoints();
         } catch (final Exception ex) {
             LOG.error("Error while committing checkpoint", ex);
         }
-        running = false;
     }
 
     private static class ShardInfo {
-        private String cursor;
-        private boolean readOnly;
+        private final String cursor;
+        private final boolean readOnly;
+        private final String logstore;
+        private final int shard;
 
-        ShardInfo(String cursor, boolean readOnly) {
+        ShardInfo(String cursor, boolean readOnly, String logstore, int shard) {
             this.cursor = cursor;
             this.readOnly = readOnly;
+            this.logstore = logstore;
+            this.shard = shard;
         }
     }
 }
