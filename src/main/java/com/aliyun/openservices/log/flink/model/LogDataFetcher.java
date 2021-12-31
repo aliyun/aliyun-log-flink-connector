@@ -146,7 +146,9 @@ public class LogDataFetcher<T> {
             List<Shard> shards = logClient.listShards(project, logstore);
             for (Shard shard : shards) {
                 LogstoreShardMeta shardMeta = new LogstoreShardMeta(logstore, shard.GetShardId(), shard.getStatus());
-                if (shardAssigner.assign(shardMeta, totalNumberOfSubtasks) % totalNumberOfSubtasks == indexOfThisSubtask) {
+                int hash = shardAssigner.assign(shardMeta, totalNumberOfSubtasks);
+                int taskId = ((hash % totalNumberOfSubtasks) + totalNumberOfSubtasks) % totalNumberOfSubtasks;
+                if (taskId == indexOfThisSubtask) {
                     shardMetas.add(shardMeta);
                 }
             }
