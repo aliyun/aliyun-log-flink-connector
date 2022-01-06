@@ -4,6 +4,7 @@ import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.Consts.CursorMode;
 import com.aliyun.openservices.log.common.ConsumerGroup;
 import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
+import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.request.PullLogsRequest;
@@ -126,7 +127,7 @@ public class LogClientProxy implements Serializable {
         ListConsumerGroupResponse response = client.ListConsumerGroup(project, logstore);
         if (response != null) {
             for (ConsumerGroup item : response.GetConsumerGroups()) {
-                if (item.getConsumerGroupName().equalsIgnoreCase(consumerGroup)) {
+                if (item.getConsumerGroupName().equals(consumerGroup)) {
                     return true;
                 }
             }
@@ -174,6 +175,15 @@ public class LogClientProxy implements Serializable {
                 throw ex;
             }
         }
+    }
+
+    public void putLogs(String project, String logstore,
+                        String topic, String source,
+                        String hashKey, List<LogItem> logItems) throws LogException {
+        RetryUtil.call((Callable<Void>) () -> {
+            client.PutLogs(project, logstore, topic, logItems, source, hashKey);
+            return null;
+        }, "PutLogs");
     }
 
     public void close() {

@@ -31,6 +31,10 @@ public class ConfigConstants {
     public static final String STOP_TIME = "stop.time";
     public static final String DIRECT_MODE = "direct.mode";
 
+    public static final String TOTAL_SIZE_IN_BYTES = "total.size.in.bytes";
+    public static final String LOG_GROUP_SIZE_THRESHOLD = "logGroup.size";
+    public static final String LOG_GROUP_MAX_LINES = "logGroup.max.lines";
+
     /**
      * initial retry back off time.
      */

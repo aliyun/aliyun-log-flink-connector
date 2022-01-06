@@ -10,8 +10,8 @@ public class RawLog implements Serializable {
     private Map<String, String> tags;
 
     public RawLog() {
-        contents = new HashMap<String, String>();
-        tags = new HashMap<String, String>();
+        contents = new HashMap<>();
+        tags = new HashMap<>();
     }
 
     public int getTime() {
@@ -22,6 +22,12 @@ public class RawLog implements Serializable {
         return contents;
     }
 
+    /**
+     * Use LogGroup getTags instead.
+     *
+     * @return
+     */
+    @Deprecated
     public Map<String, String> getTags() {
         return tags;
     }
