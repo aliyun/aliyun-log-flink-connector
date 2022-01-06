@@ -60,7 +60,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         producerConfig.setAccessKeySecret(configWrapper.getString(ConfigConstants.LOG_ACCESSKEY));
         producerConfig.setTotalSizeInBytes(configWrapper.getInt(ConfigConstants.TOTAL_SIZE_IN_BYTES,
                 ProducerConfig.DEFAULT_TOTAL_SIZE_IN_BYTES));
-        producerConfig.setLogGroupSize(configWrapper.getInt(ConfigConstants.LOG_GROUP_SIZE_THRESHOLD,
+        producerConfig.setLogGroupSize(configWrapper.getInt(ConfigConstants.LOG_GROUP_MAX_SIZE,
                 ProducerConfig.DEFAULT_LOG_GROUP_SIZE));
         producerConfig.setLogGroupMaxLines(configWrapper.getInt(ConfigConstants.LOG_GROUP_MAX_LINES,
                 ProducerConfig.DEFAULT_MAX_LOG_GROUP_LINES));
