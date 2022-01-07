@@ -214,7 +214,7 @@ public class ProducerImpl implements Producer {
                 prev.addLogs(buffer, bytes);
                 if (shouldSend(prev.getSizeInBytes(), prev.getLogs().size())) {
                     queue.put(ProducerEvent.makeEvent(prev));
-                    LOG.info("Add to queue {}", prev.getLogs().size());
+                    LOG.debug("Add to queue {}", prev.getLogs().size());
                     cache.remove(key);
                 }
                 return;
