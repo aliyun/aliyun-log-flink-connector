@@ -13,8 +13,8 @@ public class RawLogGroup implements Serializable {
     private List<RawLog> logs;
 
     public RawLogGroup() {
-        tags = new HashMap<String, String>();
-        logs = new ArrayList<RawLog>();
+        tags = new HashMap<>();
+        logs = new ArrayList<>();
     }
 
     public void addTag(String key, String value) {

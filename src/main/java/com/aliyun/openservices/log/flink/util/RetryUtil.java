@@ -35,7 +35,10 @@ final class RetryUtil {
                     throw ex;
                 }
                 // for read operation, no other way to handle 403
-                if (ex.GetHttpCode() >= 500 || ex.GetHttpCode() == 403) {
+                if (ex.GetHttpCode() >= 500 || ex.GetHttpCode() == 403 || ex.GetHttpCode() < 0) {
+                    // 500 - internal server error
+                    // 403 - Quota exceed
+                    // <0 - network error
                     LOG.error("{} fail: {}, retry after {} ms", action, ex.GetErrorMessage(), backoff);
                     retries = 0;
                 } else if (retries < MAX_ATTEMPTS) {

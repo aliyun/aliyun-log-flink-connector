@@ -25,8 +25,8 @@ public class LogstoreShardState {
         return offset;
     }
 
-    boolean hasMoreData() {
-        return shardMeta.isReadWrite() || !(offset != null && offset.equalsIgnoreCase(shardMeta.getEndCursor()));
+    boolean isEndReached() {
+        return shardMeta.isReadOnly() && offset != null && offset.equals(shardMeta.getEndCursor());
     }
 
     @Override
