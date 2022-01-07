@@ -230,7 +230,7 @@ public class ProducerImpl implements Producer {
         if (isStopped) {
             throw new IllegalStateException("Producer is stopped");
         }
-        LOG.info("Flushing producer..");
+        LOG.debug("Flushing producer.");
         Map<String, LogGroupHolder> tp;
         lock.lock();
         try {
