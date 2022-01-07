@@ -36,7 +36,7 @@ public class ConfigConstants {
     public static final String LOG_GROUP_MAX_LINES = "logGroup.max.lines";
     public static final String PRODUCER_QUEUE_SIZE = "producer.queue.size";
 
-    public static final String FLINK_CONNECTOR_VERSION = "0.1.29";
+    public static final String FLINK_CONNECTOR_VERSION = "0.1.30";
 
     /**
      * initial retry back off time.
