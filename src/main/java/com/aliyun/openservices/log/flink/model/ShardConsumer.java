@@ -179,6 +179,7 @@ public class ShardConsumer<T> implements Runnable {
                     LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", shardMeta.getId(), isReadOnly, stopCursor);
                     break;
                 }
+                adjustFetchFrequency(response.getRawSize(), 0);
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
             fetcher.onShardFinished(shardMeta.getId());
@@ -192,6 +193,9 @@ public class ShardConsumer<T> implements Runnable {
         long sleepTime = 0;
         if (responseSize == 0) {
             sleepTime = 1000;
+        } else if (responseSize <= 1) {
+            // Outflow: 1
+            sleepTime = 250;
         } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
             sleepTime = 200;
         }
