@@ -86,10 +86,11 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         if (userAgent != null && !userAgent.isEmpty()) {
             return userAgent;
         }
+        userAgent = "Flink-Connector-" + ConfigConstants.FLINK_CONNECTOR_VERSION;
         if (consumerGroup != null) {
-            userAgent = "Flink-Connector-" + consumerGroup + "/" + indexOfSubTask;
+            userAgent += "-" + consumerGroup + "/" + indexOfSubTask;
         } else {
-            userAgent = "Flink-Connector" + "/" + indexOfSubTask;
+            userAgent += "/" + indexOfSubTask;
         }
         return userAgent;
     }

@@ -4,15 +4,14 @@ import com.aliyun.openservices.log.common.LogItem;
 
 import java.util.List;
 
-public class LogGroupWrapper {
-
+public class LogGroupHolder {
     private final String source;
     private final String topic;
     private final String hashKey;
     private final List<LogItem> logs;
     private int sizeInBytes;
 
-    public LogGroupWrapper(String source, String topic, String hashKey, List<LogItem> logs, int bytes) {
+    public LogGroupHolder(String source, String topic, String hashKey, List<LogItem> logs, int bytes) {
         this.source = source;
         this.topic = topic == null ? "" : topic;
         this.hashKey = hashKey;
@@ -20,7 +19,7 @@ public class LogGroupWrapper {
         this.sizeInBytes = bytes;
     }
 
-    public void add(List<LogItem> logs, int sizeInBytes) {
+    public void addLogs(List<LogItem> logs, int sizeInBytes) {
         this.logs.addAll(logs);
         this.sizeInBytes += sizeInBytes;
     }

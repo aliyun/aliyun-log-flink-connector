@@ -64,6 +64,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 ProducerConfig.DEFAULT_LOG_GROUP_SIZE));
         producerConfig.setLogGroupMaxLines(configWrapper.getInt(ConfigConstants.LOG_GROUP_MAX_LINES,
                 ProducerConfig.DEFAULT_MAX_LOG_GROUP_LINES));
+        producerConfig.setProducerQueueSize(configWrapper.getInt(ConfigConstants.PRODUCER_QUEUE_SIZE,
+                ProducerConfig.DEFAULT_PRODUCER_QUEUE_SIZE));
         return new ProducerImpl(producerConfig);
     }
 
@@ -84,7 +86,12 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
         if (producer != null) {
-            producer.flush();
+            try {
+                producer.flush();
+            } catch (InterruptedException ex) {
+                LOG.warn("Interrupted while flushing producer.");
+                Thread.currentThread().interrupt();
+            }
         }
     }
 

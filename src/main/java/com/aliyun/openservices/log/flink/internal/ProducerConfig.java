@@ -10,11 +10,13 @@ public class ProducerConfig {
     public static final int MAX_LOG_GROUP_SIZE = 5 * 1024 * 1024;
     public static final int DEFAULT_MAX_LOG_GROUP_LINES = 2000;
     public static final int MAX_LOG_GROUP_LINES = 40960;
+    public static final int DEFAULT_PRODUCER_QUEUE_SIZE = 4096;
 
     private int totalSizeInBytes;
     private int logGroupSize;
     private int ioThreadNum;
     private int logGroupMaxLines;
+    private int producerQueueSize;
     private long flushInterval;
     private String endpoint;
     private String project;
@@ -57,7 +59,21 @@ public class ProducerConfig {
     }
 
     public void setFlushInterval(long flushInterval) {
+        if (flushInterval < 100) {
+            throw new IllegalArgumentException("flushInterval must be > 100");
+        }
         this.flushInterval = flushInterval;
+    }
+
+    public int getProducerQueueSize() {
+        return producerQueueSize;
+    }
+
+    public void setProducerQueueSize(int producerQueueSize) {
+        if (producerQueueSize <= 0) {
+            throw new IllegalArgumentException("producerQueueSize must be > 0");
+        }
+        this.producerQueueSize = producerQueueSize;
     }
 
     public int getIoThreadNum() {
@@ -125,7 +141,6 @@ public class ProducerConfig {
         }
         this.accessKeySecret = accessKeySecret;
     }
-
 
     @Override
     public String toString() {

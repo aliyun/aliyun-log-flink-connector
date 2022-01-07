@@ -3,6 +3,7 @@ package com.aliyun.openservices.log.flink.internal;
 import com.aliyun.openservices.log.common.LogContent;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.exception.LogException;
+import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +26,9 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ProducerImpl implements Producer {
     private static final Logger LOG = LoggerFactory.getLogger(ProducerImpl.class);
 
-    private Map<String, LogGroupWrapper> cache;
+    private Map<String, LogGroupHolder> cache;
     private final Lock lock = new ReentrantLock();
-    private final BlockingQueue<LogGroupWrapper> queue;
+    private final BlockingQueue<ProducerEvent> queue;
     private final int logGroupSizeThreshold;
     private final int logGroupMaxLines;
     private ExecutorService threadPool;
@@ -40,12 +41,13 @@ public class ProducerImpl implements Producer {
 
     public ProducerImpl(ProducerConfig producerConfig) {
         this.cache = new ConcurrentHashMap<>();
-        this.queue = new LinkedBlockingQueue<>();
+        this.queue = new LinkedBlockingQueue<>(producerConfig.getProducerQueueSize());
         this.producerConfig = producerConfig;
-        this.clientProxy = new LogClientProxy(producerConfig.getEndpoint(),
+        this.clientProxy = new LogClientProxy(
+                producerConfig.getEndpoint(),
                 producerConfig.getAccessKeyId(),
                 producerConfig.getAccessKeySecret(),
-                "Flink-Connector-producer-0.1.28");
+                "Flink-Connector-producer-" + ConfigConstants.FLINK_CONNECTOR_VERSION);
         int maxSizeInBytes = producerConfig.getTotalSizeInBytes();
         this.logGroupSizeThreshold = producerConfig.getLogGroupSize();
         this.logGroupMaxLines = producerConfig.getLogGroupMaxLines();
@@ -68,11 +70,11 @@ public class ProducerImpl implements Producer {
             while (!isStopped) {
                 try {
                     Thread.sleep(flushInterval);
+                    producer.flush();
                 } catch (InterruptedException ex) {
                     LOG.warn("Flush thread interrupted");
                     break;
                 }
-                producer.flush();
             }
         }
 
@@ -82,14 +84,14 @@ public class ProducerImpl implements Producer {
     }
 
     private static class IOWorker implements Runnable {
-        private final BlockingQueue<LogGroupWrapper> queue;
+        private final BlockingQueue<ProducerEvent> queue;
         private volatile boolean isStopped = false;
         private final LogClientProxy clientProxy;
         private final String project;
         private final String logstore;
         private final Semaphore semaphore;
 
-        private IOWorker(BlockingQueue<LogGroupWrapper> queue,
+        private IOWorker(BlockingQueue<ProducerEvent> queue,
                          LogClientProxy clientProxy,
                          String project,
                          String logstore,
@@ -106,9 +108,14 @@ public class ProducerImpl implements Producer {
             LOG.info("IOWorker started.");
             while (!isStopped) {
                 try {
-                    LogGroupWrapper logGroup = queue.take();
+                    ProducerEvent event = queue.take();
+                    if (event.isPoisonPill()) {
+                        LOG.warn("Poison pill event received.");
+                        break;
+                    }
+                    LogGroupHolder logGroup = event.getLogGroup();
                     semaphore.release(logGroup.getSizeInBytes());
-                    LOG.info("Send {} to sls", logGroup.getLogs().size());
+                    LOG.debug("Send {} to sls", logGroup.getLogs().size());
                     clientProxy.putLogs(project, logstore, logGroup.getTopic(),
                             logGroup.getSource(), logGroup.getHashKey(), logGroup.getLogs());
                 } catch (InterruptedException ex) {
@@ -148,7 +155,9 @@ public class ProducerImpl implements Producer {
         threadPool.submit(flushWorker);
         this.workers = new ArrayList<>();
         for (int i = 0; i < ioThreadNum; i++) {
-            IOWorker worker = new IOWorker(queue, clientProxy,
+            IOWorker worker = new IOWorker(
+                    queue,
+                    clientProxy,
                     producerConfig.getProject(),
                     producerConfig.getLogstore(),
                     semaphore);
@@ -184,8 +193,8 @@ public class ProducerImpl implements Producer {
             bytes += bytesForItem;
             if (shouldSend(bytes, buffer.size())) {
                 semaphore.acquire(bytes);
-                LOG.info("Add to queue {}", buffer.size());
-                queue.add(new LogGroupWrapper(source, topic, shardHash, buffer, bytes));
+                LOG.debug("Add to queue {}", buffer.size());
+                queue.put(ProducerEvent.makeEvent(new LogGroupHolder(source, topic, shardHash, buffer, bytes)));
                 buffer = new ArrayList<>();
                 bytes = 0;
             }
@@ -193,37 +202,36 @@ public class ProducerImpl implements Producer {
         if (buffer.isEmpty()) {
             return;
         }
+        semaphore.acquire(bytes);
 
         LogGroupKey logGroupKey = new LogGroupKey(source, topic, shardHash);
         String key = logGroupKey.getKey();
-        semaphore.acquire(bytes);
 
         lock.lock();
         try {
-            LogGroupWrapper prev = cache.get(key);
+            LogGroupHolder prev = cache.get(key);
             if (prev != null) {
-                prev.add(buffer, bytes);
+                prev.addLogs(buffer, bytes);
                 if (shouldSend(prev.getSizeInBytes(), prev.getLogs().size())) {
-                    queue.add(prev);
+                    queue.put(ProducerEvent.makeEvent(prev));
                     LOG.info("Add to queue {}", prev.getLogs().size());
                     cache.remove(key);
                 }
                 return;
             }
-            cache.put(key, new LogGroupWrapper(source, topic, shardHash, buffer, bytes));
+            cache.put(key, new LogGroupHolder(source, topic, shardHash, buffer, bytes));
         } finally {
             lock.unlock();
         }
-
     }
 
     @Override
-    public void flush() {
+    public void flush() throws InterruptedException {
         if (isStopped) {
             throw new IllegalStateException("Producer is stopped");
         }
         LOG.info("Flushing producer..");
-        Map<String, LogGroupWrapper> tp;
+        Map<String, LogGroupHolder> tp;
         lock.lock();
         try {
             if (cache.isEmpty()) {
@@ -234,9 +242,10 @@ public class ProducerImpl implements Producer {
         } finally {
             lock.unlock();
         }
-        for (Map.Entry<String, LogGroupWrapper> entry : tp.entrySet()) {
-            LOG.info("Add to queue {}", entry.getValue().getLogs().size());
-            queue.add(entry.getValue());
+        for (Map.Entry<String, LogGroupHolder> entry : tp.entrySet()) {
+            LogGroupHolder holder = entry.getValue();
+            LOG.debug("Add {} logs to queue", holder.getLogs().size());
+            queue.put(ProducerEvent.makeEvent(holder));
         }
     }
 
@@ -248,10 +257,18 @@ public class ProducerImpl implements Producer {
         }
         isStopped = true;
         flushWorker.stop();
-        flush();
+        try {
+            flush();
+        } catch (InterruptedException ex) {
+            LOG.error("Interrupted while flushing.");
+        }
         for (IOWorker worker : workers) {
             worker.stop();
         }
+        for (int i = 0; i < producerConfig.getIoThreadNum(); ++i) {
+            queue.add(ProducerEvent.makePoisonPill());
+        }
+        threadPool.shutdown();
         try {
             threadPool.awaitTermination(5, TimeUnit.SECONDS);
         } catch (InterruptedException ex) {

@@ -34,6 +34,9 @@ public class ConfigConstants {
     public static final String TOTAL_SIZE_IN_BYTES = "total.size.in.bytes";
     public static final String LOG_GROUP_MAX_SIZE = "logGroup.max.size";
     public static final String LOG_GROUP_MAX_LINES = "logGroup.max.lines";
+    public static final String PRODUCER_QUEUE_SIZE = "producer.queue.size";
+
+    public static final String FLINK_CONNECTOR_VERSION = "0.1.29";
 
     /**
      * initial retry back off time.

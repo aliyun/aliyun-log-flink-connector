@@ -13,7 +13,7 @@ public interface Producer {
               String shardHash,
               List<LogItem> logItems) throws InterruptedException;
 
-    void flush();
+    void flush() throws InterruptedException;
 
     void close();
 }
