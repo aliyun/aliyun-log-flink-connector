@@ -57,12 +57,15 @@ final class RetryHelper {
             }
             try {
                 Thread.sleep(backoff);
+                if (!isStopped) {
+                    backoff = Math.min(backoff * 2, MAX_BACKOFF);
+                    continue;
+                }
             } catch (InterruptedException e) {
                 LOG.warn("Sleep {} interrupted", backoff);
                 Thread.currentThread().interrupt();
-                throw lastException;
             }
-            backoff = Math.min(backoff * 2, MAX_BACKOFF);
+            throw lastException;
         } while (true);
     }
 }
