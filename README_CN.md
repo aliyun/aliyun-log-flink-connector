@@ -56,7 +56,7 @@ Flink log consumer支持设置shard的消费起始位置，通过设置属性Con
 * Consts.LOG_BEGIN_CURSOR： 表示从shard的头开始消费，也就是从shard中最旧的数据开始消费。
 * Consts.LOG_END_CURSOR： 表示从shard的尾开始，也就是从shard中最新的数据开始消费。
 * Consts.LOG_FROM_CHECKPOINT：以消费组的checkpoint作为消费的起始位置。
-* UnixTimestamp： 一个整型数值的字符串，用1970-01-01到现在的秒数表示， 含义是消费shard中这个时间点之后的数据。
+* Unix 时间戳： 一个整型数值的字符串，用1970-01-01到现在的秒数表示，含义是消费shard中这个时间点开始写入的数据。
 
 四种取值举例如下：
 ```
@@ -71,7 +71,7 @@ configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION，"1512439000");
 configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION，Consts.LOG_FROM_CHECKPOINT);
 configProps.put(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION，Consts.LOG_END_CURSOR);
 ```
-NOTE: 默认的位置不支持设置为```Consts.LOG_FROM_CHECKPOINT```且默认值为```Consts.LOG_BEGIN_CURSOR```。
+> 注意: 默认的位置不支持设置为```Consts.LOG_FROM_CHECKPOINT```且默认值为```Consts.LOG_BEGIN_CURSOR```。
 
 #### 1.3 监控：消费进度(可选)
 Flink log consumer支持设置消费进度监控，所谓消费进度就是获取每一个shard实时的消费位置，这个位置使用时间戳表示，详细概念可以参考
@@ -91,9 +91,9 @@ configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.DISABLED.nam
 ```
 默认为 ON_CHECKPOINTS。
 
-##### ON_CHECKPOINT
+* ON_CHECKPOINT
 
-选择ON_CHECKPOINTS时，当打开Flink的Checkpointing功能时，每个Shard的消费进度会保存在Flink的State中，同时会提交到日志服务服务端，当作业Failover时，会从Flink的State中恢复，如果不存在对应的checkpoint，会从服务端保存的最新的checkpoint恢复。
+选择 ON_CHECKPOINTS 时，当打开Flink的Checkpointing功能时，每个Shard的消费进度会保存在Flink的State中，同时会提交到日志服务服务端，当作业Failover时，会从Flink的State中恢复，如果不存在对应的checkpoint，会从服务端保存的最新的checkpoint恢复。
 
 写checkpoint的周期定义了当发生失败时，最多多少的数据会被重复消费，Flink设置Checkpointing代码如下：
 ```
@@ -105,17 +105,17 @@ env.enableCheckpointing(5000);
 ```
 更多Flink checkpoint的细节请参考Flink官方文档[Checkpoints](https://ci.apache.org/projects/flink/flink-docs-release-1.3/setup/checkpoints.html)。
 
-##### DISABLED
+* DISABLED
 选择DISABLED时，checkpoint不会被提交到日志服务服务端。
 
-##### PERIODIC
+* PERIODIC
 选择PERIODIC时，checkpoint被定时提交到日志服务服务端，和Flink Checkpointing完全独立。支持自定义提交间隔：
 ```
 configProps.put(ConfigConstants.LOG_COMMIT_INTERVAL_MILLIS, "1000");
 ```
 默认为10秒提交一次。
 
-NOTE: 这个配置只和消费组提交checkpoint到日志服务有关，无论这个配置如何配置，都不影响Flink的State。
+> 注意: 这个配置只和消费组提交checkpoint到日志服务有关，无论这个配置如何配置，都不影响Flink的State。
 
 #### 1.5 补充材料：关联 API与权限设置
 Flink log consumer 会用到的阿里云日志服务接口如下：
@@ -152,7 +152,7 @@ Flink log consumer 会用到的阿里云日志服务接口如下：
 
 ### 2. Log producer
 FlinkLogProducer 用于将数据写到阿里云日志服务中。
-> 注意producer只支持Flink at-least-once语义，这就意味着在发生作业失败的情况下，写入日志服务中的数据有可能会重复，但是绝对不会丢失。
+> 注意 producer只支持Flink at-least-once语义，这就意味着在发生作业失败的情况下，写入日志服务中的数据有可能会重复，但是绝对不会丢失。
 
 用法示例如下，我们将模拟产生的字符串写入日志服务：
 ```
