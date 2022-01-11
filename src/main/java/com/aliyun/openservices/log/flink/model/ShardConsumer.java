@@ -190,10 +190,12 @@ public class ShardConsumer<T> implements Runnable {
     }
 
     private void adjustFetchFrequency(int responseSize, long processingTimeMs) {
+        if (responseSize >= 1024 * 1024) {
+            // No sleep if consumer busy.
+            return;
+        }
         long sleepTime = 0;
-        if (responseSize == 0) {
-            sleepTime = 1000;
-        } else if (responseSize <= 1) {
+        if (responseSize <= 1) {
             // Outflow: 1
             sleepTime = 250;
         } else if (responseSize < FORCE_SLEEP_THRESHOLD) {

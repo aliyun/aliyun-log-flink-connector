@@ -227,9 +227,6 @@ public class ProducerImpl implements Producer {
 
     @Override
     public void flush() throws InterruptedException {
-        if (isStopped) {
-            throw new IllegalStateException("Producer is stopped");
-        }
         LOG.debug("Flushing producer.");
         Map<String, LogGroupHolder> tp;
         lock.lock();
