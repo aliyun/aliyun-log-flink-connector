@@ -2,7 +2,6 @@ package com.aliyun.openservices.log.flink.internal;
 
 import com.aliyun.openservices.log.common.LogContent;
 import com.aliyun.openservices.log.common.LogItem;
-import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import org.slf4j.Logger;
@@ -34,7 +33,7 @@ public class ProducerImpl implements Producer {
     private ExecutorService threadPool;
     private final LogClientProxy clientProxy;
     private FlushWorker flushWorker;
-    private List<IOWorker> workers;
+    private List<ProducerWorker> workers;
     private volatile boolean isStopped = false;
     private final ProducerConfig producerConfig;
     private final Semaphore semaphore;
@@ -83,56 +82,6 @@ public class ProducerImpl implements Producer {
         }
     }
 
-    private static class IOWorker implements Runnable {
-        private final BlockingQueue<ProducerEvent> queue;
-        private volatile boolean isStopped = false;
-        private final LogClientProxy clientProxy;
-        private final String project;
-        private final String logstore;
-        private final Semaphore semaphore;
-
-        private IOWorker(BlockingQueue<ProducerEvent> queue,
-                         LogClientProxy clientProxy,
-                         String project,
-                         String logstore,
-                         Semaphore semaphore) {
-            this.queue = queue;
-            this.clientProxy = clientProxy;
-            this.project = project;
-            this.logstore = logstore;
-            this.semaphore = semaphore;
-        }
-
-        @Override
-        public void run() {
-            LOG.info("IOWorker started.");
-            while (!isStopped) {
-                try {
-                    ProducerEvent event = queue.take();
-                    if (event.isPoisonPill()) {
-                        LOG.warn("Poison pill event received.");
-                        break;
-                    }
-                    LogGroupHolder logGroup = event.getLogGroup();
-                    semaphore.release(logGroup.getSizeInBytes());
-                    LOG.debug("Send {} to sls", logGroup.getLogs().size());
-                    clientProxy.putLogs(project, logstore, logGroup.getTopic(),
-                            logGroup.getSource(), logGroup.getHashKey(), logGroup.getLogs());
-                } catch (InterruptedException ex) {
-                    LOG.warn("IOWorker interrupted");
-                    break;
-                } catch (LogException ex) {
-                    LOG.error("Error putting data", ex);
-                }
-            }
-            LOG.info("IOWorker exited");
-        }
-
-        public void stop() {
-            isStopped = true;
-        }
-    }
-
     @Override
     public void open() {
         LOG.info("Opening producer with config {}", producerConfig.toString());
@@ -155,7 +104,7 @@ public class ProducerImpl implements Producer {
         threadPool.submit(flushWorker);
         this.workers = new ArrayList<>();
         for (int i = 0; i < ioThreadNum; i++) {
-            IOWorker worker = new IOWorker(
+            ProducerWorker worker = new ProducerWorker(
                     queue,
                     clientProxy,
                     producerConfig.getProject(),
@@ -259,7 +208,7 @@ public class ProducerImpl implements Producer {
         } catch (InterruptedException ex) {
             LOG.error("Interrupted while flushing.");
         }
-        for (IOWorker worker : workers) {
+        for (ProducerWorker worker : workers) {
             worker.stop();
         }
         for (int i = 0; i < producerConfig.getIoThreadNum(); ++i) {
