@@ -235,16 +235,16 @@ public class ProducerSample {
 Producer初始化主要需要做两件事情：
 * 初始化配置参数Properties， 这一步和Consumer类似， Producer有一些定制的参数，一般情况下使用默认值即可，特殊场景可以考虑定制：
     ```
-    // 用于发送数据的io线程的数量，默认是8
-    ConfigConstants.LOG_SENDER_IO_THREAD_COUNT
+    // 用于发送数据的io线程的数量，默认是 max(CPU核数/2,1)
+    ConfigConstants.IO_THREAD_NUM
     // 该值定义日志数据被缓存发送的时间，默认是3000
-    ConfigConstants.LOG_PACKAGE_TIMEOUT_MILLIS
-    // 缓存发送的包中日志的数量，默认是4096
-    ConfigConstants.LOG_LOGS_COUNT_PER_PACKAGE
-    // 缓存发送的包的大小，默认是3Mb
-    ConfigConstants.LOG_LOGS_BYTES_PER_PACKAGE
+    ConfigConstants.FLUSH_INTERVAL_MS
+    // 缓存发送的包中日志的数量，默认是2000
+    ConfigConstants.LOG_GROUP_MAX_LINES
+    // 缓存发送的包的最大值，默认是5MB
+    ConfigConstants.MAX_LOG_GROUP_SIZE
     // 作业可以使用的内存总的大小，默认是100Mb
-    ConfigConstants.LOG_MEM_POOL_BYTES
+    ConfigConstants.TOTAL_SIZE_IN_BYTES
     ```
     上述参数不是必选参数，用户可以不设置，直接使用默认值。
 * 重载LogSerializationSchema，定义将数据序列化成RawLogGroup的方法。
