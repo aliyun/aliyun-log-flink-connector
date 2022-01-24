@@ -22,7 +22,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.TreeMap;
 
 import static com.aliyun.openservices.log.flink.ConfigConstants.FLUSH_INTERVAL_MS;
 import static com.aliyun.openservices.log.flink.ConfigConstants.IO_THREAD_NUM;
@@ -149,9 +148,10 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             return Collections.emptyList();
         }
         List<TagContent> tagContents = new ArrayList<>();
-        Map<String, String> sorted = new TreeMap<>(tags);
-        for (Map.Entry<String, String> tag : sorted.entrySet()) {
-            tagContents.add(new TagContent(tag.getKey(), tag.getValue()));
+        for (Map.Entry<String, String> tag : tags.entrySet()) {
+            if (tag.getKey() != null) {
+                tagContents.add(new TagContent(tag.getKey(), tag.getValue()));
+            }
         }
         return tagContents;
     }

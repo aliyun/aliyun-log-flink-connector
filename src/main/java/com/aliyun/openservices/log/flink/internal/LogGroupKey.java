@@ -3,6 +3,7 @@ package com.aliyun.openservices.log.flink.internal;
 import com.aliyun.openservices.log.common.TagContent;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 public class LogGroupKey {
@@ -25,8 +26,11 @@ public class LogGroupKey {
                 builder.append(it);
             }
         }
-        for (TagContent tag : tags) {
-            builder.append("$").append(tag.key).append("#").append(tag.value);
+        if (tags != null && !tags.isEmpty()) {
+            tags.sort(Comparator.comparing(o -> o.key));
+            for (TagContent tag : tags) {
+                builder.append("$").append(tag.key).append("#").append(tag.value);
+            }
         }
         return builder.toString();
     }
