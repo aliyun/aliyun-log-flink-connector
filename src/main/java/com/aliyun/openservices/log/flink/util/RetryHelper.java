@@ -13,10 +13,10 @@ final class RetryHelper {
     private static final long MAX_BACKOFF = 5000;
     private static final int MAX_ATTEMPTS = 5;
     private static final int MAX_RETRIABLE_ERROR_ATTEMPTS = 20;
-    private volatile boolean isStopped = false;
+    private volatile boolean isCanceled = false;
 
-    public void stop() {
-        isStopped = true;
+    public void cancel() {
+        isCanceled = true;
     }
 
     <T> T call(Callable<T> callable, String action) throws LogException {
@@ -28,7 +28,7 @@ final class RetryHelper {
             try {
                 return callable.call();
             } catch (LogException ex) {
-                if (ex.GetHttpCode() == 400 || isStopped) {
+                if (ex.GetHttpCode() == 400 || isCanceled) {
                     throw ex;
                 }
                 // for read operation, no other way to handle 403
@@ -49,7 +49,7 @@ final class RetryHelper {
                 lastException = ex;
             } catch (Exception ex) {
                 lastException = new LogException("ClientError", ex.getMessage(), ex, "");
-                if (retries >= MAX_ATTEMPTS || isStopped) {
+                if (retries >= MAX_ATTEMPTS || isCanceled) {
                     throw lastException;
                 }
                 LOG.error("{} fail: {}, retry {}/{}", action, ex.getMessage(), retries, MAX_ATTEMPTS, ex);
@@ -57,7 +57,7 @@ final class RetryHelper {
             }
             try {
                 Thread.sleep(backoff);
-                if (!isStopped) {
+                if (!isCanceled) {
                     backoff = Math.min(backoff * 2, MAX_BACKOFF);
                     continue;
                 }

@@ -190,7 +190,7 @@ public class LogClientProxy implements Serializable {
 
     public void close() {
         if (client != null) {
-            retryHelper.stop();
+            retryHelper.cancel();
             client.shutdown();
         }
     }
