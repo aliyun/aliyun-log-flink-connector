@@ -2,6 +2,7 @@ package com.aliyun.openservices.log.flink.internal;
 
 import com.aliyun.openservices.log.common.LogContent;
 import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.common.TagContent;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import org.slf4j.Logger;
@@ -120,7 +121,11 @@ public class ProducerImpl implements Producer {
     }
 
     @Override
-    public void send(String topic, String source, String shardHash, List<LogItem> logItems) throws InterruptedException {
+    public void send(String topic,
+                     String source,
+                     String shardHash,
+                     List<TagContent> tags,
+                     List<LogItem> logItems) throws InterruptedException {
         if (logItems == null || logItems.isEmpty()) {
             return;
         }
@@ -143,7 +148,7 @@ public class ProducerImpl implements Producer {
             if (shouldSend(bytes, buffer.size())) {
                 semaphore.acquire(bytes);
                 LOG.debug("Add to queue {}", buffer.size());
-                queue.put(ProducerEvent.makeEvent(new LogGroupHolder(source, topic, shardHash, buffer, bytes)));
+                queue.put(ProducerEvent.makeEvent(new LogGroupHolder(source, topic, shardHash, tags, buffer, bytes)));
                 buffer = new ArrayList<>();
                 bytes = 0;
             }
@@ -153,7 +158,7 @@ public class ProducerImpl implements Producer {
         }
         semaphore.acquire(bytes);
 
-        LogGroupKey logGroupKey = new LogGroupKey(source, topic, shardHash);
+        LogGroupKey logGroupKey = new LogGroupKey(source, topic, shardHash, tags);
         String key = logGroupKey.getKey();
 
         lock.lock();
@@ -168,7 +173,7 @@ public class ProducerImpl implements Producer {
                 }
                 return;
             }
-            cache.put(key, new LogGroupHolder(source, topic, shardHash, buffer, bytes));
+            cache.put(key, new LogGroupHolder(source, topic, shardHash, tags, buffer, bytes));
         } finally {
             lock.unlock();
         }
