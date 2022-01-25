@@ -12,7 +12,7 @@ final class RetryHelper {
     private static final long INITIAL_BACKOFF = 200;
     private static final long MAX_BACKOFF = 5000;
     private static final int MAX_ATTEMPTS = 5;
-    private static final int MAX_RETRIABLE_ERROR_ATTEMPTS = 20;
+    private static final int MAX_RETRIABLE_ERROR_ATTEMPTS = 60;
     private volatile boolean isCanceled = false;
 
     public void cancel() {
