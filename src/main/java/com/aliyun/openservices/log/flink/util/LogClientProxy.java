@@ -27,12 +27,16 @@ public class LogClientProxy implements Serializable {
     private static final long serialVersionUID = -8094827334076355612L;
 
     private final Client client;
-    private final RetryHelper retryHelper;
+    private final RequestExecutor executor;
 
-    public LogClientProxy(String endpoint, String accessKeyId, String accessKey, String userAgent) {
+    public LogClientProxy(String endpoint,
+                          String accessKeyId,
+                          String accessKey,
+                          String userAgent,
+                          RetryPolicy retryPolicy) {
         this.client = new Client(endpoint, accessKeyId, accessKey);
         this.client.setUserAgent(userAgent);
-        this.retryHelper = new RetryHelper();
+        this.executor = new RequestExecutor(retryPolicy);
     }
 
     public void enableDirectMode(String project) {
@@ -50,22 +54,22 @@ public class LogClientProxy implements Serializable {
     }
 
     public String getEndCursor(final String project, final String logstore, final int shard) throws LogException {
-        return retryHelper.call(() -> client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor(), "getEndCursor");
+        return executor.call(() -> client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor(), "getEndCursor");
     }
 
     public String getBeginCursor(final String project, final String logstore, final int shard) throws LogException {
-        return retryHelper.call(() -> client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor(), "getBeginCursor");
+        return executor.call(() -> client.GetCursor(project, logstore, shard, CursorMode.BEGIN).GetCursor(), "getBeginCursor");
     }
 
     public String getCursorAtTimestamp(final String project, final String logstore, final int shard, final int ts) throws LogException {
-        return retryHelper.call(() -> client.GetCursor(project, logstore, shard, ts).GetCursor(), "getCursorAtTimestamp");
+        return executor.call(() -> client.GetCursor(project, logstore, shard, ts).GetCursor(), "getCursorAtTimestamp");
     }
 
     public String fetchCheckpoint(final String project,
                                   final String logstore,
                                   final String consumerGroup,
                                   final int shard) throws LogException {
-        return retryHelper.call(() -> {
+        return executor.call(() -> {
             try {
                 ConsumerGroupCheckPointResponse response = client.GetCheckPoint(project, logstore, consumerGroup, shard);
                 List<ConsumerGroupShardCheckPoint> checkpoints = response.getCheckPoints();
@@ -90,7 +94,7 @@ public class LogClientProxy implements Serializable {
     public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, String stopCursor, int count)
             throws LogException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
-        return retryHelper.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
+        return executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
     }
 
     @VisibleForTesting
@@ -122,7 +126,7 @@ public class LogClientProxy implements Serializable {
     }
 
     public List<Shard> listShards(final String project, final String logstore) throws LogException {
-        return retryHelper.call((Callable<List<Shard>>) () -> client.ListShard(project, logstore).GetShards(), "listShards");
+        return executor.call((Callable<List<Shard>>) () -> client.ListShard(project, logstore).GetShards(), "listShards");
     }
 
     public boolean checkConsumerGroupExists(String project, String logstore, String consumerGroup) throws Exception {
@@ -137,9 +141,10 @@ public class LogClientProxy implements Serializable {
         return false;
     }
 
-    public void createConsumerGroup(final String project, final String logstore, final String consumerGroupName)
-            throws Exception {
-        retryHelper.call((Callable<Void>) () -> {
+    public void createConsumerGroup(final String project,
+                                    final String logstore,
+                                    final String consumerGroupName) throws LogException {
+        executor.call((Callable<Void>) () -> {
             ConsumerGroup consumerGroup = new ConsumerGroup(consumerGroupName, 100, false);
             try {
                 client.CreateConsumerGroup(project, logstore, consumerGroup);
@@ -164,7 +169,7 @@ public class LogClientProxy implements Serializable {
             return;
         }
         try {
-            retryHelper.call((Callable<Void>) () -> {
+            executor.call((Callable<Void>) () -> {
                 client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
                 return null;
             }, "updateCheckpoint");
@@ -182,7 +187,7 @@ public class LogClientProxy implements Serializable {
     public void putLogs(String project, String logstore,
                         String topic, String source,
                         String hashKey, List<LogItem> logItems) throws LogException {
-        retryHelper.call((Callable<Void>) () -> {
+        executor.call((Callable<Void>) () -> {
             client.PutLogs(project, logstore, topic, logItems, source, hashKey);
             return null;
         }, "PutLogs");
@@ -190,7 +195,7 @@ public class LogClientProxy implements Serializable {
 
     public void close() {
         if (client != null) {
-            retryHelper.cancel();
+            executor.cancel();
             client.shutdown();
         }
     }

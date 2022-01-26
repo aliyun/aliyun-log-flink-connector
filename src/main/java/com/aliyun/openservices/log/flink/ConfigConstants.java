@@ -28,6 +28,7 @@ public class ConfigConstants {
 
     public static final String FLUSH_INTERVAL_MS = "flush.interval.ms";
     public static final String MAX_RETRIES = "max.retries";
+    public static final String MAX_RETRIES_FOR_RETRYABLE_ERROR = "max.retries.for.retryable.error";
     public static final String STOP_TIME = "stop.time";
     public static final String DIRECT_MODE = "direct.mode";
 
@@ -36,31 +37,19 @@ public class ConfigConstants {
     public static final String LOG_GROUP_MAX_LINES = "logGroup.max.lines";
     public static final String PRODUCER_QUEUE_SIZE = "producer.queue.size";
 
-    public static final String FLINK_CONNECTOR_VERSION = "0.1.30";
-
     /**
      * initial retry back off time.
      */
-    public static final String BASE_RETRY_BACK_OFF_TIME_MS =
+    public static final String BASE_RETRY_BACKOFF_TIME_MS =
             "base.retry.backoff.time.ms";
 
     /**
      * max retry back off time.
      */
-    public static final String MAX_RETRY_BACK_OFF_TIME_MS = "max.retry.backoff.time.ms";
-
-    /**
-     * wait forever while sending record.
-     */
-    public static final String MAX_BLOCK_TIME_MS = "max.block.time.ms";
+    public static final String MAX_RETRY_BACKOFF_TIME_MS = "max.retry.backoff.time.ms";
 
     /**
      * io thread num of sls producer
      */
     public static final String IO_THREAD_NUM = "io.thread.num";
-
-    /**
-     * Producer bucket.
-     */
-    public static final String BUCKETS = "producer.buckets";
 }

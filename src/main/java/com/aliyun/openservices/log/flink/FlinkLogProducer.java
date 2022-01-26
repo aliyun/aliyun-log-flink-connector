@@ -3,11 +3,13 @@ package com.aliyun.openservices.log.flink;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.flink.data.RawLog;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
-import com.aliyun.openservices.log.flink.internal.ConfigWrapper;
+import com.aliyun.openservices.log.flink.internal.ConfigParser;
 import com.aliyun.openservices.log.flink.internal.Producer;
 import com.aliyun.openservices.log.flink.internal.ProducerConfig;
 import com.aliyun.openservices.log.flink.internal.ProducerImpl;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
+import com.aliyun.openservices.log.flink.util.Consts;
+import com.aliyun.openservices.log.flink.util.RetryPolicy;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
@@ -47,26 +49,35 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         this.customPartitioner = customPartitioner;
     }
 
-    private Producer createProducer(ConfigWrapper configWrapper) {
+    private Producer createProducer(ConfigParser parser) {
         ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.setFlushInterval(configWrapper.getLong(FLUSH_INTERVAL_MS,
+        producerConfig.setFlushInterval(parser.getLong(FLUSH_INTERVAL_MS,
                 ProducerConfig.DEFAULT_LINGER_MS));
         producerConfig.setIoThreadNum(
-                configWrapper.getInt(IO_THREAD_NUM, ProducerConfig.DEFAULT_IO_THREAD_COUNT));
-        producerConfig.setProject(configWrapper.getString(ConfigConstants.LOG_PROJECT));
-        producerConfig.setLogstore(configWrapper.getString(ConfigConstants.LOG_LOGSTORE));
-        producerConfig.setEndpoint(configWrapper.getString(ConfigConstants.LOG_ENDPOINT));
-        producerConfig.setAccessKeyId(configWrapper.getString(ConfigConstants.LOG_ACCESSKEYID));
-        producerConfig.setAccessKeySecret(configWrapper.getString(ConfigConstants.LOG_ACCESSKEY));
-        producerConfig.setTotalSizeInBytes(configWrapper.getInt(ConfigConstants.TOTAL_SIZE_IN_BYTES,
+                parser.getInt(IO_THREAD_NUM, ProducerConfig.DEFAULT_IO_THREAD_COUNT));
+        producerConfig.setProject(parser.getString(ConfigConstants.LOG_PROJECT));
+        producerConfig.setLogstore(parser.getString(ConfigConstants.LOG_LOGSTORE));
+        producerConfig.setEndpoint(parser.getString(ConfigConstants.LOG_ENDPOINT));
+        producerConfig.setAccessKeyId(parser.getString(ConfigConstants.LOG_ACCESSKEYID));
+        producerConfig.setAccessKeySecret(parser.getString(ConfigConstants.LOG_ACCESSKEY));
+        producerConfig.setTotalSizeInBytes(parser.getInt(ConfigConstants.TOTAL_SIZE_IN_BYTES,
                 ProducerConfig.DEFAULT_TOTAL_SIZE_IN_BYTES));
-        producerConfig.setLogGroupSize(configWrapper.getInt(ConfigConstants.LOG_GROUP_MAX_SIZE,
+        producerConfig.setLogGroupSize(parser.getInt(ConfigConstants.LOG_GROUP_MAX_SIZE,
                 ProducerConfig.DEFAULT_LOG_GROUP_SIZE));
-        producerConfig.setLogGroupMaxLines(configWrapper.getInt(ConfigConstants.LOG_GROUP_MAX_LINES,
+        producerConfig.setLogGroupMaxLines(parser.getInt(ConfigConstants.LOG_GROUP_MAX_LINES,
                 ProducerConfig.DEFAULT_MAX_LOG_GROUP_LINES));
-        producerConfig.setProducerQueueSize(configWrapper.getInt(ConfigConstants.PRODUCER_QUEUE_SIZE,
+        producerConfig.setProducerQueueSize(parser.getInt(ConfigConstants.PRODUCER_QUEUE_SIZE,
                 ProducerConfig.DEFAULT_PRODUCER_QUEUE_SIZE));
-        return new ProducerImpl(producerConfig);
+        RetryPolicy retryPolicy = RetryPolicy.builder()
+                .maxRetries(parser.getInt(ConfigConstants.MAX_RETRIES, Consts.DEFAULT_MAX_RETRIES))
+                .maxRetriesForRetryableError(parser.getInt(ConfigConstants.MAX_RETRIES_FOR_RETRYABLE_ERROR,
+                        Consts.DEFAULT_MAX_RETRIES_FOR_RETRYABLE_ERROR))
+                .baseRetryBackoff(parser.getLong(ConfigConstants.BASE_RETRY_BACKOFF_TIME_MS,
+                        Consts.DEFAULT_BASE_RETRY_BACKOFF_TIME_MS))
+                .maxRetryBackoff(parser.getLong(ConfigConstants.MAX_RETRY_BACKOFF_TIME_MS,
+                        Consts.DEFAULT_MAX_RETRY_BACKOFF_TIME_MS))
+                .build();
+        return new ProducerImpl(producerConfig, retryPolicy);
     }
 
     @Override
@@ -78,8 +89,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     getRuntimeContext().getNumberOfParallelSubtasks());
         }
         if (producer == null) {
-            ConfigWrapper configWrapper = new ConfigWrapper(properties);
-            producer = createProducer(configWrapper);
+            ConfigParser parser = new ConfigParser(properties);
+            producer = createProducer(parser);
             producer.open();
         }
     }

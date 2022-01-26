@@ -1,19 +1,22 @@
 package com.aliyun.openservices.log.flink;
 
+import com.aliyun.openservices.log.flink.internal.ConfigParser;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
+import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
+import com.aliyun.openservices.log.flink.util.RetryPolicy;
 import org.apache.flink.api.common.functions.RuntimeContext;
+import org.apache.flink.api.common.state.CheckpointListener;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
-import org.apache.flink.runtime.state.CheckpointListener;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
@@ -86,7 +89,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         if (userAgent != null && !userAgent.isEmpty()) {
             return userAgent;
         }
-        userAgent = "Flink-Connector-" + ConfigConstants.FLINK_CONNECTOR_VERSION;
+        userAgent = "Flink-Connector-" + Consts.FLINK_CONNECTOR_VERSION;
         if (consumerGroup != null) {
             userAgent += "-" + consumerGroup + "/" + indexOfSubTask;
         } else {
@@ -99,12 +102,23 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         if (logClient != null) {
             return;
         }
+        ConfigParser parser = new ConfigParser(configProps);
+        RetryPolicy retryPolicy = RetryPolicy.builder()
+                .maxRetries(parser.getInt(ConfigConstants.MAX_RETRIES, Consts.DEFAULT_MAX_RETRIES))
+                .maxRetriesForRetryableError(parser.getInt(ConfigConstants.MAX_RETRIES_FOR_RETRYABLE_ERROR,
+                        Consts.DEFAULT_MAX_RETRIES_FOR_RETRYABLE_ERROR))
+                .baseRetryBackoff(parser.getLong(ConfigConstants.BASE_RETRY_BACKOFF_TIME_MS,
+                        Consts.DEFAULT_BASE_RETRY_BACKOFF_TIME_MS))
+                .maxRetryBackoff(parser.getLong(ConfigConstants.MAX_RETRY_BACKOFF_TIME_MS,
+                        Consts.DEFAULT_MAX_RETRY_BACKOFF_TIME_MS))
+                .build();
         logClient = new LogClientProxy(
-                configProps.getProperty(ConfigConstants.LOG_ENDPOINT),
-                configProps.getProperty(ConfigConstants.LOG_ACCESSKEYID),
-                configProps.getProperty(ConfigConstants.LOG_ACCESSKEY),
-                getOrCreateUserAgent(indexOfSubTask));
-        if (Boolean.parseBoolean(configProps.getProperty(ConfigConstants.DIRECT_MODE))) {
+                parser.getString(ConfigConstants.LOG_ENDPOINT),
+                parser.getString(ConfigConstants.LOG_ACCESSKEYID),
+                parser.getString(ConfigConstants.LOG_ACCESSKEY),
+                getOrCreateUserAgent(indexOfSubTask),
+                retryPolicy);
+        if (parser.getBool(ConfigConstants.DIRECT_MODE, false)) {
             logClient.enableDirectMode(project);
         }
     }
