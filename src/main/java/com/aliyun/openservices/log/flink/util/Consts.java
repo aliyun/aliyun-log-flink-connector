@@ -13,7 +13,10 @@ public class Consts {
     public static String LOG_END_CURSOR = "end_cursor";
     public static String LOG_FROM_CHECKPOINT = "consumer_from_checkpoint";
 
-    public static final int DEFAULT_MAX_RETRIES = 3;
+    /**
+     * Default retry 5 times for common errors.
+     */
+    public static final int DEFAULT_MAX_RETRIES = 5;
     /**
      * -1 means retry until success
      */

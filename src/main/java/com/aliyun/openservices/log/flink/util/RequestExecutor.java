@@ -39,10 +39,9 @@ final class RequestExecutor {
                 if (status == 400 || isCanceled) {
                     throw ex;
                 }
-                // for read operation, no other way to handle 403
                 if (status >= 500 || status == 403 || status < 0) {
                     // 500 - internal server error
-                    // 403 - Quota exceed
+                    // 403 - Quota exceed, no better way to handle 403 for reading
                     // < 0 - Network error
                     if (maxRetriesForRetryableError >= 0 && ++retryableError >= maxRetriesForRetryableError) {
                         throw ex;
