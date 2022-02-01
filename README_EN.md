@@ -8,7 +8,7 @@ The producer writes data into Log Service. When using the connector, you must ad
 <dependency>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector</artifactId>
-    <version>0.1.16</version>
+    <version>0.1.31</version>
 </dependency>
 <dependency>
     <groupId>com.google.protobuf</groupId>
@@ -20,12 +20,12 @@ The producer writes data into Log Service. When using the connector, you must ad
 1. Create a LogStore. For details, see [Log Service documentation](~~54604~~).
 2. If you use a subaccount for access, make sure that you have properly set the RAM policies of LogStore. For details, see [Authorize a RAM sub-user to access Log Service](~~47664~~).
 
-### 1. Log Consumer
+### 1. Log consumer
 In the connector, the Flink log consumer provides the capability of subscribing to a specific LogStore in Log Service to achieve the exactly-once syntax. During use, you do not need to concern about the change of the number of shards in the LogStore.
 The consumer automatically senses the change.
 
 Each sub-task in Flink consumes some shards in the LogStore. If shards in the LogStore are split or merged, shards consumed by the sub-task change accordingly.
-#### 1.1. Configure the startup parameters
+#### 1.1. Configure the startup parameters.
 ```
 Properties configProps = new Properties();
 // Set the domain to access Log Service

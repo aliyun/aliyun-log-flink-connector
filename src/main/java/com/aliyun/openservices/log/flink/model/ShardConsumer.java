@@ -17,7 +17,7 @@ import java.util.Properties;
 public class ShardConsumer<T> implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
 
-    private static final int FORCE_SLEEP_THRESHOLD = 512 * 1024;
+    private static final int FORCE_SLEEP_THRESHOLD = 256 * 1024;
 
     private final LogDataFetcher<T> fetcher;
     private final LogDeserializationSchema<T> deserializer;
@@ -191,11 +191,9 @@ public class ShardConsumer<T> implements Runnable {
 
     private void adjustFetchFrequency(int responseSize, long processingTimeMs) {
         long sleepTime = 0;
-        if (responseSize == 0) {
-            sleepTime = 1000;
-        } else if (responseSize <= 1) {
+        if (responseSize <= 1) {
             // Outflow: 1
-            sleepTime = 250;
+            sleepTime = 500;
         } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
             sleepTime = 200;
         }
