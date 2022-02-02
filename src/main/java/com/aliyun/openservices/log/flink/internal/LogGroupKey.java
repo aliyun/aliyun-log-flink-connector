@@ -16,12 +16,12 @@ public class LogGroupKey {
 
     private static String makeKey(String source, String topic, String hashKey, List<TagContent> tags) {
         StringBuilder builder = new StringBuilder();
-        boolean isFirst = true;
+        boolean addSeparator = false;
         for (String it : Arrays.asList(source, topic, hashKey)) {
-            if (!isFirst) {
+            if (addSeparator) {
                 builder.append("$");
             }
-            isFirst = false;
+            addSeparator = true;
             if (it != null) {
                 builder.append(it);
             }

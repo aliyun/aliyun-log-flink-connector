@@ -12,4 +12,18 @@ public class Consts {
     public static String LOG_BEGIN_CURSOR = "begin_cursor";
     public static String LOG_END_CURSOR = "end_cursor";
     public static String LOG_FROM_CHECKPOINT = "consumer_from_checkpoint";
+
+    /**
+     * Default retry 5 times for common errors.
+     */
+    public static final int DEFAULT_MAX_RETRIES = 5;
+    /**
+     * -1 means retry until success
+     */
+    public static final int DEFAULT_MAX_RETRIES_FOR_RETRYABLE_ERROR = 60;
+
+    public static final long DEFAULT_BASE_RETRY_BACKOFF_TIME_MS = 200;
+
+    public static final long DEFAULT_MAX_RETRY_BACKOFF_TIME_MS = 5000;
+    public static final String FLINK_CONNECTOR_VERSION = "0.1.32";
 }

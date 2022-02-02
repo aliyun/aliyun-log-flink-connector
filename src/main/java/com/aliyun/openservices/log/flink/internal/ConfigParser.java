@@ -5,11 +5,11 @@ import org.apache.flink.util.PropertiesUtil;
 import java.io.Serializable;
 import java.util.Properties;
 
-public class ConfigWrapper implements Serializable {
+public class ConfigParser implements Serializable {
 
-    private Properties props;
+    private final Properties props;
 
-    public ConfigWrapper(Properties props) {
+    public ConfigParser(Properties props) {
         this.props = props;
     }
 
@@ -19,6 +19,10 @@ public class ConfigWrapper implements Serializable {
 
     public long getLong(String key, long defaultValue) {
         return PropertiesUtil.getLong(props, key, defaultValue);
+    }
+
+    public boolean getBool(String key, boolean defaultValue) {
+        return PropertiesUtil.getBoolean(props, key, defaultValue);
     }
 
     public String getString(String key) {
