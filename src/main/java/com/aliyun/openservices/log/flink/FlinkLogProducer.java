@@ -1,6 +1,7 @@
 package com.aliyun.openservices.log.flink;
 
 import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.common.TagContent;
 import com.aliyun.openservices.log.flink.data.RawLog;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
 import com.aliyun.openservices.log.flink.internal.ConfigParser;
@@ -19,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -142,12 +144,27 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (logs.isEmpty()) {
             return;
         }
+        List<TagContent> tags = getTags(logGroup);
         try {
-            producer.send(logGroup.getTopic(), logGroup.getSource(), shardHashKey, logs);
+            producer.send(logGroup.getTopic(), logGroup.getSource(), shardHashKey, tags, logs);
         } catch (InterruptedException e) {
             LOG.error("Error while sending logs", e);
             throw new RuntimeException(e);
         }
+    }
+
+    private static List<TagContent> getTags(RawLogGroup logGroup) {
+        final Map<String, String> tags = logGroup.getTags();
+        if (tags == null || tags.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<TagContent> tagContents = new ArrayList<>();
+        for (Map.Entry<String, String> tag : tags.entrySet()) {
+            if (tag.getKey() != null) {
+                tagContents.add(new TagContent(tag.getKey(), tag.getValue()));
+            }
+        }
+        return tagContents;
     }
 
     @Override

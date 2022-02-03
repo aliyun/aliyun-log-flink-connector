@@ -1,13 +1,16 @@
 package com.aliyun.openservices.log.flink.util;
 
 import com.aliyun.openservices.log.Client;
+import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.common.Consts.CursorMode;
 import com.aliyun.openservices.log.common.ConsumerGroup;
 import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.Shard;
+import com.aliyun.openservices.log.common.TagContent;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.request.PullLogsRequest;
+import com.aliyun.openservices.log.request.PutLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
 import com.aliyun.openservices.log.response.ListConsumerGroupResponse;
 import com.aliyun.openservices.log.response.ListLogStoresResponse;
@@ -184,11 +187,21 @@ public class LogClientProxy implements Serializable {
         }
     }
 
-    public void putLogs(String project, String logstore,
-                        String topic, String source,
-                        String hashKey, List<LogItem> logItems) throws LogException {
+    public void putLogs(String project,
+                        String logstore,
+                        String topic,
+                        String source,
+                        String hashKey,
+                        List<TagContent> tags,
+                        List<LogItem> logItems) throws LogException {
+        PutLogsRequest request = new PutLogsRequest(project, logstore, topic,
+                source, logItems, hashKey);
+        request.SetCompressType(Consts.CompressType.LZ4);
+        if (tags != null) {
+            request.SetTags(tags);
+        }
         executor.call((Callable<Void>) () -> {
-            client.PutLogs(project, logstore, topic, logItems, source, hashKey);
+            client.PutLogs(request);
             return null;
         }, "PutLogs");
     }

@@ -1,6 +1,7 @@
 package com.aliyun.openservices.log.flink.internal;
 
 import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.common.TagContent;
 
 import java.util.List;
 
@@ -9,14 +10,21 @@ public class LogGroupHolder {
     private final String topic;
     private final String hashKey;
     private final List<LogItem> logs;
+    private final List<TagContent> tags;
     private int sizeInBytes;
 
-    public LogGroupHolder(String source, String topic, String hashKey, List<LogItem> logs, int bytes) {
+    public LogGroupHolder(String source,
+                          String topic,
+                          String hashKey,
+                          List<TagContent> tags,
+                          List<LogItem> logs,
+                          int logsSize) {
         this.source = source;
         this.topic = topic == null ? "" : topic;
         this.hashKey = hashKey;
         this.logs = logs;
-        this.sizeInBytes = bytes;
+        this.tags = tags;
+        this.sizeInBytes = logsSize;
     }
 
     public void addLogs(List<LogItem> logs, int sizeInBytes) {
@@ -42,5 +50,9 @@ public class LogGroupHolder {
 
     public List<LogItem> getLogs() {
         return logs;
+    }
+
+    public List<TagContent> getTags() {
+        return tags;
     }
 }

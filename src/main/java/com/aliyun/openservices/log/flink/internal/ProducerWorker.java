@@ -43,8 +43,14 @@ public class ProducerWorker implements Runnable {
                 LogGroupHolder logGroup = event.getLogGroup();
                 semaphore.release(logGroup.getSizeInBytes());
                 LOG.debug("Send {} to sls", logGroup.getLogs().size());
-                clientProxy.putLogs(project, logstore, logGroup.getTopic(),
-                        logGroup.getSource(), logGroup.getHashKey(), logGroup.getLogs());
+                clientProxy.putLogs(
+                        project,
+                        logstore,
+                        logGroup.getTopic(),
+                        logGroup.getSource(),
+                        logGroup.getHashKey(),
+                        logGroup.getTags(),
+                        logGroup.getLogs());
             } catch (InterruptedException ex) {
                 LOG.warn("Producer worker interrupted");
                 break;
