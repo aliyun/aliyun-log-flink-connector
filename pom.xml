@@ -8,7 +8,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector-beta</artifactId>
-    <version>0.1.32-SNAPSHOT</version>
+    <version>0.1.32</version>
     <name>flink log connector</name>
     <url>http://www.aliyun.com</url>
     <description>Flink Connector for Aliyun Log Service</description>
