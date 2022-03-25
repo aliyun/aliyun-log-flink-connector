@@ -5,10 +5,10 @@ public class ProducerConfig {
     public static final long DEFAULT_LINGER_MS = 3000;
     public static final int DEFAULT_IO_THREAD_COUNT = Math.max(
             Runtime.getRuntime().availableProcessors() / 2, 1);
-    public static final int DEFAULT_TOTAL_SIZE_IN_BYTES = 100 * 1024 * 1024;
-    public static final int DEFAULT_LOG_GROUP_SIZE = 1024 * 1024;
-    public static final int MAX_LOG_GROUP_SIZE = 5 * 1024 * 1024;
-    public static final int DEFAULT_MAX_LOG_GROUP_LINES = 2000;
+    public static final int DEFAULT_TOTAL_SIZE_IN_BYTES = 200 * 1024 * 1024;
+    public static final int DEFAULT_LOG_GROUP_SIZE = 3 * 1024 * 1024;
+    public static final int MAX_LOG_GROUP_SIZE = 8 * 1024 * 1024;
+    public static final int DEFAULT_MAX_LOG_GROUP_LINES = 5000;
     public static final int MAX_LOG_GROUP_LINES = 40960;
     public static final int DEFAULT_PRODUCER_QUEUE_SIZE = 4096;
 

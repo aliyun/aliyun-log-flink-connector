@@ -33,8 +33,10 @@ public class ProducerSample {
         configProps.put(ConfigConstants.LOG_ACCESSKEY, ACCESS_KEY);
         configProps.put(ConfigConstants.LOG_PROJECT, SLS_PROJECT);
         configProps.put(ConfigConstants.LOG_LOGSTORE, SLS_LOGSTORE);
-        // Change the default buckets for hash key.
-        // configProps.put(ConfigConstants.BUCKETS, "128");
+        // Set max lines in one LogGroup
+        configProps.put(ConfigConstants.LOG_GROUP_MAX_LINES, "5000");
+        // Set max size of one logGroup to 3MB
+        configProps.put(ConfigConstants.LOG_GROUP_MAX_SIZE, "3145728");
 
         FlinkLogProducer<String> logProducer = new FlinkLogProducer<>(new SimpleLogSerializer(), configProps);
         logProducer.setCustomPartitioner(new LogPartitioner<String>() {
