@@ -39,6 +39,7 @@ public class ProducerImpl implements Producer {
     private volatile boolean isStopped = false;
     private final ProducerConfig producerConfig;
     private final Semaphore semaphore;
+    private final ShardHashAdjuster shardHashAdjuster;
 
     public ProducerImpl(ProducerConfig producerConfig, RetryPolicy retryPolicy) {
         this.cache = new ConcurrentHashMap<>();
@@ -54,6 +55,9 @@ public class ProducerImpl implements Producer {
         this.logGroupSizeThreshold = producerConfig.getLogGroupSize();
         this.logGroupMaxLines = producerConfig.getLogGroupMaxLines();
         this.semaphore = new Semaphore(maxSizeInBytes);
+        this.shardHashAdjuster = producerConfig.isAdjustShardHash()
+                ? new ShardHashAdjuster(producerConfig.getBuckets())
+                : null;
     }
 
     private static class FlushWorker implements Runnable {
@@ -133,6 +137,9 @@ public class ProducerImpl implements Producer {
         }
         if (isStopped) {
             throw new IllegalStateException("Producer is stopped");
+        }
+        if (shardHash != null && shardHashAdjuster != null) {
+            shardHash = shardHashAdjuster.adjust(shardHash);
         }
         int bytes = 0;
         List<LogItem> buffer = new ArrayList<>();
