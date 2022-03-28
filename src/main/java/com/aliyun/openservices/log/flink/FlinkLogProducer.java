@@ -70,7 +70,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 ProducerConfig.DEFAULT_MAX_LOG_GROUP_LINES));
         producerConfig.setProducerQueueSize(parser.getInt(ConfigConstants.PRODUCER_QUEUE_SIZE,
                 ProducerConfig.DEFAULT_PRODUCER_QUEUE_SIZE));
-        producerConfig.setBuckets(parser.getInt(ConfigConstants.PRODUCER_BUCKETS,
+        producerConfig.setBuckets(parser.getInt(ConfigConstants.BUCKETS,
                 ProducerConfig.DEFAULT_BUCKETS));
         producerConfig.setAdjustShardHash(parser.getBool(ConfigConstants.PRODUCER_ADJUST_SHARD_HASH,
                 ProducerConfig.DEFAULT_ADJUST_SHARD_HASH));

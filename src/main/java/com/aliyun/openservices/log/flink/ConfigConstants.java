@@ -36,7 +36,7 @@ public class ConfigConstants {
     public static final String LOG_GROUP_MAX_SIZE = "logGroup.max.size";
     public static final String LOG_GROUP_MAX_LINES = "logGroup.max.lines";
     public static final String PRODUCER_QUEUE_SIZE = "producer.queue.size";
-    public static final String PRODUCER_BUCKETS = "producer.buckets";
+    public static final String BUCKETS = "producer.buckets";
     public static final String PRODUCER_ADJUST_SHARD_HASH = "producer.adjust.shard.hash";
 
     /**
