@@ -9,9 +9,6 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 
-import java.math.BigInteger;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Properties;
 
 public class ProducerSample {
@@ -33,6 +30,8 @@ public class ProducerSample {
         configProps.put(ConfigConstants.LOG_ACCESSKEY, ACCESS_KEY);
         configProps.put(ConfigConstants.LOG_PROJECT, SLS_PROJECT);
         configProps.put(ConfigConstants.LOG_LOGSTORE, SLS_LOGSTORE);
+        // Change the default buckets for hash key.
+        // configProps.put(ConfigConstants.BUCKETS, "128");
         // Set max lines in one LogGroup
         configProps.put(ConfigConstants.LOG_GROUP_MAX_LINES, "5000");
         // Set max size of one logGroup to 3MB
@@ -42,19 +41,7 @@ public class ProducerSample {
         logProducer.setCustomPartitioner(new LogPartitioner<String>() {
             @Override
             public String getHashKey(String element) {
-                String hash = "";
-                try {
-                    MessageDigest md = MessageDigest.getInstance("MD5");
-                    md.update(element.getBytes());
-                    hash = new BigInteger(1, md.digest()).toString(16);
-                } catch (NoSuchAlgorithmException ignore) {
-                }
-                StringBuilder builder = new StringBuilder();
-                while (builder.length() < 32 - hash.length()) {
-                    builder.append("0");
-                }
-                builder.append(hash);
-                return builder.toString();
+                return element;
             }
         });
         stream.addSink(logProducer);
