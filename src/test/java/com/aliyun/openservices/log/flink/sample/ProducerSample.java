@@ -41,7 +41,21 @@ public class ProducerSample {
         logProducer.setCustomPartitioner(new LogPartitioner<String>() {
             @Override
             public String getHashKey(String element) {
+                // No need to MD5.
                 return element;
+//                String hash = "";
+//                try {
+//                    MessageDigest md = MessageDigest.getInstance("MD5");
+//                    md.update(element.getBytes());
+//                    hash = new BigInteger(1, md.digest()).toString(16);
+//                } catch (NoSuchAlgorithmException ignore) {
+//                }
+//                StringBuilder builder = new StringBuilder();
+//                while (builder.length() < 32 - hash.length()) {
+//                    builder.append("0");
+//                }
+//                builder.append(hash);
+//                return builder.toString();
             }
         });
         stream.addSink(logProducer);
