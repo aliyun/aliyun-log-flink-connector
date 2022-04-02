@@ -167,7 +167,7 @@ public class FlinkLogConsumer extends RichParallelSourceFunction<SourceRecord> i
             if (cursorsToRestore != null && cursorsToRestore.containsKey(shard)) {
                 checkpoint = cursorsToRestore.get(shard);
             }
-            fetcher.registerNewSubscribedShardState(shard, checkpoint);
+            fetcher.registerNewSubscribedShard(shard, checkpoint);
         }
         if (!running) {
             return;

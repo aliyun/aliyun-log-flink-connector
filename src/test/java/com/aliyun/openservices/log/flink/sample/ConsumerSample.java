@@ -21,7 +21,7 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 import java.util.Properties;
 
 public class ConsumerSample {
-    private static final String SLS_ENDPOINT = "cn-hangzhou-share.log.aliyuncs.com";
+    private static final String SLS_ENDPOINT = "";
     private static final String ACCESS_KEY_ID = "";
     private static final String ACCESS_KEY_SECRET = "";
     private static final String SLS_PROJECT = "";
