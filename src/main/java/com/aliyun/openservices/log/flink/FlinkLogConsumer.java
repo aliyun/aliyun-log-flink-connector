@@ -3,23 +3,27 @@ package com.aliyun.openservices.log.flink;
 import com.aliyun.openservices.log.flink.internal.ConfigParser;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
-import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
+import com.aliyun.openservices.log.flink.model.SourceRecord;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
+import org.apache.flink.api.common.ExecutionConfig;
 import com.aliyun.openservices.log.flink.util.RetryPolicy;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.CheckpointListener;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.ClosureCleaner;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +35,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
-public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implements ResultTypeQueryable<T>,
+public class FlinkLogConsumer extends RichParallelSourceFunction<SourceRecord> implements ResultTypeQueryable<SourceRecord>,
         CheckpointedFunction, CheckpointListener {
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogConsumer.class);
     private static final long serialVersionUID = 7835636734161627680L;
@@ -39,8 +43,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private static final String CURSOR_STATE_STORE_NAME = "LogStore-Shard-State";
 
     private final Properties configProps;
-    private final LogDeserializationSchema<T> deserializer;
-    private transient LogDataFetcher<T> fetcher;
+    private transient LogDataFetcher fetcher;
     private volatile boolean running = true;
     private transient ListState<Tuple2<LogstoreShardMeta, String>> cursorStateForCheckpoint;
     private transient HashMap<LogstoreShardMeta, String> cursorsToRestore;
@@ -51,33 +54,31 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private Pattern logstorePattern;
     private final CheckpointMode checkpointMode;
     private ShardAssigner shardAssigner = LogDataFetcher.DEFAULT_SHARD_ASSIGNER;
+    private AssignerWithPeriodicWatermarks<SourceRecord> periodicWatermarkAssigner;
 
     @Deprecated
-    public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
+    public FlinkLogConsumer(Properties configProps) {
         this.configProps = configProps;
-        this.deserializer = deserializer;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logstores = Collections.singletonList(configProps.getProperty(ConfigConstants.LOG_LOGSTORE));
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
     }
 
-    public FlinkLogConsumer(String project, List<String> logstores, LogDeserializationSchema<T> deserializer, Properties configProps) {
+    public FlinkLogConsumer(String project, List<String> logstores, Properties configProps) {
         this.configProps = configProps;
-        this.deserializer = deserializer;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = project;
         this.logstores = logstores;
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
     }
 
-    public FlinkLogConsumer(String project, String logstore, LogDeserializationSchema<T> deserializer, Properties configProps) {
-        this(project, Collections.singletonList(logstore), deserializer, configProps);
+    public FlinkLogConsumer(String project, String logstore, Properties configProps) {
+        this(project, Collections.singletonList(logstore), configProps);
     }
 
-    public FlinkLogConsumer(String project, Pattern logstorePattern, LogDeserializationSchema<T> deserializer, Properties configProps) {
+    public FlinkLogConsumer(String project, Pattern logstorePattern, Properties configProps) {
         this.configProps = configProps;
-        this.deserializer = deserializer;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = project;
         this.logstorePattern = logstorePattern;
@@ -123,20 +124,42 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
     }
 
+    public ShardAssigner getShardAssigner() {
+        return shardAssigner;
+    }
+
     public void setShardAssigner(ShardAssigner shardAssigner) {
         this.shardAssigner = shardAssigner;
     }
 
+    public AssignerWithPeriodicWatermarks<SourceRecord> getPeriodicWatermarkAssigner() {
+        return periodicWatermarkAssigner;
+    }
+
+    /**
+     * Set the assigner that will extract the timestamp from {@link SourceRecord} and calculate the
+     * watermark.
+     *
+     * @param periodicWatermarkAssigner periodic watermark assigner
+     */
+    public void setPeriodicWatermarkAssigner(
+            AssignerWithPeriodicWatermarks<SourceRecord> periodicWatermarkAssigner) {
+        this.periodicWatermarkAssigner = periodicWatermarkAssigner;
+        ClosureCleaner.clean(this.periodicWatermarkAssigner, ExecutionConfig.ClosureCleanerLevel.RECURSIVE, true);
+    }
+
     @Override
-    public void run(SourceContext<T> sourceContext) throws Exception {
+    public void run(SourceContext<SourceRecord> sourceContext) throws Exception {
         final RuntimeContext ctx = getRuntimeContext();
         createClientIfNeeded(ctx.getIndexOfThisSubtask());
-        LogDataFetcher<T> fetcher = new LogDataFetcher<>(sourceContext, ctx, project,
+        LogDataFetcher fetcher = new LogDataFetcher(sourceContext,
+                ctx, project,
                 logstores, logstorePattern,
-                configProps, deserializer,
+                configProps,
                 logClient,
                 checkpointMode,
-                shardAssigner);
+                shardAssigner,
+                periodicWatermarkAssigner);
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
         for (LogstoreShardMeta shard : newShards) {
             String checkpoint = null;
@@ -210,14 +233,13 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private void updateCursorState(LogstoreShardMeta shardMeta, String cursor) throws Exception {
         cursorStateForCheckpoint.add(Tuple2.of(shardMeta, cursor));
         if (cursor != null && consumerGroup != null && checkpointMode == CheckpointMode.ON_CHECKPOINTS) {
-            updateCheckpoint(shardMeta, cursor);
+            logClient.updateCheckpoint(project,
+                    shardMeta.getLogstore(),
+                    consumerGroup,
+                    shardMeta.getShardId(),
+                    shardMeta.isReadOnly(),
+                    cursor);
         }
-    }
-
-    private void updateCheckpoint(LogstoreShardMeta meta, String cursor) throws Exception {
-        logClient.updateCheckpoint(project, meta.getLogstore(),
-                consumerGroup, meta.getShardId(), meta.isReadOnly(),
-                cursor);
     }
 
     @Override
@@ -240,17 +262,15 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         RuntimeContext ctx = getRuntimeContext();
         createClientIfNeeded(ctx.getIndexOfThisSubtask());
         cursorsToRestore = new HashMap<>();
-        for (Tuple2<LogstoreShardMeta, String> cursor : cursorStateForCheckpoint.get()) {
-            final LogstoreShardMeta shardMeta = cursor.f0;
-            final String checkpoint = cursor.f1;
-            cursorsToRestore.put(shardMeta, checkpoint);
+        for (Tuple2<LogstoreShardMeta, String> offset : cursorStateForCheckpoint.get()) {
+            cursorsToRestore.put(offset.f0, offset.f1);
         }
         LOG.info("The following offsets restored from Flink state: {}", cursorsToRestore);
     }
 
     @Override
-    public TypeInformation<T> getProducedType() {
-        return deserializer.getProducedType();
+    public TypeInformation<SourceRecord> getProducedType() {
+        return PojoTypeInfo.of(SourceRecord.class);
     }
 
     @Override

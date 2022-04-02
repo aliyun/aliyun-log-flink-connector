@@ -1,12 +1,12 @@
 package com.aliyun.openservices.log.flink.sample;
 
+import com.aliyun.openservices.log.common.FastLog;
+import com.aliyun.openservices.log.common.FastLogContent;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.FlinkLogConsumer;
-import com.aliyun.openservices.log.flink.data.RawLog;
-import com.aliyun.openservices.log.flink.data.RawLogGroup;
-import com.aliyun.openservices.log.flink.data.RawLogGroupList;
 import com.aliyun.openservices.log.flink.data.RawLogGroupListDeserializer;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
+import com.aliyun.openservices.log.flink.model.SourceRecord;
 import com.aliyun.openservices.log.flink.util.Consts;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.java.utils.ParameterTool;
@@ -18,7 +18,6 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
-import java.util.Map;
 import java.util.Properties;
 
 public class ConsumerWithSeqNoSample {
@@ -57,15 +56,13 @@ public class ConsumerWithSeqNoSample {
         RawLogGroupListDeserializer deserializer = new RawLogGroupListDeserializer();
         deserializer.setSequenceNumberKey("seqNoKey");
 
-        DataStream<RawLogGroupList> stream = env.addSource(
-                new FlinkLogConsumer<>(SLS_PROJECT, SLS_LOGSTORE, deserializer, configProps));
-
-        stream.flatMap((FlatMapFunction<RawLogGroupList, String>) (value, out) -> {
-            for (RawLogGroup logGroup : value.getRawLogGroups()) {
-                for (RawLog r : logGroup.getLogs()) {
-                    for (Map.Entry<String, String> x : r.getContents().entrySet()) {
-                        System.out.println(x.getKey() + " - " + x.getValue());
-                    }
+        DataStream<SourceRecord> stream = env.addSource(
+                new FlinkLogConsumer(SLS_PROJECT, SLS_LOGSTORE, configProps));
+        stream.flatMap((FlatMapFunction<SourceRecord, String>) (value, out) -> {
+            for (FastLog log : value.getRecords()) {
+                for (int j = 0; j < log.getContentsCount(); ++j) {
+                    FastLogContent f = log.getContents(j);
+                    System.out.println(f.getKey() + " - " + f.getValue());
                 }
             }
         });

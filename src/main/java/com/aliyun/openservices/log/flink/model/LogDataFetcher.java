@@ -6,8 +6,17 @@ import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.ShardAssigner;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.functions.RuntimeContext;
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
+import org.apache.flink.streaming.api.watermark.Watermark;
+import org.apache.flink.streaming.runtime.operators.windowing.TimestampedValue;
+import org.apache.flink.streaming.runtime.tasks.ProcessingTimeCallback;
+import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
+import org.apache.flink.util.InstantiationUtil;
+import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,16 +38,22 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
-public class LogDataFetcher<T> {
+public class LogDataFetcher {
     private static final Logger LOG = LoggerFactory.getLogger(LogDataFetcher.class);
     public static final ShardAssigner DEFAULT_SHARD_ASSIGNER = new DefaultShardAssigner();
 
     private final Properties configProps;
-    private final LogDeserializationSchema<T> deserializer;
+
+    /**
+     * Runtime context of the subtask that this fetcher was created in.
+     */
+    private final RuntimeContext runtimeContext;
     private final int totalNumberOfSubtasks;
     private final int indexOfThisSubtask;
-    private final SourceFunction.SourceContext<T> sourceContext;
+
+    private final SourceFunction.SourceContext<SourceRecord> sourceContext;
     private final Object checkpointLock;
     private final ExecutorService shardConsumersExecutor;
     private final AtomicInteger numberOfActiveShards = new AtomicInteger(0);
@@ -52,26 +67,49 @@ public class LogDataFetcher<T> {
     private final String consumerGroup;
     private CheckpointCommitter autoCommitter;
     private long commitInterval;
-    private Map<String, ShardConsumer<T>> consumerCache;
-    private final Pattern logstorePattern;
+    private Pattern logstorePattern;
     private List<String> logstores;
     private Set<String> subscribedLogstores;
     private final ShardAssigner shardAssigner;
+    private final AssignerWithPeriodicWatermarks<SourceRecord> periodicWatermarkAssigner;
+
+    /**
+     * The watermark related state for each shard consumer. Entries in this map will be created when shards
+     * are discovered. After recovery, this shard map will be recreated, possibly with different shard index keys,
+     * since those are transient and not part of checkpointed state.
+     */
+    private final ConcurrentHashMap<Integer, ShardWatermarkState> shardWatermarks = new ConcurrentHashMap<>();
+
+    /**
+     * The most recent watermark, calculated from the per shard watermarks. The initial value will never be emitted and
+     * also apply after recovery. The fist watermark that will be emitted is derived from actually consumed records.
+     * In case of recovery and replay, the watermark will rewind, consistent wth the shard consumer sequence.
+     */
+    private long lastWatermark = Long.MIN_VALUE;
+
+    private final Map<String, ShardConsumer> consumerCache;
     private boolean exitAfterAllShardFinished = false;
 
-    public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
+    /**
+     * The time span since last consumed record, after which a shard will be considered idle for purpose of watermark
+     * calculation. A positive value will allow the watermark to progress even when some shards don't receive new records.
+     */
+    private long shardIdleIntervalMillis = ConfigConstants.DEFAULT_SHARD_IDLE_INTERVAL_MILLIS;
+
+
+    public LogDataFetcher(SourceFunction.SourceContext<SourceRecord> sourceContext,
                           RuntimeContext context,
                           String project,
                           List<String> logstores,
                           Pattern logstorePattern,
                           Properties configProps,
-                          LogDeserializationSchema<T> deserializer,
                           LogClientProxy logClient,
                           CheckpointMode checkpointMode,
-                          ShardAssigner shardAssigner) {
+                          ShardAssigner shardAssigner,
+                          AssignerWithPeriodicWatermarks<SourceRecord> periodicWatermarkAssigner) {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
-        this.deserializer = deserializer;
+        this.runtimeContext = context;
         this.totalNumberOfSubtasks = context.getNumberOfParallelSubtasks();
         this.indexOfThisSubtask = context.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
@@ -94,6 +132,7 @@ public class LogDataFetcher<T> {
         this.logstores = logstores;
         this.logstorePattern = logstorePattern;
         this.subscribedLogstores = new HashSet<>();
+        this.periodicWatermarkAssigner = periodicWatermarkAssigner;
         String stopTime = configProps.getProperty(ConfigConstants.STOP_TIME);
         if (stopTime != null && !stopTime.isEmpty()) {
             validateStopTime(stopTime);
@@ -112,6 +151,25 @@ public class LogDataFetcher<T> {
 
     public String getProject() {
         return project;
+    }
+
+    /**
+     * The wrapper that holds the watermark handling related parameters
+     * of a record produced by the shard consumer thread.
+     */
+    private static class RecordWrapper extends TimestampedValue<SourceRecord> {
+        long timestamp;
+        Watermark watermark;
+
+        private RecordWrapper(SourceRecord record, long timestamp) {
+            super(record, timestamp);
+            this.timestamp = timestamp;
+        }
+
+        @Override
+        public long getTimestamp() {
+            return timestamp;
+        }
     }
 
     private static class GetDataThreadFactory implements ThreadFactory {
@@ -156,6 +214,7 @@ public class LogDataFetcher<T> {
         return shardMetas;
     }
 
+
     public List<LogstoreShardMeta> discoverNewShardsToSubscribe() throws Exception {
         List<LogstoreShardMeta> shardMetas = listAssignedShards();
         List<LogstoreShardMeta> newShards = new ArrayList<>();
@@ -194,7 +253,7 @@ public class LogDataFetcher<T> {
     private void markConsumersAsReadOnly(List<String> shards) {
         for (String shard : shards) {
             LOG.info("Mark shard {} as readonly", shard);
-            ShardConsumer<T> consumer = consumerCache.get(shard);
+            ShardConsumer consumer = consumerCache.get(shard);
             if (consumer != null) {
                 consumer.markAsReadOnly();
             }
@@ -221,15 +280,50 @@ public class LogDataFetcher<T> {
         }
     }
 
-    public int registerNewSubscribedShard(LogstoreShardMeta shard, String checkpoint) {
+    /**
+     * Register a new subscribed shard state.
+     *
+     * @param shard the new shard state that this fetcher is to be subscribed to
+     */
+    public int registerNewSubscribedShard(LogstoreShardMeta shard, String offset) {
         String logstore = shard.getLogstore();
         if (!subscribedLogstores.contains(logstore)) {
             subscribedLogstores.add(logstore);
             createConsumerGroupIfNotExist(logstore);
         }
         synchronized (checkpointLock) {
-            subscribedShardsState.add(new LogstoreShardState(shard, checkpoint));
-            return subscribedShardsState.size() - 1;
+            subscribedShardsState.add(new LogstoreShardState(shard, offset));
+            int shardStateIndex = subscribedShardsState.size() - 1;
+
+            // track all discovered shards for watermark determination
+            ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
+            if (sws == null) {
+                sws = new ShardWatermarkState();
+                try {
+                    sws.periodicWatermarkAssigner = InstantiationUtil.clone(periodicWatermarkAssigner);
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to instantiate new WatermarkAssigner", e);
+                }
+                sws.emitQueue = new RecordQueue<RecordWrapper>() {
+                    @Override
+                    public void put(RecordWrapper record) {
+                    }
+
+                    @Override
+                    public int getSize() {
+                        return 0;
+                    }
+
+                    @Override
+                    public RecordWrapper peek() {
+                        return null;
+                    }
+                };
+                sws.lastUpdated = getCurrentTimeMillis();
+                sws.lastRecordTimestamp = Long.MIN_VALUE;
+                shardWatermarks.put(shardStateIndex, sws);
+            }
+            return shardStateIndex;
         }
     }
 
@@ -244,7 +338,7 @@ public class LogDataFetcher<T> {
     }
 
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
-        ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, autoCommitter);
+        ShardConsumer consumer = new ShardConsumer(this, index, configProps, logClient, autoCommitter);
         if (!running) {
             // Do not create consumer any more
             return;
@@ -262,12 +356,27 @@ public class LogDataFetcher<T> {
         startCommitThreadIfNeeded();
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
-            if (!shardState.isEndReached()) {
+            if (!shardState.isIdle()) {
                 LogstoreShardMeta shardMeta = shardState.getShardMeta();
                 LOG.info("Start consumer for shard [{}]", shardMeta.getId());
                 createConsumerForShard(index, shardMeta);
             }
         }
+
+        // start periodic watermark emitter, if a watermark assigner was configured
+        if (periodicWatermarkAssigner != null) {
+            long periodicWatermarkIntervalMillis = runtimeContext.getExecutionConfig().getAutoWatermarkInterval();
+            if (periodicWatermarkIntervalMillis > 0) {
+                ProcessingTimeService timerService = ((StreamingRuntimeContext) runtimeContext).getProcessingTimeService();
+                LOG.info("Starting periodic watermark emitter with interval {}", periodicWatermarkIntervalMillis);
+                new PeriodicWatermarkEmitter(timerService, periodicWatermarkIntervalMillis).start();
+            }
+            this.shardIdleIntervalMillis = Long.parseLong(
+                    configProps.getProperty(ConfigConstants.SHARD_IDLE_INTERVAL_MILLIS,
+                            Long.toString(ConfigConstants.DEFAULT_SHARD_IDLE_INTERVAL_MILLIS)));
+            // run record emitter in separate thread since main thread is used for discovery
+        }
+
         final long discoveryIntervalMs = LogUtil.getDiscoveryIntervalMs(configProps);
         if (numberOfActiveShards.get() == 0) {
             LOG.info("No shards were assigned to this task {}, mark idle", indexOfThisSubtask);
@@ -295,8 +404,16 @@ public class LogDataFetcher<T> {
                 }
             }
         }
+
+        // make sure all resources have been terminated before leaving
+        try {
+            awaitTermination();
+        } catch (InterruptedException ie) {
+            // If there is an original exception, preserve it, since that's more important/useful.
+            this.error.compareAndSet(null, ie);
+        }
+
         stopBackgroundThreads();
-        awaitTermination();
         Throwable throwable = this.error.get();
         if (throwable != null) {
             if (throwable instanceof LogException) {
@@ -336,7 +453,7 @@ public class LogDataFetcher<T> {
 
     private void stopAllConsumers() {
         LOG.warn("Stopping all consumers..");
-        for (ShardConsumer<T> consumer : consumerCache.values()) {
+        for (ShardConsumer consumer : consumerCache.values()) {
             consumer.stop();
         }
     }
@@ -352,13 +469,167 @@ public class LogDataFetcher<T> {
         }
     }
 
-    void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor) {
+    protected void emitRecordAndUpdateState(SourceRecord record, int shardStateIndex, String offset) {
+        ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
+        Preconditions.checkNotNull(
+                sws, "shard watermark state initialized in registerNewSubscribedShardState");
+        Watermark watermark = null;
+        long timestamp = record.getTimestamp() * 1000;
+        if (sws.periodicWatermarkAssigner != null) {
+            timestamp = sws.periodicWatermarkAssigner.extractTimestamp(record, sws.lastRecordTimestamp);
+            // track watermark per record since extractTimestamp has side effect
+            watermark = sws.periodicWatermarkAssigner.getCurrentWatermark();
+        }
+        sws.lastRecordTimestamp = timestamp;
+        sws.lastUpdated = getCurrentTimeMillis();
+        emitRecordAndUpdateState(record, timestamp, shardStateIndex, watermark, offset);
+    }
+
+    /**
+     * Atomic operation to collect a record and update state to the sequence number of the record.
+     * This method is called from the record emitter.
+     *
+     * <p>Responsible for tracking per shard watermarks and emit timestamps extracted from
+     * the record, when a watermark assigner was configured.
+     */
+    private void emitRecordAndUpdateState(SourceRecord record,
+                                          long timestamp,
+                                          int shardStateIndex,
+                                          Watermark watermark,
+                                          String offset) {
         synchronized (checkpointLock) {
-            sourceContext.collectWithTimestamp(record, recordTimestamp);
-            LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
-            if (state != null) {
-                state.setOffset(cursor);
+            sourceContext.collectWithTimestamp(record, timestamp);
+            ShardWatermarkState sws = shardWatermarks.get(shardStateIndex);
+            sws.lastEmittedRecordWatermark = watermark;
+            if (offset != null) {
+                updateState(shardStateIndex, offset);
             }
+        }
+    }
+
+    private void updateState(int shardStateIndex, String offset) {
+        LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
+        state.setOffset(offset);
+        if (state.isIdle() && this.numberOfActiveShards.decrementAndGet() == 0) {
+            LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",
+                    indexOfThisSubtask);
+            sourceContext.markAsTemporarilyIdle();
+        }
+    }
+
+    /**
+     * Return the current system time. Allow tests to override this to simulate progress for watermark
+     * logic.
+     *
+     * @return current processing time
+     */
+    @VisibleForTesting
+    protected long getCurrentTimeMillis() {
+        return System.currentTimeMillis();
+    }
+
+    /**
+     * Called periodically to emit a watermark. Checks all shards for the current event time
+     * watermark, and possibly emits the next watermark.
+     *
+     * <p>Shards that have not received an update for a certain interval are considered inactive so as
+     * to not hold back the watermark indefinitely. When all shards are inactive, the subtask will be
+     * marked as temporarily idle to not block downstream operators.
+     */
+    @VisibleForTesting
+    protected void emitWatermark() {
+        LOG.debug("Evaluating watermark for subtask {} time {}", indexOfThisSubtask, getCurrentTimeMillis());
+        long potentialWatermark = Long.MAX_VALUE;
+        long potentialNextWatermark = Long.MAX_VALUE;
+        long idleTime =
+                (shardIdleIntervalMillis > 0)
+                        ? getCurrentTimeMillis() - shardIdleIntervalMillis
+                        : Long.MAX_VALUE;
+
+        for (Map.Entry<Integer, ShardWatermarkState> e : shardWatermarks.entrySet()) {
+            Watermark w = e.getValue().lastEmittedRecordWatermark;
+            // consider only active shards, or those that would advance the watermark
+            if (w != null && (e.getValue().lastUpdated >= idleTime
+                    || e.getValue().emitQueue.getSize() > 0
+                    || w.getTimestamp() > lastWatermark)) {
+                potentialWatermark = Math.min(potentialWatermark, w.getTimestamp());
+                // for sync, use the watermark of the next record, when available
+                // otherwise watermark may stall when record is blocked by synchronization
+                RecordQueue<RecordWrapper> q = e.getValue().emitQueue;
+                RecordWrapper nextRecord = q.peek();
+                Watermark nextWatermark = (nextRecord != null) ? nextRecord.watermark : w;
+                potentialNextWatermark = Math.min(potentialNextWatermark, nextWatermark.getTimestamp());
+            }
+        }
+
+        // advance watermark if possible (watermarks can only be ascending)
+        if (potentialWatermark == Long.MAX_VALUE) {
+            if (shardWatermarks.isEmpty() || shardIdleIntervalMillis > 0) {
+                LOG.info("No active shard for subtask {}, marking the source idle.",
+                        indexOfThisSubtask);
+                // no active shard, signal downstream operators to not wait for a watermark
+                sourceContext.markAsTemporarilyIdle();
+            }
+        } else {
+            if (potentialWatermark > lastWatermark) {
+                LOG.debug("Emitting watermark {} from subtask {}",
+                        potentialWatermark,
+                        indexOfThisSubtask);
+                sourceContext.emitWatermark(new Watermark(potentialWatermark));
+                lastWatermark = potentialWatermark;
+            }
+        }
+    }
+
+    /**
+     * Accepts records from readers.
+     *
+     * @param <T>
+     */
+    public interface RecordQueue<T> {
+        void put(T record) throws InterruptedException;
+
+        int getSize();
+
+        T peek();
+    }
+
+
+    /**
+     * Per shard tracking of watermark and last activity.
+     */
+    private static class ShardWatermarkState {
+        private AssignerWithPeriodicWatermarks<SourceRecord> periodicWatermarkAssigner;
+        private RecordQueue<RecordWrapper> emitQueue;
+        private volatile long lastRecordTimestamp;
+        private volatile long lastUpdated;
+        private volatile Watermark lastEmittedRecordWatermark;
+    }
+
+    /**
+     * The periodic watermark emitter. In its given interval, it checks all shards for the current
+     * event time watermark, and possibly emits the next watermark.
+     */
+    private class PeriodicWatermarkEmitter implements ProcessingTimeCallback {
+
+        private final ProcessingTimeService timerService;
+        private final long interval;
+
+        PeriodicWatermarkEmitter(ProcessingTimeService timerService, long autoWatermarkInterval) {
+            this.timerService = checkNotNull(timerService);
+            this.interval = autoWatermarkInterval;
+        }
+
+        public void start() {
+            LOG.debug("registering periodic watermark timer with interval {}", interval);
+            timerService.registerTimer(timerService.getCurrentProcessingTime() + interval, this);
+        }
+
+        @Override
+        public void onProcessingTime(long timestamp) {
+            emitWatermark();
+            // schedule the next watermark
+            timerService.registerTimer(timerService.getCurrentProcessingTime() + interval, this);
         }
     }
 
