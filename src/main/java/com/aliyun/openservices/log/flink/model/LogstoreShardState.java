@@ -13,19 +13,19 @@ public class LogstoreShardState {
         this.offset = offset;
     }
 
-    public void setShardMeta(LogstoreShardMeta shardMeta) {
-        this.shardMeta = shardMeta;
-    }
-
     public LogstoreShardMeta getShardMeta() {
         return shardMeta;
+    }
+
+    public void setShardMeta(LogstoreShardMeta shardMeta) {
+        this.shardMeta = shardMeta;
     }
 
     public String getOffset() {
         return offset;
     }
 
-    boolean isEndReached() {
+    boolean isIdle() {
         return shardMeta.isReadOnly() && offset != null && offset.equals(shardMeta.getEndCursor());
     }
 

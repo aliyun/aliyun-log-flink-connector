@@ -1,28 +1,27 @@
 package com.aliyun.openservices.log.flink.sample;
 
-import com.alibaba.fastjson.JSONObject;
-import com.aliyun.openservices.log.common.FastLog;
-import com.aliyun.openservices.log.common.FastLogGroup;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.FlinkLogConsumer;
-import com.aliyun.openservices.log.flink.data.FastLogGroupDeserializer;
-import com.aliyun.openservices.log.flink.data.FastLogGroupList;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
+import com.aliyun.openservices.log.flink.model.SourceRecord;
 import com.aliyun.openservices.log.flink.util.Consts;
-import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
+import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
+import org.apache.flink.streaming.api.functions.sink.SinkFunction;
+import org.apache.flink.streaming.api.watermark.Watermark;
 
 import java.util.Properties;
 
 public class ConsumerSample {
-    private static final String SLS_ENDPOINT = "";
+    private static final String SLS_ENDPOINT = "cn-hangzhou-share.log.aliyuncs.com";
     private static final String ACCESS_KEY_ID = "";
     private static final String ACCESS_KEY_SECRET = "";
     private static final String SLS_PROJECT = "";
@@ -53,27 +52,42 @@ public class ConsumerSample {
         configProps.put(ConfigConstants.LOG_CONSUMERGROUP, "23_ots_sla_etl_product1");
         configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.ON_CHECKPOINTS.name());
         configProps.put(ConfigConstants.LOG_COMMIT_INTERVAL_MILLIS, "10000");
+        configProps.put(ConfigConstants.SHARD_IDLE_INTERVAL_MILLIS, "60000");
         configProps.put(ConfigConstants.STOP_TIME, "1627878020");
+        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
-        FastLogGroupDeserializer deserializer = new FastLogGroupDeserializer();
-        DataStream<FastLogGroupList> stream = env.addSource(
-                new FlinkLogConsumer<>(SLS_PROJECT, SLS_LOGSTORE, deserializer, configProps));
-
-        stream.flatMap((FlatMapFunction<FastLogGroupList, String>) (value, out) -> {
-            for (FastLogGroup logGroup : value.getLogGroups()) {
-                int logCount = logGroup.getLogsCount();
-                for (int i = 0; i < logCount; i++) {
-                    FastLog log = logGroup.getLogs(i);
-                    JSONObject jsonObject = new JSONObject();
-                    for (int j = 0; j < log.getContentsCount(); j++) {
-                        jsonObject.put(log.getContents(j).getKey(), log.getContents(j).getValue());
-                    }
-                    out.collect(jsonObject.toJSONString());
-                }
+        FlinkLogConsumer consumer = new FlinkLogConsumer(SLS_PROJECT, SLS_LOGSTORE, configProps);
+        consumer.setPeriodicWatermarkAssigner(new TimeLagWatermarkGenerator());
+        DataStream<SourceRecord> stream = env.addSource(consumer);
+        stream.addSink(new SinkFunction<SourceRecord>() {
+            @Override
+            public void invoke(SourceRecord value, Context context) throws Exception {
+                System.out.println("Got " + value.getRecords().size() + " records");
             }
-        }).returns(String.class);
-
+        });
         stream.writeAsText("log-" + System.nanoTime());
         env.execute("Flink consumer");
+
+
+    }
+
+    /**
+     * This generator generates watermarks that are lagging behind processing time by a fixed amount.
+     * It assumes that elements arrive in Flink after a bounded delay.
+     */
+    public static class TimeLagWatermarkGenerator implements AssignerWithPeriodicWatermarks<SourceRecord> {
+
+        private final long maxTimeLag = 5000; // 5 seconds
+
+        @Override
+        public long extractTimestamp(SourceRecord element, long previousElementTimestamp) {
+            return element.getTimestamp();
+        }
+
+        @Override
+        public Watermark getCurrentWatermark() {
+            // return the watermark as current time minus the maximum time lag
+            return new Watermark(System.currentTimeMillis() - maxTimeLag);
+        }
     }
 }

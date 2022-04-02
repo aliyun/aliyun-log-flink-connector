@@ -14,13 +14,12 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Properties;
 
-public class ShardConsumer<T> implements Runnable {
+public class ShardConsumer implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
 
     private static final int FORCE_SLEEP_THRESHOLD = 256 * 1024;
 
-    private final LogDataFetcher<T> fetcher;
-    private final LogDeserializationSchema<T> deserializer;
+    private final LogDataFetcher fetcher;
     private final int subscribedShardStateIndex;
     private final int fetchSize;
     private final long fetchIntervalMs;
@@ -34,14 +33,12 @@ public class ShardConsumer<T> implements Runnable {
     private volatile boolean isRunning = true;
     private int stopTimeSec = -1;
 
-    ShardConsumer(LogDataFetcher<T> fetcher,
-                  LogDeserializationSchema<T> deserializer,
+    ShardConsumer(LogDataFetcher fetcher,
                   int subscribedShardStateIndex,
                   Properties configProps,
                   LogClientProxy logClient,
                   CheckpointCommitter committer) {
         this.fetcher = fetcher;
-        this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
         // TODO Move configs to a class
         this.fetchSize = LogUtil.getNumberPerFetch(configProps);
@@ -220,22 +217,21 @@ public class ShardConsumer<T> implements Runnable {
         isRunning = false;
     }
 
-    private void processRecordsAndSaveOffset(List<LogGroupData> records,
+    private void processRecordsAndSaveOffset(List<LogGroupData> allLogGroups,
                                              String cursor,
                                              LogstoreShardMeta shard,
                                              String nextCursor) {
-        PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
-        final T value = deserializer.deserialize(record);
-        long timestamp = System.currentTimeMillis();
-        if (!records.isEmpty()) {
-            // Use the timestamp of first log for perf consideration.
-            FastLogGroup logGroup = records.get(0).GetFastLogGroup();
-            if (logGroup.getLogsCount() > 0) {
-                long logTimeStamp = logGroup.getLogs(0).getTime();
-                timestamp = logTimeStamp * 1000;
+        if (allLogGroups != null) {
+            for (int i = 0, numOfGroup = allLogGroups.size(); i < numOfGroup; i++) {
+                LogGroupData logGroup = allLogGroups.get(i);
+                FastLogGroup fastLogGroup = logGroup.GetFastLogGroup();
+                SourceRecord record = new SourceRecord(fastLogGroup.getTopic(),
+                        fastLogGroup.getSource(),
+                        fastLogGroup.getTags(),
+                        fastLogGroup.getLogs());
+                fetcher.emitRecordAndUpdateState(record, subscribedShardStateIndex, i == numOfGroup - 1 ? nextCursor : null);
             }
         }
-        fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
         if (committer != null) {
             committer.updateCheckpoint(shard, nextCursor, isReadOnly);
         }
