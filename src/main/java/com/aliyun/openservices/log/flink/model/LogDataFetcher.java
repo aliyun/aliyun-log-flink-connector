@@ -98,7 +98,7 @@ public class LogDataFetcher {
 
 
     public LogDataFetcher(SourceFunction.SourceContext<SourceRecord> sourceContext,
-                          RuntimeContext runtimeContext,
+                          RuntimeContext context,
                           String project,
                           List<String> logstores,
                           Pattern logstorePattern,
@@ -109,13 +109,13 @@ public class LogDataFetcher {
                           AssignerWithPeriodicWatermarks<SourceRecord> periodicWatermarkAssigner) {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
-        this.runtimeContext = runtimeContext;
-        this.totalNumberOfSubtasks = runtimeContext.getNumberOfParallelSubtasks();
-        this.indexOfThisSubtask = runtimeContext.getIndexOfThisSubtask();
+        this.runtimeContext = context;
+        this.totalNumberOfSubtasks = context.getNumberOfParallelSubtasks();
+        this.indexOfThisSubtask = context.getIndexOfThisSubtask();
         this.checkpointLock = sourceContext.getCheckpointLock();
         this.shardAssigner = shardAssigner;
         this.subscribedShardsState = new ArrayList<>();
-        this.shardConsumersExecutor = createThreadPool(runtimeContext.getTaskNameWithSubtasks());
+        this.shardConsumersExecutor = createThreadPool(context.getTaskNameWithSubtasks());
         this.error = new AtomicReference<>();
         this.project = project;
         this.logClient = logClient;
@@ -283,16 +283,16 @@ public class LogDataFetcher {
     /**
      * Register a new subscribed shard state.
      *
-     * @param shardHandle the new shard state that this fetcher is to be subscribed to
+     * @param shard the new shard state that this fetcher is to be subscribed to
      */
-    public int registerNewSubscribedShardState(LogstoreShardMeta shardHandle, String offset) {
-        String logstore = shardHandle.getLogstore();
+    public int registerNewSubscribedShard(LogstoreShardMeta shard, String offset) {
+        String logstore = shard.getLogstore();
         if (!subscribedLogstores.contains(logstore)) {
             subscribedLogstores.add(logstore);
             createConsumerGroupIfNotExist(logstore);
         }
         synchronized (checkpointLock) {
-            subscribedShardsState.add(new LogstoreShardState(shardHandle, offset));
+            subscribedShardsState.add(new LogstoreShardState(shard, offset));
             int shardStateIndex = subscribedShardsState.size() - 1;
 
             // track all discovered shards for watermark determination
@@ -357,7 +357,9 @@ public class LogDataFetcher {
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
             if (!shardState.isIdle()) {
-                createConsumerForShard(index, shardState.getShardMeta());
+                LogstoreShardMeta shardMeta = shardState.getShardMeta();
+                LOG.info("Start consumer for shard [{}]", shardMeta.getId());
+                createConsumerForShard(index, shardMeta);
             }
         }
 
@@ -383,7 +385,7 @@ public class LogDataFetcher {
         while (running) {
             List<LogstoreShardMeta> newShardsDueToResharding = discoverNewShardsToSubscribe();
             for (LogstoreShardMeta shard : newShardsDueToResharding) {
-                int newStateIndex = registerNewSubscribedShardState(shard, null);
+                int newStateIndex = registerNewSubscribedShard(shard, null);
                 LOG.info("discover new shard: {}, task: {}, total task: {}",
                         shard.toString(), indexOfThisSubtask, totalNumberOfSubtasks);
                 createConsumerForShard(newStateIndex, shard);
