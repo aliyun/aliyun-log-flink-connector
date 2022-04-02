@@ -13,12 +13,12 @@ public class LogstoreShardState {
         this.offset = offset;
     }
 
-    public LogstoreShardMeta getShardMeta() {
-        return shardMeta;
-    }
-
     public void setShardMeta(LogstoreShardMeta shardMeta) {
         this.shardMeta = shardMeta;
+    }
+
+    public LogstoreShardMeta getShardMeta() {
+        return shardMeta;
     }
 
     public String getOffset() {

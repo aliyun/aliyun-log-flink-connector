@@ -70,10 +70,10 @@ public class LogstoreShardMeta implements Serializable {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
 
-        LogstoreShardMeta handle = (LogstoreShardMeta) o;
+        LogstoreShardMeta shardMeta = (LogstoreShardMeta) o;
 
-        if (shardId != handle.shardId) return false;
-        return Objects.equals(logstore, handle.logstore);
+        if (shardId != shardMeta.shardId) return false;
+        return Objects.equals(logstore, shardMeta.logstore);
     }
 
     @Override
@@ -85,7 +85,7 @@ public class LogstoreShardMeta implements Serializable {
 
     @Override
     public String toString() {
-        return "LogstoreShardHandle{" +
+        return "LogstoreShardMeta{" +
                 "logstore='" + logstore + '\'' +
                 ", shardId=" + shardId +
                 ", shardStatus='" + shardStatus + '\'' +
