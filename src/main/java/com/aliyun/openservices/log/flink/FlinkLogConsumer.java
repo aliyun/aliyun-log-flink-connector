@@ -151,7 +151,6 @@ public class FlinkLogConsumer extends RichParallelSourceFunction<SourceRecord> i
     @Override
     public void run(SourceContext<SourceRecord> sourceContext) throws Exception {
         final RuntimeContext ctx = getRuntimeContext();
-        LOG.debug("NumberOfTotalTask={}, IndexOfThisSubtask={}", ctx.getNumberOfParallelSubtasks(), ctx.getIndexOfThisSubtask());
         createClientIfNeeded(ctx.getIndexOfThisSubtask());
         LogDataFetcher fetcher = new LogDataFetcher(sourceContext,
                 ctx, project,
@@ -227,18 +226,18 @@ public class FlinkLogConsumer extends RichParallelSourceFunction<SourceRecord> i
                     strb, context.getCheckpointId(), context.getCheckpointTimestamp());
         }
         for (Map.Entry<LogstoreShardMeta, String> entry : snapshotState.entrySet()) {
-            updateState(entry.getKey(), entry.getValue());
+            updateCursorState(entry.getKey(), entry.getValue());
         }
     }
 
-    private void updateState(LogstoreShardMeta shardHandle, String cursor) throws Exception {
-        cursorStateForCheckpoint.add(Tuple2.of(shardHandle, cursor));
+    private void updateCursorState(LogstoreShardMeta shardMeta, String cursor) throws Exception {
+        cursorStateForCheckpoint.add(Tuple2.of(shardMeta, cursor));
         if (cursor != null && consumerGroup != null && checkpointMode == CheckpointMode.ON_CHECKPOINTS) {
             logClient.updateCheckpoint(project,
-                    shardHandle.getLogstore(),
+                    shardMeta.getLogstore(),
                     consumerGroup,
-                    shardHandle.getShardId(),
-                    shardHandle.isReadOnly(),
+                    shardMeta.getShardId(),
+                    shardMeta.isReadOnly(),
                     cursor);
         }
     }
