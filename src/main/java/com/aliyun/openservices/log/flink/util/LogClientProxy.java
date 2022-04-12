@@ -209,7 +209,7 @@ public class LogClientProxy implements Serializable {
     public void close() {
         if (client != null) {
             executor.cancel();
-            client.shutdown();
+//            client.shutdown();
         }
     }
 }
