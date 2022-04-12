@@ -5,12 +5,14 @@ public class ProducerConfig {
     public static final long DEFAULT_LINGER_MS = 3000;
     public static final int DEFAULT_IO_THREAD_COUNT = Math.max(
             Runtime.getRuntime().availableProcessors() / 2, 1);
-    public static final int DEFAULT_TOTAL_SIZE_IN_BYTES = 100 * 1024 * 1024;
-    public static final int DEFAULT_LOG_GROUP_SIZE = 1024 * 1024;
-    public static final int MAX_LOG_GROUP_SIZE = 5 * 1024 * 1024;
-    public static final int DEFAULT_MAX_LOG_GROUP_LINES = 2000;
+    public static final int DEFAULT_TOTAL_SIZE_IN_BYTES = 200 * 1024 * 1024;
+    public static final int DEFAULT_LOG_GROUP_SIZE = 3 * 1024 * 1024;
+    public static final int MAX_LOG_GROUP_SIZE = 8 * 1024 * 1024;
+    public static final int DEFAULT_MAX_LOG_GROUP_LINES = 5000;
     public static final int MAX_LOG_GROUP_LINES = 40960;
     public static final int DEFAULT_PRODUCER_QUEUE_SIZE = 4096;
+    public static final int DEFAULT_BUCKETS = 64;
+    public static final boolean DEFAULT_ADJUST_SHARD_HASH = true;
 
     private int totalSizeInBytes;
     private int logGroupSize;
@@ -23,6 +25,8 @@ public class ProducerConfig {
     private String logstore;
     private String accessKeyId;
     private String accessKeySecret;
+    private boolean adjustShardHash;
+    private int buckets;
 
     public int getLogGroupSize() {
         return logGroupSize;
@@ -140,6 +144,29 @@ public class ProducerConfig {
             throw new IllegalArgumentException("accessKeySecret cannot be null");
         }
         this.accessKeySecret = accessKeySecret;
+    }
+
+    public boolean isAdjustShardHash() {
+        return adjustShardHash;
+    }
+
+    public void setAdjustShardHash(boolean adjustShardHash) {
+        this.adjustShardHash = adjustShardHash;
+    }
+
+    public int getBuckets() {
+        return buckets;
+    }
+
+    public void setBuckets(int buckets) {
+        if (!validateBuckets(buckets)) {
+            throw new IllegalArgumentException("buckets must be a power of 2, but was " + buckets);
+        }
+        this.buckets = buckets;
+    }
+
+    private static boolean validateBuckets(int number) {
+        return number > 0 && ((number & (number - 1)) == 0);
     }
 
     @Override
