@@ -6,9 +6,9 @@ import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.ShardAssigner;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -203,8 +203,8 @@ public class LogDataFetcher<T> {
     }
 
     private void createConsumerGroupIfNotExist(String logstore) {
-        if (StringUtils.isBlank(consumerGroup)) {
-            LOG.info("Consumer group is blank: [{}]", consumerGroup);
+        if (StringUtils.isNullOrWhitespaceOnly(consumerGroup)) {
+            LOG.info("Consumer group is empty: [{}]", consumerGroup);
             return;
         }
         boolean exist = false;
