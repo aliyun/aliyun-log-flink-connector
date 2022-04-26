@@ -174,6 +174,7 @@ public class ShardConsumer<T> implements Runnable {
                     adjustFetchFrequency(response.getRawSize(), processingTimeMs);
                     continue;
                 }
+                saveOffset(shardMeta, nextCursor);
                 if ((cursor.equals(nextCursor) && isReadOnly)
                         || cursor.equals(stopCursor)) {
                     LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", shardMeta.getId(), isReadOnly, stopCursor);
@@ -236,6 +237,14 @@ public class ShardConsumer<T> implements Runnable {
             }
         }
         fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
+        if (committer != null) {
+            committer.updateCheckpoint(shard, nextCursor, isReadOnly);
+        }
+    }
+
+    private void saveOffset(LogstoreShardMeta shard,
+                            String nextCursor) {
+        fetcher.updateState(subscribedShardStateIndex, nextCursor);
         if (committer != null) {
             committer.updateCheckpoint(shard, nextCursor, isReadOnly);
         }
