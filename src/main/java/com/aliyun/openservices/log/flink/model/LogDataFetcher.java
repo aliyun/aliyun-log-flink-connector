@@ -8,6 +8,7 @@ import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -202,6 +203,10 @@ public class LogDataFetcher<T> {
     }
 
     private void createConsumerGroupIfNotExist(String logstore) {
+        if (StringUtils.isNullOrWhitespaceOnly(consumerGroup)) {
+            LOG.info("Consumer group is empty: [{}]", consumerGroup);
+            return;
+        }
         boolean exist = false;
         try {
             // TODO add get consumer group API
@@ -355,6 +360,15 @@ public class LogDataFetcher<T> {
     void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor) {
         synchronized (checkpointLock) {
             sourceContext.collectWithTimestamp(record, recordTimestamp);
+            LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
+            if (state != null) {
+                state.setOffset(cursor);
+            }
+        }
+    }
+
+    void updateState(int shardStateIndex, String cursor) {
+        synchronized (checkpointLock) {
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
             if (state != null) {
                 state.setOffset(cursor);
