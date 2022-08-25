@@ -18,6 +18,8 @@ public class ShardConsumer<T> implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
 
     private static final int FORCE_SLEEP_THRESHOLD = 256 * 1024;
+    private static final String ERR_SHARD_NOT_EXIST = "ShardNotExist";
+    private static final String ERR_INVALID_CURSOR = "InvalidCursor";
 
     private final LogDataFetcher<T> fetcher;
     private final LogDeserializationSchema<T> deserializer;
@@ -139,15 +141,15 @@ public class ShardConsumer<T> implements Runnable {
                 } catch (LogException ex) {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
                     String errorCode = ex.GetErrorCode();
-                    if ("ShardNotExist".equals(errorCode)) {
+                    if (ERR_SHARD_NOT_EXIST.equalsIgnoreCase(errorCode)) {
                         // The shard has been deleted
                         LOG.warn("The shard {} already not exist, project {} logstore {}", shardId, logProject, logstore);
                         break;
                     }
                     // TODO PullData will never throw InvalidCursor
-                    if ("InvalidCursor".equalsIgnoreCase(errorCode)
+                    if (ERR_INVALID_CURSOR.equalsIgnoreCase(errorCode)
                             && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
-                        LOG.warn("Got invalid cursor error, start from default position {}", defaultPosition);
+                        LOG.warn("Cursor is invalid {}, start from default position {}", cursor, defaultPosition);
                         cursor = findInitialCursor(logstore, defaultPosition, shardId);
                         continue;
                     }
@@ -159,22 +161,16 @@ public class ShardConsumer<T> implements Runnable {
                 if (response == null) {
                     continue;
                 }
-                long processingTimeMs;
                 String nextCursor = response.getNextCursor();
                 if (response.getCount() > 0) {
-                    long processingStartTimeMs = System.currentTimeMillis();
-                    processRecordsAndSaveOffset(
-                            response.getLogGroups(),
-                            cursor,
-                            shardMeta,
-                            nextCursor);
-                    processingTimeMs = System.currentTimeMillis() - processingStartTimeMs;
-                    LOG.debug("Processing records of shard {} cost {} ms.", shardId, processingTimeMs);
+                    long startTime = System.currentTimeMillis();
+                    processRecords(response.getLogGroups(), cursor, shardMeta, nextCursor);
+                    long processTime = System.currentTimeMillis() - startTime;
+                    LOG.debug("Processing shard {} records cost {} ms.", shardId, processTime);
                     cursor = nextCursor;
-                    adjustFetchFrequency(response.getRawSize(), processingTimeMs);
+                    adjustFetchFrequency(response.getRawSize(), processTime);
                     continue;
                 }
-                saveOffset(shardMeta, nextCursor);
                 if ((cursor.equals(nextCursor) && isReadOnly)
                         || cursor.equals(stopCursor)) {
                     LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", shardMeta.getId(), isReadOnly, stopCursor);
@@ -183,7 +179,7 @@ public class ShardConsumer<T> implements Runnable {
                 adjustFetchFrequency(response.getRawSize(), 0);
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
-            fetcher.onShardFinished(shardMeta.getId());
+            fetcher.markFinished(shardMeta.getId());
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);
@@ -221,10 +217,10 @@ public class ShardConsumer<T> implements Runnable {
         isRunning = false;
     }
 
-    private void processRecordsAndSaveOffset(List<LogGroupData> records,
-                                             String cursor,
-                                             LogstoreShardMeta shard,
-                                             String nextCursor) {
+    private void processRecords(List<LogGroupData> records,
+                                String cursor,
+                                LogstoreShardMeta shard,
+                                String nextCursor) {
         PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
         final T value = deserializer.deserialize(record);
         long timestamp = System.currentTimeMillis();
@@ -237,14 +233,6 @@ public class ShardConsumer<T> implements Runnable {
             }
         }
         fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
-        if (committer != null) {
-            committer.updateCheckpoint(shard, nextCursor, isReadOnly);
-        }
-    }
-
-    private void saveOffset(LogstoreShardMeta shard,
-                            String nextCursor) {
-        fetcher.updateState(subscribedShardStateIndex, nextCursor);
         if (committer != null) {
             committer.updateCheckpoint(shard, nextCursor, isReadOnly);
         }

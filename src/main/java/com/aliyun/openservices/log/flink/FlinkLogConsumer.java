@@ -161,9 +161,14 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     @Override
     public void cancel() {
         running = false;
+        LogDataFetcher<T> fetcher = this.fetcher;
         if (fetcher != null) {
-            fetcher.cancel();
-            LOG.warn("Log fetcher has been canceled");
+            try {
+                // interrupt the fetcher of any work
+                fetcher.shutdownFetcher();
+            } catch (Exception e) {
+                LOG.warn("Error while closing data fetcher", e);
+            }
         }
     }
 
