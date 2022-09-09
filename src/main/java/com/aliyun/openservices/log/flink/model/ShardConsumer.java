@@ -183,7 +183,7 @@ public class ShardConsumer<T> implements Runnable {
                 adjustFetchFrequency(response.getRawSize(), 0);
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
-            fetcher.finish(shardMeta.getId());
+            fetcher.complete(shardMeta.getId());
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);

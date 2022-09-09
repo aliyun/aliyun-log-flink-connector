@@ -372,7 +372,7 @@ public class LogDataFetcher<T> {
         }
     }
 
-    void finish(String shardId) {
+    void complete(String shardId) {
         int active = numberOfActiveShards.decrementAndGet();
         LOG.warn("Shard [{}] is finished, active {}.", shardId, active);
         consumerCache.remove(shardId);
