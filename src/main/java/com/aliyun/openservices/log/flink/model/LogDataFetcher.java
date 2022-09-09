@@ -1,7 +1,6 @@
 package com.aliyun.openservices.log.flink.model;
 
 import com.aliyun.openservices.log.common.Shard;
-import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.ShardAssigner;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
@@ -19,11 +18,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,7 +46,6 @@ public class LogDataFetcher<T> {
     private final AtomicInteger numberOfActiveShards = new AtomicInteger(0);
     private final AtomicReference<Throwable> error;
     private final LogClientProxy logClient;
-    private volatile Thread mainThread;
     private volatile boolean running = true;
     private volatile List<LogstoreShardState> subscribedShardsState;
     private final String project;
@@ -55,10 +55,11 @@ public class LogDataFetcher<T> {
     private long commitInterval;
     private Map<String, ShardConsumer<T>> consumerCache;
     private final Pattern logstorePattern;
-    private List<String> logstores;
-    private Set<String> subscribedLogstores;
+    private final List<String> logstores;
+    private final Set<String> subscribedLogstores;
     private final ShardAssigner shardAssigner;
     private boolean exitAfterAllShardFinished = false;
+    private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
                           RuntimeContext context,
@@ -263,7 +264,6 @@ public class LogDataFetcher<T> {
         if (!running) {
             return;
         }
-        this.mainThread = Thread.currentThread();
         startCommitThreadIfNeeded();
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
@@ -273,7 +273,7 @@ public class LogDataFetcher<T> {
                 createConsumerForShard(index, shardMeta);
             }
         }
-        final long discoveryIntervalMs = LogUtil.getDiscoveryIntervalMs(configProps);
+        final long discoveryIntervalMillis = LogUtil.getDiscoveryIntervalMs(configProps);
         if (numberOfActiveShards.get() == 0) {
             LOG.info("No shards were assigned to this task {}, mark idle", indexOfThisSubtask);
             sourceContext.markAsTemporarilyIdle();
@@ -292,21 +292,28 @@ public class LogDataFetcher<T> {
                     break;
                 }
             }
-            if (running && discoveryIntervalMs > 0) {
+            if (running && discoveryIntervalMillis != 0) {
                 try {
-                    Thread.sleep(discoveryIntervalMs);
-                } catch (InterruptedException iex) {
-                    // the sleep may be interrupted by shutdownFetcher()
+                    cancelFuture.get(discoveryIntervalMillis, TimeUnit.MILLISECONDS);
+                    LOG.debug("Cancelled discovery");
+                } catch (TimeoutException iex) {
+                    // timeout is expected when fetcher is not cancelled
                 }
             }
         }
-        stopBackgroundThreads();
-        awaitTermination();
+
+        // make sure all resources have been terminated before leaving
+        try {
+            awaitTermination();
+        } catch (InterruptedException ie) {
+            // If there is an original exception, preserve it, since that's more important/useful.
+            this.error.compareAndSet(null, ie);
+        }
+
+        // any error thrown in the shard consumer threads will be thrown to the main thread
         Throwable throwable = this.error.get();
         if (throwable != null) {
-            if (throwable instanceof LogException) {
-                throw (LogException) throwable;
-            } else if (throwable instanceof Exception) {
+            if (throwable instanceof Exception) {
                 throw (Exception) throwable;
             } else if (throwable instanceof Error) {
                 throw (Error) throwable;
@@ -331,29 +338,20 @@ public class LogDataFetcher<T> {
         LOG.warn("LogDataFetcher exit awaitTermination");
     }
 
-    public void cancel() {
+    public void shutdownFetcher() {
         running = false;
-        if (mainThread != null) {
-            // the main thread may be sleeping for the discovery interval
-            mainThread.interrupt();
-        }
-    }
-
-    private void stopAllConsumers() {
         LOG.warn("Stopping all consumers..");
         for (ShardConsumer<T> consumer : consumerCache.values()) {
             consumer.stop();
         }
-    }
 
-    private void stopBackgroundThreads() {
-        stopAllConsumers();
+        cancelFuture.complete(null);
+
         LOG.warn("Shutting down the shard consumer threads of subtask {}", indexOfThisSubtask);
         shardConsumersExecutor.shutdownNow();
         if (autoCommitter != null) {
             LOG.info("Stopping checkpoint committer thread.");
-            autoCommitter.shutdown();
-            autoCommitter.interrupt();
+            autoCommitter.cancel();
         }
     }
 
@@ -367,25 +365,16 @@ public class LogDataFetcher<T> {
         }
     }
 
-    void updateState(int shardStateIndex, String cursor) {
-        synchronized (checkpointLock) {
-            LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
-            if (state != null) {
-                state.setOffset(cursor);
-            }
-        }
-    }
-
     void stopWithError(Throwable throwable) {
         if (this.error.compareAndSet(null, throwable)) {
             LOG.error("Stop fetcher due to exception", throwable);
-            cancel();
+            shutdownFetcher();
         }
     }
 
-    void onShardFinished(String shardId) {
+    void markFinished(String shardId) {
         int active = numberOfActiveShards.decrementAndGet();
-        LOG.warn("Shard [{}] has no more data to read, active {}.", shardId, active);
+        LOG.warn("Shard [{}] is finished, active {}.", shardId, active);
         consumerCache.remove(shardId);
         if (active <= 0) {
             LOG.info("Subtask {} has reached the end of all currently subscribed shards; marking the subtask as temporarily idle ...",

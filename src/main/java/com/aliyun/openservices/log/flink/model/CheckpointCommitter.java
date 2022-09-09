@@ -6,6 +6,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -19,6 +22,7 @@ public class CheckpointCommitter extends Thread {
     private final String project;
     private final String consumerGroup;
     private final Lock lock;
+    private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
 
     CheckpointCommitter(LogClientProxy client,
                         long commitInterval,
@@ -50,10 +54,11 @@ public class CheckpointCommitter extends Thread {
                 LOG.error("Error while committing checkpoint", t);
             }
             try {
-                Thread.sleep(commitInterval);
-            } catch (InterruptedException ex) {
-                LOG.warn("Thread interrupted");
-                break;
+                cancelFuture.get(commitInterval, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException iex) {
+                // timeout is expected when fetcher is not cancelled
+            } catch (Exception ignore) {
+                // should never happen
             }
         }
     }
@@ -92,7 +97,7 @@ public class CheckpointCommitter extends Thread {
         }
     }
 
-    void shutdown() {
+    void cancel() {
         if (!running) {
             return;
         }
@@ -102,6 +107,7 @@ public class CheckpointCommitter extends Thread {
         } catch (final Exception ex) {
             LOG.error("Error while committing checkpoint", ex);
         }
+        cancelFuture.complete(null);
     }
 
     private static class ShardInfo {
