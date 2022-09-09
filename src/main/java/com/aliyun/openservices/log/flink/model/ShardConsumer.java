@@ -13,6 +13,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class ShardConsumer<T> implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
@@ -35,6 +38,7 @@ public class ShardConsumer<T> implements Runnable {
     private volatile boolean isReadOnly = false;
     private volatile boolean isRunning = true;
     private int stopTimeSec = -1;
+    private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
 
     ShardConsumer(LogDataFetcher<T> fetcher,
                   LogDeserializationSchema<T> deserializer,
@@ -179,14 +183,14 @@ public class ShardConsumer<T> implements Runnable {
                 adjustFetchFrequency(response.getRawSize(), 0);
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
-            fetcher.markFinished(shardMeta.getId());
+            fetcher.finish(shardMeta.getId());
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);
         }
     }
 
-    private void adjustFetchFrequency(int responseSize, long processingTimeMs) {
+    private void adjustFetchFrequency(int responseSize, long processingTimeMs) throws Exception {
         long sleepTime = 0;
         if (responseSize <= 1) {
             // Outflow: 1
@@ -201,10 +205,9 @@ public class ShardConsumer<T> implements Runnable {
         if (sleepTime > 0) {
             LOG.debug("Wait {} ms before next fetching", sleepTime);
             try {
-                Thread.sleep(sleepTime);
-            } catch (InterruptedException ex) {
-                LOG.warn("Adjust fetch frequency has been interrupted.");
-                Thread.currentThread().interrupt();
+                cancelFuture.get(sleepTime, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException ex) {
+                // timeout is expected when consumer is not stopped
             }
         }
     }
@@ -215,6 +218,7 @@ public class ShardConsumer<T> implements Runnable {
 
     void stop() {
         isRunning = false;
+        cancelFuture.complete(null);
     }
 
     private void processRecords(List<LogGroupData> records,
