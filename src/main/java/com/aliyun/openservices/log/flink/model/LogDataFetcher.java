@@ -286,11 +286,9 @@ public class LogDataFetcher<T> {
                         shard.toString(), indexOfThisSubtask, totalNumberOfSubtasks);
                 createConsumerForShard(newStateIndex, shard);
             }
-            if (exitAfterAllShardFinished) {
-                if (consumerCache.isEmpty()) {
-                    LOG.info("All shard consumers exited");
-                    break;
-                }
+            if (exitAfterAllShardFinished && consumerCache.isEmpty()) {
+                LOG.info("All shard consumers exited");
+                break;
             }
             if (running && discoveryIntervalMillis != 0) {
                 try {
@@ -341,12 +339,20 @@ public class LogDataFetcher<T> {
     public void shutdownFetcher() {
         running = false;
         LOG.warn("Stopping all consumers..");
+        List<ShardConsumer<T>> consumers = new ArrayList<>();
         for (ShardConsumer<T> consumer : consumerCache.values()) {
-            consumer.stop();
+            consumer.cancel();
+            consumers.add(consumer);
         }
 
         cancelFuture.complete(null);
-
+        for (ShardConsumer<T> consumer : consumers) {
+            try {
+                consumer.waitForIdle();
+            } catch (InterruptedException ex) {
+                LOG.warn("Encountered exception waiting consumer idle.", ex);
+            }
+        }
         LOG.warn("Shutting down the shard consumer threads of subtask {}", indexOfThisSubtask);
         shardConsumersExecutor.shutdownNow();
         if (autoCommitter != null) {

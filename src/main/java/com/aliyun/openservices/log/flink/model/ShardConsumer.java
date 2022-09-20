@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -39,6 +40,7 @@ public class ShardConsumer<T> implements Runnable {
     private volatile boolean isRunning = true;
     private int stopTimeSec = -1;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
+    private final CountDownLatch completed = new CountDownLatch(1);
 
     ShardConsumer(LogDataFetcher<T> fetcher,
                   LogDeserializationSchema<T> deserializer,
@@ -165,6 +167,8 @@ public class ShardConsumer<T> implements Runnable {
                 if (response == null) {
                     continue;
                 }
+                if (!isRunning)
+                    break;
                 String nextCursor = response.getNextCursor();
                 if (response.getCount() > 0) {
                     long startTime = System.currentTimeMillis();
@@ -187,6 +191,8 @@ public class ShardConsumer<T> implements Runnable {
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);
+        } finally {
+            completed.countDown();
         }
     }
 
@@ -213,10 +219,14 @@ public class ShardConsumer<T> implements Runnable {
     }
 
     void markAsReadOnly() {
-        isReadOnly = true;
+        this.isReadOnly = true;
     }
 
-    void stop() {
+    void waitForIdle() throws InterruptedException {
+        completed.await();
+    }
+
+    void cancel() {
         isRunning = false;
         cancelFuture.complete(null);
     }
