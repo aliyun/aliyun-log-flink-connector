@@ -60,6 +60,7 @@ public class LogDataFetcher<T> {
     private final ShardAssigner shardAssigner;
     private boolean exitAfterAllShardFinished = false;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
+    private final MemoryLimiter memoryLimiter;
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
                           RuntimeContext context,
@@ -70,7 +71,8 @@ public class LogDataFetcher<T> {
                           LogDeserializationSchema<T> deserializer,
                           LogClientProxy logClient,
                           CheckpointMode checkpointMode,
-                          ShardAssigner shardAssigner) {
+                          ShardAssigner shardAssigner,
+                          MemoryLimiter memoryLimiter) {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializer = deserializer;
@@ -102,6 +104,7 @@ public class LogDataFetcher<T> {
             // Quit task on all shard reached stop time.
             exitAfterAllShardFinished = true;
         }
+        this.memoryLimiter = memoryLimiter;
     }
 
     private static void validateStopTime(String stopTime) {
@@ -355,7 +358,7 @@ public class LogDataFetcher<T> {
         }
     }
 
-    void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor) {
+    void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor, int dataRawSize) {
         synchronized (checkpointLock) {
             sourceContext.collectWithTimestamp(record, recordTimestamp);
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
@@ -363,6 +366,7 @@ public class LogDataFetcher<T> {
                 state.setOffset(cursor);
             }
         }
+        memoryLimiter.release(dataRawSize);
     }
 
     void stopWithError(Throwable throwable) {

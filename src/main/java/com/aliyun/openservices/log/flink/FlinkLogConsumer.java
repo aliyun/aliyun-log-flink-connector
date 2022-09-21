@@ -5,6 +5,7 @@ import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.flink.model.LogDataFetcher;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
+import com.aliyun.openservices.log.flink.model.MemoryLimiter;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
@@ -51,6 +52,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private Pattern logstorePattern;
     private final CheckpointMode checkpointMode;
     private ShardAssigner shardAssigner = LogDataFetcher.DEFAULT_SHARD_ASSIGNER;
+    private MemoryLimiter memoryLimiter;
 
     @Deprecated
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -60,6 +62,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
         this.logstores = Collections.singletonList(configProps.getProperty(ConfigConstants.LOG_LOGSTORE));
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
+        this.memoryLimiter = new MemoryLimiter(configProps);
     }
 
     public FlinkLogConsumer(String project, List<String> logstores, LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -69,6 +72,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.project = project;
         this.logstores = logstores;
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
+        this.memoryLimiter = new MemoryLimiter(configProps);
     }
 
     public FlinkLogConsumer(String project, String logstore, LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -82,6 +86,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.project = project;
         this.logstorePattern = logstorePattern;
         this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
+        this.memoryLimiter = new MemoryLimiter(configProps);
     }
 
     private String getOrCreateUserAgent(int indexOfSubTask) {
@@ -117,7 +122,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 parser.getString(ConfigConstants.LOG_ACCESSKEYID),
                 parser.getString(ConfigConstants.LOG_ACCESSKEY),
                 getOrCreateUserAgent(indexOfSubTask),
-                retryPolicy);
+                retryPolicy,
+                memoryLimiter);
         if (parser.getBool(ConfigConstants.DIRECT_MODE, false)) {
             logClient.enableDirectMode(project);
         }
@@ -134,9 +140,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         LogDataFetcher<T> fetcher = new LogDataFetcher<>(sourceContext, ctx, project,
                 logstores, logstorePattern,
                 configProps, deserializer,
-                logClient,
-                checkpointMode,
-                shardAssigner);
+                logClient, checkpointMode,
+                shardAssigner, memoryLimiter);
         List<LogstoreShardMeta> newShards = fetcher.discoverNewShardsToSubscribe();
         for (LogstoreShardMeta shard : newShards) {
             String checkpoint = null;

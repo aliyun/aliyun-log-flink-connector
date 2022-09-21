@@ -168,7 +168,7 @@ public class ShardConsumer<T> implements Runnable {
                 String nextCursor = response.getNextCursor();
                 if (response.getCount() > 0) {
                     long startTime = System.currentTimeMillis();
-                    processRecords(response.getLogGroups(), cursor, shardMeta, nextCursor);
+                    processRecords(response.getLogGroups(), cursor, shardMeta, nextCursor, response.getRawSize());
                     long processTime = System.currentTimeMillis() - startTime;
                     LOG.debug("Processing shard {} records cost {} ms.", shardId, processTime);
                     cursor = nextCursor;
@@ -224,7 +224,8 @@ public class ShardConsumer<T> implements Runnable {
     private void processRecords(List<LogGroupData> records,
                                 String cursor,
                                 LogstoreShardMeta shard,
-                                String nextCursor) {
+                                String nextCursor,
+                                int dataRawSize) {
         PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
         final T value = deserializer.deserialize(record);
         long timestamp = System.currentTimeMillis();
@@ -236,7 +237,7 @@ public class ShardConsumer<T> implements Runnable {
                 timestamp = logTimeStamp * 1000;
             }
         }
-        fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
+        fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor, dataRawSize);
         if (committer != null) {
             committer.updateCheckpoint(shard, nextCursor, isReadOnly);
         }

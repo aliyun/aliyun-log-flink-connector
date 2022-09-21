@@ -31,6 +31,7 @@ public class ConfigConstants {
     public static final String MAX_RETRIES_FOR_RETRYABLE_ERROR = "max.retries.for.retryable.error";
     public static final String STOP_TIME = "stop.time";
     public static final String DIRECT_MODE = "direct.mode";
+    public static final String SOURCE_MEMORY_LIMIT = "source.memory-limit";
 
     public static final String TOTAL_SIZE_IN_BYTES = "total.size.in.bytes";
     public static final String LOG_GROUP_MAX_SIZE = "logGroup.max.size";

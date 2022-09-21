@@ -3,6 +3,7 @@ package com.aliyun.openservices.log.flink.internal;
 import com.aliyun.openservices.log.common.LogContent;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.TagContent;
+import com.aliyun.openservices.log.flink.model.MemoryLimiter;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.RetryPolicy;
@@ -50,7 +51,8 @@ public class ProducerImpl implements Producer {
                 producerConfig.getAccessKeyId(),
                 producerConfig.getAccessKeySecret(),
                 "Flink-Connector-producer-" + Consts.FLINK_CONNECTOR_VERSION,
-                retryPolicy);
+                retryPolicy,
+                new MemoryLimiter());
         int maxSizeInBytes = producerConfig.getTotalSizeInBytes();
         this.logGroupSizeThreshold = producerConfig.getLogGroupSize();
         this.logGroupMaxLines = producerConfig.getLogGroupMaxLines();

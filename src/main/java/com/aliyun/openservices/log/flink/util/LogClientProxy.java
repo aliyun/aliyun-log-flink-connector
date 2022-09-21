@@ -9,6 +9,7 @@ import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.common.TagContent;
 import com.aliyun.openservices.log.exception.LogException;
+import com.aliyun.openservices.log.flink.model.MemoryLimiter;
 import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.request.PutLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
@@ -23,6 +24,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 public class LogClientProxy implements Serializable {
@@ -31,15 +34,19 @@ public class LogClientProxy implements Serializable {
 
     private final Client client;
     private final RequestExecutor executor;
+    private final MemoryLimiter memoryLimiter;
+    private final Lock lock = new ReentrantLock();
 
     public LogClientProxy(String endpoint,
                           String accessKeyId,
                           String accessKey,
                           String userAgent,
-                          RetryPolicy retryPolicy) {
+                          RetryPolicy retryPolicy,
+                          MemoryLimiter memoryLimiter) {
         this.client = new Client(endpoint, accessKeyId, accessKey);
         this.client.setUserAgent(userAgent);
         this.executor = new RequestExecutor(retryPolicy);
+        this.memoryLimiter = memoryLimiter;
     }
 
     public void enableDirectMode(String project) {
@@ -95,9 +102,19 @@ public class LogClientProxy implements Serializable {
     }
 
     public PullLogsResponse pullLogs(String project, String logstore, int shard, String cursor, String stopCursor, int count)
-            throws LogException {
+            throws LogException, InterruptedException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
-        return executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
+        if (!memoryLimiter.isEnabled()) {
+            return executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
+        }
+        lock.lockInterruptibly();
+        try {
+            PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
+            memoryLimiter.acquire(response.getRawSize());
+            return response;
+        } finally {
+            lock.unlock();
+        }
     }
 
     @VisibleForTesting
