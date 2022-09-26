@@ -36,6 +36,13 @@ public class MemoryLimiter implements Serializable {
         return isEnabled;
     }
 
+    public boolean tryAcquire(int permits) {
+        if (semaphore != null) {
+            return semaphore.tryAcquire(permits);
+        }
+        return true;
+    }
+
     public void acquire(int permits) throws InterruptedException {
         if (semaphore != null) {
             semaphore.acquire(permits);

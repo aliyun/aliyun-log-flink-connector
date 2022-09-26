@@ -7,7 +7,6 @@ import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
-import com.aliyun.openservices.log.response.PullLogsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -137,11 +136,12 @@ public class ShardConsumer<T> implements Runnable {
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             String stopCursor = getStopCursor(logstore, shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
+            ResultHandler<T> resultHandler = new ResultHandler<>(shardMeta, this);
             while (isRunning) {
-                PullLogsResponse response;
+                LogClientProxy.PullResult response;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
-                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, stopCursor, fetchSize);
+                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, stopCursor, fetchSize, resultHandler);
                 } catch (LogException ex) {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
                     String errorCode = ex.GetErrorCode();
@@ -167,12 +167,8 @@ public class ShardConsumer<T> implements Runnable {
                 }
                 String nextCursor = response.getNextCursor();
                 if (response.getCount() > 0) {
-                    long startTime = System.currentTimeMillis();
-                    processRecords(response.getLogGroups(), cursor, shardMeta, nextCursor, response.getRawSize());
-                    long processTime = System.currentTimeMillis() - startTime;
-                    LOG.debug("Processing shard {} records cost {} ms.", shardId, processTime);
                     cursor = nextCursor;
-                    adjustFetchFrequency(response.getRawSize(), processTime);
+                    adjustFetchFrequency(response.getRawSize());
                     continue;
                 }
                 if ((cursor.equals(nextCursor) && isReadOnly)
@@ -180,7 +176,7 @@ public class ShardConsumer<T> implements Runnable {
                     LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", shardMeta.getId(), isReadOnly, stopCursor);
                     break;
                 }
-                adjustFetchFrequency(response.getRawSize(), 0);
+                adjustFetchFrequency(response.getRawSize());
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
             fetcher.complete(shardMeta.getId());
@@ -190,7 +186,7 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
-    private void adjustFetchFrequency(int responseSize, long processingTimeMs) throws Exception {
+    private void adjustFetchFrequency(int responseSize) throws Exception {
         long sleepTime = 0;
         if (responseSize <= 1) {
             // Outflow: 1
@@ -201,7 +197,6 @@ public class ShardConsumer<T> implements Runnable {
         if (sleepTime < fetchIntervalMs) {
             sleepTime = fetchIntervalMs;
         }
-        sleepTime -= processingTimeMs;
         if (sleepTime > 0) {
             LOG.debug("Wait {} ms before next fetching", sleepTime);
             try {
@@ -221,11 +216,11 @@ public class ShardConsumer<T> implements Runnable {
         cancelFuture.complete(null);
     }
 
-    private void processRecords(List<LogGroupData> records,
-                                String cursor,
-                                LogstoreShardMeta shard,
-                                String nextCursor,
-                                int dataRawSize) {
+    public void processRecords(List<LogGroupData> records,
+                               String cursor,
+                               LogstoreShardMeta shard,
+                               String nextCursor,
+                               int dataRawSize) {
         PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
         final T value = deserializer.deserialize(record);
         long timestamp = System.currentTimeMillis();
