@@ -7,8 +7,8 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.aliyun.openservices</groupId>
-    <artifactId>flink-log-connector</artifactId>
-    <version>0.1.34-SNAPSHOT</version>
+    <artifactId>flink-log-connector-experimental</artifactId>
+    <version>0.1.37-SNAPSHOT</version>
     <name>flink log connector</name>
     <url>http://www.aliyun.com</url>
     <description>Flink Connector for Aliyun Log Service</description>
