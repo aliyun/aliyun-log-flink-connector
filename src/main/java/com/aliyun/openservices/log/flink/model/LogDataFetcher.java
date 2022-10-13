@@ -18,10 +18,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -60,6 +63,8 @@ public class LogDataFetcher<T> {
     private final ShardAssigner shardAssigner;
     private boolean exitAfterAllShardFinished = false;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
+    private final BlockingQueue<SourceRecord<T>> queue = new LinkedBlockingDeque<>();
+    private RecordEmitter<T> recordEmitter;
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
                           RuntimeContext context,
@@ -102,6 +107,67 @@ public class LogDataFetcher<T> {
             // Quit task on all shard reached stop time.
             exitAfterAllShardFinished = true;
         }
+    }
+
+    public static class RecordEmitter<T> implements Runnable {
+        private BlockingQueue<SourceRecord<T>> queue;
+        private LogDataFetcher<T> fetcher;
+        private CheckpointCommitter committer;
+        private CountDownLatch latch = new CountDownLatch(1);
+
+        public RecordEmitter(BlockingQueue<SourceRecord<T>> queue,
+                             LogDataFetcher<T> fetcher,
+                             CheckpointCommitter committer) {
+            this.queue = queue;
+            this.fetcher = fetcher;
+            this.committer = committer;
+        }
+
+        public void addRecord(SourceRecord<T> record) {
+            while (fetcher.isRunning()) {
+                try {
+                    if (queue.offer(record, 10, TimeUnit.MILLISECONDS)) {
+                        return;
+                    }
+                } catch (InterruptedException ex) {
+                    LOG.error("Error adding record {}", ex.getMessage());
+                    break;
+                }
+            }
+        }
+
+        @Override
+        public void run() {
+            while (fetcher.isRunning()) {
+                try {
+                    SourceRecord<T> record = queue.poll(10, TimeUnit.MILLISECONDS);
+                    if (record == null) {
+                        continue;
+                    }
+                    fetcher.emitRecordAndUpdateState(
+                            record.getRecord(), record.getTimestamp(), record.getSubscribedShardStateIndex(),
+                            record.getNextCursor());
+                    if (committer != null) {
+                        committer.updateCheckpoint(record.getShard(), record.getNextCursor(), record.isReadOnly());
+                    }
+                } catch (InterruptedException e) {
+                    LOG.error("Fail to poll record {}", e.getMessage());
+                    break;
+                } catch (Exception ex) {
+                    LOG.error("Error emitting records", ex);
+                }
+            }
+            latch.countDown();
+            LOG.warn("Record emitter exited");
+        }
+
+        public void waitForIdle() throws InterruptedException {
+            latch.wait();
+        }
+    }
+
+    public boolean isRunning() {
+        return running && !Thread.interrupted();
     }
 
     private static void validateStopTime(String stopTime) {
@@ -250,7 +316,7 @@ public class LogDataFetcher<T> {
     }
 
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
-        ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, autoCommitter);
+        ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, recordEmitter);
         if (!running) {
             // Do not create consumer any more
             return;
@@ -265,6 +331,8 @@ public class LogDataFetcher<T> {
             return;
         }
         startCommitThreadIfNeeded();
+        recordEmitter = new RecordEmitter<>(queue, this, autoCommitter);
+        shardConsumersExecutor.submit(recordEmitter);
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
             if (!shardState.isEndReached()) {
@@ -339,17 +407,15 @@ public class LogDataFetcher<T> {
     public void shutdownFetcher() {
         running = false;
         LOG.warn("Stopping all consumers..");
-        List<ShardConsumer<T>> consumers = new ArrayList<>();
         for (ShardConsumer<T> consumer : consumerCache.values()) {
             consumer.cancel();
-            consumers.add(consumer);
         }
 
         cancelFuture.complete(null);
-        for (ShardConsumer<T> consumer : consumers) {
+        if (recordEmitter != null) {
             try {
-                consumer.waitForIdle();
-            } catch (InterruptedException ex) {
+                recordEmitter.waitForIdle();
+            } catch (Exception ex) {
                 LOG.warn("Encountered exception waiting consumer idle.", ex);
             }
         }

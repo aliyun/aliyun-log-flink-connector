@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -35,19 +34,18 @@ public class ShardConsumer<T> implements Runnable {
     private String initialPosition;
     private final String defaultPosition;
     private final String consumerGroup;
-    private final CheckpointCommitter committer;
     private volatile boolean isReadOnly = false;
     private volatile boolean isRunning = true;
     private int stopTimeSec = -1;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
-    private final CountDownLatch completed = new CountDownLatch(1);
+    private final LogDataFetcher.RecordEmitter<T> recordEmitter;
 
     ShardConsumer(LogDataFetcher<T> fetcher,
                   LogDeserializationSchema<T> deserializer,
                   int subscribedShardStateIndex,
                   Properties configProps,
                   LogClientProxy logClient,
-                  CheckpointCommitter committer) {
+                  LogDataFetcher.RecordEmitter<T> recordEmitter) {
         this.fetcher = fetcher;
         this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
@@ -55,7 +53,7 @@ public class ShardConsumer<T> implements Runnable {
         this.fetchSize = LogUtil.getNumberPerFetch(configProps);
         this.fetchIntervalMs = LogUtil.getFetchIntervalMillis(configProps);
         this.logClient = logClient;
-        this.committer = committer;
+        this.recordEmitter = recordEmitter;
         this.logProject = fetcher.getProject();
         this.initialPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
@@ -191,8 +189,6 @@ public class ShardConsumer<T> implements Runnable {
         } catch (Throwable t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);
-        } finally {
-            completed.countDown();
         }
     }
 
@@ -222,10 +218,6 @@ public class ShardConsumer<T> implements Runnable {
         this.isReadOnly = true;
     }
 
-    void waitForIdle() throws InterruptedException {
-        completed.await();
-    }
-
     void cancel() {
         isRunning = false;
         cancelFuture.complete(null);
@@ -246,9 +238,8 @@ public class ShardConsumer<T> implements Runnable {
                 timestamp = logTimeStamp * 1000;
             }
         }
-        fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor);
-        if (committer != null) {
-            committer.updateCheckpoint(shard, nextCursor, isReadOnly);
-        }
+        SourceRecord<T> sourceRecord = new SourceRecord<>(
+                value, timestamp, subscribedShardStateIndex, nextCursor, shard, isReadOnly);
+        recordEmitter.addRecord(sourceRecord);
     }
 }
