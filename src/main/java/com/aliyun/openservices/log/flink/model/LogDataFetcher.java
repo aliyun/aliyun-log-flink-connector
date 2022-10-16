@@ -7,6 +7,7 @@ import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.util.PropertiesUtil;
 import org.apache.flink.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -38,6 +39,8 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 public class LogDataFetcher<T> {
     private static final Logger LOG = LoggerFactory.getLogger(LogDataFetcher.class);
     public static final ShardAssigner DEFAULT_SHARD_ASSIGNER = new DefaultShardAssigner();
+    private static final int DEFAULT_QUEUE_SIZE = 1;
+    private static final long DEFAULT_IDLE_INTERVAL = 10;
 
     private final Properties configProps;
     private final LogDeserializationSchema<T> deserializer;
@@ -63,7 +66,7 @@ public class LogDataFetcher<T> {
     private final ShardAssigner shardAssigner;
     private boolean exitAfterAllShardFinished = false;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
-    private final BlockingQueue<SourceRecord<T>> queue = new LinkedBlockingDeque<>();
+    private final BlockingQueue<SourceRecord<T>> queue;
     private RecordEmitter<T> recordEmitter;
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
@@ -107,31 +110,31 @@ public class LogDataFetcher<T> {
             // Quit task on all shard reached stop time.
             exitAfterAllShardFinished = true;
         }
+        this.queue = new LinkedBlockingQueue<>(
+                PropertiesUtil.getInt(configProps, ConfigConstants.SOURCE_QUEUE_SIZE, DEFAULT_QUEUE_SIZE));
     }
 
     public static class RecordEmitter<T> implements Runnable {
-        private BlockingQueue<SourceRecord<T>> queue;
-        private LogDataFetcher<T> fetcher;
-        private CheckpointCommitter committer;
-        private CountDownLatch latch = new CountDownLatch(1);
+        private final BlockingQueue<SourceRecord<T>> queue;
+        private final LogDataFetcher<T> fetcher;
+        private final CheckpointCommitter committer;
+        private final CountDownLatch latch = new CountDownLatch(1);
+        private final long idleInterval;
 
         public RecordEmitter(BlockingQueue<SourceRecord<T>> queue,
                              LogDataFetcher<T> fetcher,
-                             CheckpointCommitter committer) {
+                             CheckpointCommitter committer,
+                             long idleInterval) {
             this.queue = queue;
             this.fetcher = fetcher;
             this.committer = committer;
+            this.idleInterval = idleInterval;
         }
 
-        public void addRecord(SourceRecord<T> record) {
+        public void produce(SourceRecord<T> record) throws InterruptedException {
             while (fetcher.isRunning()) {
-                try {
-                    if (queue.offer(record, 10, TimeUnit.MILLISECONDS)) {
-                        return;
-                    }
-                } catch (InterruptedException ex) {
-                    LOG.error("Error adding record {}", ex.getMessage());
-                    break;
+                if (queue.offer(record, idleInterval, TimeUnit.MILLISECONDS)) {
+                    return;
                 }
             }
         }
@@ -140,7 +143,7 @@ public class LogDataFetcher<T> {
         public void run() {
             while (fetcher.isRunning()) {
                 try {
-                    SourceRecord<T> record = queue.poll(10, TimeUnit.MILLISECONDS);
+                    SourceRecord<T> record = queue.poll(idleInterval, TimeUnit.MILLISECONDS);
                     if (record == null) {
                         continue;
                     }
@@ -150,11 +153,9 @@ public class LogDataFetcher<T> {
                     if (committer != null) {
                         committer.updateCheckpoint(record.getShard(), record.getNextCursor(), record.isReadOnly());
                     }
-                } catch (InterruptedException e) {
-                    LOG.error("Fail to poll record {}", e.getMessage());
-                    break;
                 } catch (Exception ex) {
-                    LOG.error("Error emitting records", ex);
+                    LOG.error("Fail to poll record {}", ex.getMessage(), ex);
+                    break;
                 }
             }
             latch.countDown();
@@ -331,7 +332,9 @@ public class LogDataFetcher<T> {
             return;
         }
         startCommitThreadIfNeeded();
-        recordEmitter = new RecordEmitter<>(queue, this, autoCommitter);
+        long idleInterval = PropertiesUtil.getLong(configProps, ConfigConstants.SOURCE_IDLE_INTERVAL, DEFAULT_IDLE_INTERVAL);
+        LOG.info("Starting record emitter, idle interval {}", idleInterval);
+        recordEmitter = new RecordEmitter<>(queue, this, autoCommitter, idleInterval);
         shardConsumersExecutor.submit(recordEmitter);
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);

@@ -226,7 +226,7 @@ public class ShardConsumer<T> implements Runnable {
     private void processRecords(List<LogGroupData> records,
                                 String cursor,
                                 LogstoreShardMeta shard,
-                                String nextCursor) {
+                                String nextCursor) throws InterruptedException {
         PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
         final T value = deserializer.deserialize(record);
         long timestamp = System.currentTimeMillis();
@@ -240,6 +240,6 @@ public class ShardConsumer<T> implements Runnable {
         }
         SourceRecord<T> sourceRecord = new SourceRecord<>(
                 value, timestamp, subscribedShardStateIndex, nextCursor, shard, isReadOnly);
-        recordEmitter.addRecord(sourceRecord);
+        recordEmitter.produce(sourceRecord);
     }
 }
