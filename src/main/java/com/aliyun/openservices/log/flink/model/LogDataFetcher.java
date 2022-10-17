@@ -154,8 +154,10 @@ public class LogDataFetcher<T> {
                         committer.updateCheckpoint(record.getShard(), record.getNextCursor(), record.isReadOnly());
                     }
                 } catch (Exception ex) {
-                    LOG.error("Fail to poll record {}", ex.getMessage(), ex);
-                    break;
+                    LOG.error("Fail to emit record {}", ex.getMessage(), ex);
+                    latch.countDown();
+                    fetcher.stopWithError(ex);
+                    return;
                 }
             }
             latch.countDown();
