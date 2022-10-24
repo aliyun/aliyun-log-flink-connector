@@ -165,7 +165,7 @@ public class LogDataFetcher<T> {
         }
 
         public void waitForIdle() throws InterruptedException {
-            latch.wait();
+            latch.await();
         }
     }
 
