@@ -66,6 +66,7 @@ public class LogDataFetcher<T> {
     private final ShardAssigner shardAssigner;
     private boolean exitAfterAllShardFinished = false;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
+    private final MemoryLimiter memoryLimiter;
     private final BlockingQueue<SourceRecord<T>> queue;
     private RecordEmitter<T> recordEmitter;
 
@@ -78,7 +79,8 @@ public class LogDataFetcher<T> {
                           LogDeserializationSchema<T> deserializer,
                           LogClientProxy logClient,
                           CheckpointMode checkpointMode,
-                          ShardAssigner shardAssigner) {
+                          ShardAssigner shardAssigner,
+                          MemoryLimiter memoryLimiter) {
         this.sourceContext = sourceContext;
         this.configProps = configProps;
         this.deserializer = deserializer;
@@ -110,6 +112,7 @@ public class LogDataFetcher<T> {
             // Quit task on all shard reached stop time.
             exitAfterAllShardFinished = true;
         }
+        this.memoryLimiter = memoryLimiter;
         this.queue = new LinkedBlockingQueue<>(
                 PropertiesUtil.getInt(configProps, ConfigConstants.SOURCE_QUEUE_SIZE, DEFAULT_QUEUE_SIZE));
     }
@@ -120,15 +123,18 @@ public class LogDataFetcher<T> {
         private final CheckpointCommitter committer;
         private final CountDownLatch latch = new CountDownLatch(1);
         private final long idleInterval;
+        private final MemoryLimiter memoryLimiter;
 
         public RecordEmitter(BlockingQueue<SourceRecord<T>> queue,
                              LogDataFetcher<T> fetcher,
                              CheckpointCommitter committer,
-                             long idleInterval) {
+                             long idleInterval,
+                             MemoryLimiter memoryLimiter) {
             this.queue = queue;
             this.fetcher = fetcher;
             this.committer = committer;
             this.idleInterval = idleInterval;
+            this.memoryLimiter = memoryLimiter;
         }
 
         public void produce(SourceRecord<T> record) throws InterruptedException {
@@ -152,6 +158,9 @@ public class LogDataFetcher<T> {
                             record.getNextCursor());
                     if (committer != null) {
                         committer.updateCheckpoint(record.getShard(), record.getNextCursor(), record.isReadOnly());
+                    }
+                    if (memoryLimiter != null) {
+                        memoryLimiter.release(record.getDataRawSize());
                     }
                 } catch (Exception ex) {
                     LOG.error("Fail to emit record {}", ex.getMessage(), ex);
@@ -336,7 +345,7 @@ public class LogDataFetcher<T> {
         startCommitThreadIfNeeded();
         long idleInterval = PropertiesUtil.getLong(configProps, ConfigConstants.SOURCE_IDLE_INTERVAL, DEFAULT_IDLE_INTERVAL);
         LOG.info("Starting record emitter, idle interval {}", idleInterval);
-        recordEmitter = new RecordEmitter<>(queue, this, autoCommitter, idleInterval);
+        recordEmitter = new RecordEmitter<>(queue, this, autoCommitter, idleInterval, memoryLimiter);
         shardConsumersExecutor.submit(recordEmitter);
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);

@@ -7,15 +7,22 @@ public class SourceRecord<T> {
     private String nextCursor;
     private LogstoreShardMeta shard;
     private boolean isReadOnly;
+    private int dataRawSize;
 
-    public SourceRecord(T record, long timestamp, int subscribedShardStateIndex,
-                        String nextCursor, LogstoreShardMeta shard, boolean isReadOnly) {
+    public SourceRecord(T record,
+                        long timestamp,
+                        int subscribedShardStateIndex,
+                        String nextCursor,
+                        LogstoreShardMeta shard,
+                        boolean isReadOnly,
+                        int dataRawSize) {
         this.record = record;
         this.timestamp = timestamp;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
         this.nextCursor = nextCursor;
         this.shard = shard;
         this.isReadOnly = isReadOnly;
+        this.dataRawSize = dataRawSize;
     }
 
     public T getRecord() {
@@ -64,5 +71,13 @@ public class SourceRecord<T> {
 
     public void setReadOnly(boolean readOnly) {
         isReadOnly = readOnly;
+    }
+
+    public int getDataRawSize() {
+        return dataRawSize;
+    }
+
+    public void setDataRawSize(int dataRawSize) {
+        this.dataRawSize = dataRawSize;
     }
 }
