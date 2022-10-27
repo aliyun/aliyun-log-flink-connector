@@ -7,6 +7,7 @@ import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.util.PropertiesUtil;
 import org.apache.flink.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,10 +19,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -35,6 +39,8 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 public class LogDataFetcher<T> {
     private static final Logger LOG = LoggerFactory.getLogger(LogDataFetcher.class);
     public static final ShardAssigner DEFAULT_SHARD_ASSIGNER = new DefaultShardAssigner();
+    private static final int DEFAULT_QUEUE_SIZE = 1;
+    private static final long DEFAULT_IDLE_INTERVAL = 10;
 
     private final Properties configProps;
     private final LogDeserializationSchema<T> deserializer;
@@ -61,6 +67,8 @@ public class LogDataFetcher<T> {
     private boolean exitAfterAllShardFinished = false;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
     private final MemoryLimiter memoryLimiter;
+    private final BlockingQueue<SourceRecord<T>> queue;
+    private RecordEmitter<T> recordEmitter;
 
     public LogDataFetcher(SourceFunction.SourceContext<T> sourceContext,
                           RuntimeContext context,
@@ -105,6 +113,73 @@ public class LogDataFetcher<T> {
             exitAfterAllShardFinished = true;
         }
         this.memoryLimiter = memoryLimiter;
+        this.queue = new LinkedBlockingQueue<>(
+                PropertiesUtil.getInt(configProps, ConfigConstants.SOURCE_QUEUE_SIZE, DEFAULT_QUEUE_SIZE));
+    }
+
+    public static class RecordEmitter<T> implements Runnable {
+        private final BlockingQueue<SourceRecord<T>> queue;
+        private final LogDataFetcher<T> fetcher;
+        private final CheckpointCommitter committer;
+        private final CountDownLatch latch = new CountDownLatch(1);
+        private final long idleInterval;
+        private final MemoryLimiter memoryLimiter;
+
+        public RecordEmitter(BlockingQueue<SourceRecord<T>> queue,
+                             LogDataFetcher<T> fetcher,
+                             CheckpointCommitter committer,
+                             long idleInterval,
+                             MemoryLimiter memoryLimiter) {
+            this.queue = queue;
+            this.fetcher = fetcher;
+            this.committer = committer;
+            this.idleInterval = idleInterval;
+            this.memoryLimiter = memoryLimiter;
+        }
+
+        public void produce(SourceRecord<T> record) throws InterruptedException {
+            while (fetcher.isRunning()) {
+                if (queue.offer(record, idleInterval, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            }
+        }
+
+        @Override
+        public void run() {
+            while (fetcher.isRunning()) {
+                try {
+                    SourceRecord<T> record = queue.poll(idleInterval, TimeUnit.MILLISECONDS);
+                    if (record == null) {
+                        continue;
+                    }
+                    fetcher.emitRecordAndUpdateState(
+                            record.getRecord(), record.getTimestamp(), record.getSubscribedShardStateIndex(),
+                            record.getNextCursor());
+                    if (committer != null) {
+                        committer.updateCheckpoint(record.getShard(), record.getNextCursor(), record.isReadOnly());
+                    }
+                    if (memoryLimiter != null) {
+                        memoryLimiter.release(record.getDataRawSize());
+                    }
+                } catch (Exception ex) {
+                    LOG.error("Fail to emit record {}", ex.getMessage(), ex);
+                    latch.countDown();
+                    fetcher.stopWithError(ex);
+                    return;
+                }
+            }
+            latch.countDown();
+            LOG.warn("Record emitter exited");
+        }
+
+        public void waitForIdle() throws InterruptedException {
+            latch.await();
+        }
+    }
+
+    public boolean isRunning() {
+        return running && !Thread.interrupted();
     }
 
     private static void validateStopTime(String stopTime) {
@@ -253,7 +328,7 @@ public class LogDataFetcher<T> {
     }
 
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
-        ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, autoCommitter);
+        ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, recordEmitter);
         if (!running) {
             // Do not create consumer any more
             return;
@@ -268,6 +343,10 @@ public class LogDataFetcher<T> {
             return;
         }
         startCommitThreadIfNeeded();
+        long idleInterval = PropertiesUtil.getLong(configProps, ConfigConstants.SOURCE_IDLE_INTERVAL, DEFAULT_IDLE_INTERVAL);
+        LOG.info("Starting record emitter, idle interval {}", idleInterval);
+        recordEmitter = new RecordEmitter<>(queue, this, autoCommitter, idleInterval, memoryLimiter);
+        shardConsumersExecutor.submit(recordEmitter);
         for (int index = 0; index < subscribedShardsState.size(); ++index) {
             LogstoreShardState shardState = subscribedShardsState.get(index);
             if (!shardState.isEndReached()) {
@@ -289,11 +368,9 @@ public class LogDataFetcher<T> {
                         shard.toString(), indexOfThisSubtask, totalNumberOfSubtasks);
                 createConsumerForShard(newStateIndex, shard);
             }
-            if (exitAfterAllShardFinished) {
-                if (consumerCache.isEmpty()) {
-                    LOG.info("All shard consumers exited");
-                    break;
-                }
+            if (exitAfterAllShardFinished && consumerCache.isEmpty()) {
+                LOG.info("All shard consumers exited");
+                break;
             }
             if (running && discoveryIntervalMillis != 0) {
                 try {
@@ -345,11 +422,17 @@ public class LogDataFetcher<T> {
         running = false;
         LOG.warn("Stopping all consumers..");
         for (ShardConsumer<T> consumer : consumerCache.values()) {
-            consumer.stop();
+            consumer.cancel();
         }
 
         cancelFuture.complete(null);
-
+        if (recordEmitter != null) {
+            try {
+                recordEmitter.waitForIdle();
+            } catch (Exception ex) {
+                LOG.warn("Encountered exception waiting consumer idle.", ex);
+            }
+        }
         LOG.warn("Shutting down the shard consumer threads of subtask {}", indexOfThisSubtask);
         shardConsumersExecutor.shutdownNow();
         if (autoCommitter != null) {
@@ -358,7 +441,7 @@ public class LogDataFetcher<T> {
         }
     }
 
-    void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor, int dataRawSize) {
+    void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor) {
         synchronized (checkpointLock) {
             sourceContext.collectWithTimestamp(record, recordTimestamp);
             LogstoreShardState state = subscribedShardsState.get(shardStateIndex);
@@ -366,7 +449,6 @@ public class LogDataFetcher<T> {
                 state.setOffset(cursor);
             }
         }
-        memoryLimiter.release(dataRawSize);
     }
 
     void stopWithError(Throwable throwable) {

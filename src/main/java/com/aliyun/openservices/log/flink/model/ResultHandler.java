@@ -19,7 +19,7 @@ public class ResultHandler<T> implements Serializable {
     public void handle(List<LogGroupData> records,
                        String cursor,
                        String nextCursor,
-                       int dataRawSize) {
+                       int dataRawSize) throws InterruptedException {
         consumer.processRecords(records, cursor, shardHandle, nextCursor, dataRawSize);
     }
 }

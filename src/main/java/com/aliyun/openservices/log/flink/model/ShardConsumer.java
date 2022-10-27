@@ -33,18 +33,18 @@ public class ShardConsumer<T> implements Runnable {
     private String initialPosition;
     private final String defaultPosition;
     private final String consumerGroup;
-    private final CheckpointCommitter committer;
     private volatile boolean isReadOnly = false;
     private volatile boolean isRunning = true;
     private int stopTimeSec = -1;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
+    private final LogDataFetcher.RecordEmitter<T> recordEmitter;
 
     ShardConsumer(LogDataFetcher<T> fetcher,
                   LogDeserializationSchema<T> deserializer,
                   int subscribedShardStateIndex,
                   Properties configProps,
                   LogClientProxy logClient,
-                  CheckpointCommitter committer) {
+                  LogDataFetcher.RecordEmitter<T> recordEmitter) {
         this.fetcher = fetcher;
         this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
@@ -52,7 +52,7 @@ public class ShardConsumer<T> implements Runnable {
         this.fetchSize = LogUtil.getNumberPerFetch(configProps);
         this.fetchIntervalMs = LogUtil.getFetchIntervalMillis(configProps);
         this.logClient = logClient;
-        this.committer = committer;
+        this.recordEmitter = recordEmitter;
         this.logProject = fetcher.getProject();
         this.initialPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
@@ -165,6 +165,8 @@ public class ShardConsumer<T> implements Runnable {
                 if (response == null) {
                     continue;
                 }
+                if (!isRunning)
+                    break;
                 String nextCursor = response.getNextCursor();
                 if (response.getCount() > 0) {
                     cursor = nextCursor;
@@ -208,10 +210,10 @@ public class ShardConsumer<T> implements Runnable {
     }
 
     void markAsReadOnly() {
-        isReadOnly = true;
+        this.isReadOnly = true;
     }
 
-    void stop() {
+    void cancel() {
         isRunning = false;
         cancelFuture.complete(null);
     }
@@ -220,7 +222,7 @@ public class ShardConsumer<T> implements Runnable {
                                String cursor,
                                LogstoreShardMeta shard,
                                String nextCursor,
-                               int dataRawSize) {
+                               int dataRawSize) throws InterruptedException {
         PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
         final T value = deserializer.deserialize(record);
         long timestamp = System.currentTimeMillis();
@@ -232,9 +234,8 @@ public class ShardConsumer<T> implements Runnable {
                 timestamp = logTimeStamp * 1000;
             }
         }
-        fetcher.emitRecordAndUpdateState(value, timestamp, subscribedShardStateIndex, nextCursor, dataRawSize);
-        if (committer != null) {
-            committer.updateCheckpoint(shard, nextCursor, isReadOnly);
-        }
+        SourceRecord<T> sourceRecord = new SourceRecord<>(
+                value, timestamp, subscribedShardStateIndex, nextCursor, shard, isReadOnly, dataRawSize);
+        recordEmitter.produce(sourceRecord);
     }
 }
