@@ -9,8 +9,11 @@ public class SourceRecord<T> {
     private boolean isReadOnly;
     private int dataRawSize;
 
-    public SourceRecord(T record, long timestamp, int subscribedShardStateIndex,
-                        String nextCursor, LogstoreShardMeta shard,
+    public SourceRecord(T record,
+                        long timestamp,
+                        int subscribedShardStateIndex,
+                        String nextCursor,
+                        LogstoreShardMeta shard,
                         boolean isReadOnly,
                         int dataRawSize) {
         this.record = record;
