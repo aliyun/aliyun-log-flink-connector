@@ -327,6 +327,7 @@ public class LogDataFetcher<T> {
             }
             if (state.isEndReached()) {
                 state.setOffsetSaved(true);
+                LOG.info("Mark shard [{}] offset [{}] saved", state.getShardMeta().getId(), state.getOffset());
             }
         }
         return stateSnapshot;
