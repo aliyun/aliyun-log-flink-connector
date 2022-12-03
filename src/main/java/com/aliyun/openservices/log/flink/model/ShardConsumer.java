@@ -173,9 +173,8 @@ public class ShardConsumer<T> implements Runnable {
                     adjustFetchFrequency(response.getRawSize());
                     continue;
                 }
-                if ((cursor.equals(nextCursor) && isReadOnly)
-                        || cursor.equals(stopCursor)) {
-                    LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", shardMeta.getId(), isReadOnly, stopCursor);
+                if (state.isEndReached() || cursor.equals(stopCursor)) {
+                    LOG.info("Shard [{}] is finished, readonly={}, nextCursor={}, stopCursor={}", shardMeta.getId(), isReadOnly, nextCursor, stopCursor);
                     break;
                 }
                 adjustFetchFrequency(response.getRawSize());

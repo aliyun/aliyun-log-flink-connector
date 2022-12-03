@@ -4,6 +4,8 @@ public class LogstoreShardState {
     private LogstoreShardMeta shardMeta;
     private String offset;
 
+    private boolean offsetSaved = false;
+
     public LogstoreShardState(LogstoreShardMeta shardMeta, String checkpoint) {
         this.shardMeta = shardMeta;
         this.offset = checkpoint;
@@ -27,6 +29,14 @@ public class LogstoreShardState {
 
     boolean isEndReached() {
         return shardMeta.isReadOnly() && offset != null && offset.equals(shardMeta.getEndCursor());
+    }
+
+    public boolean isOffsetSaved() {
+        return offsetSaved;
+    }
+
+    public void setOffsetSaved(boolean offsetSaved) {
+        this.offsetSaved = offsetSaved;
     }
 
     @Override

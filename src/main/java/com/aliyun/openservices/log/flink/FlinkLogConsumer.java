@@ -226,8 +226,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private void updateCheckpoint(LogstoreShardMeta meta, String cursor) throws Exception {
         logClient.updateCheckpoint(project, meta.getLogstore(),
-                consumerGroup, meta.getShardId(), meta.isReadOnly(),
-                cursor);
+                consumerGroup, meta.getShardId(), cursor);
     }
 
     @Override

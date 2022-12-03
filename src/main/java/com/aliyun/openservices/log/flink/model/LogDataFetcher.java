@@ -321,8 +321,13 @@ public class LogDataFetcher<T> {
         // this method assumes that the checkpoint lock is held
         assert Thread.holdsLock(checkpointLock);
         HashMap<LogstoreShardMeta, String> stateSnapshot = new HashMap<>();
-        for (LogstoreShardState shardWithState : subscribedShardsState) {
-            stateSnapshot.put(shardWithState.getShardMeta(), shardWithState.getOffset());
+        for (LogstoreShardState state : subscribedShardsState) {
+            if (!state.isOffsetSaved()) {
+                stateSnapshot.put(state.getShardMeta(), state.getOffset());
+            }
+            if (state.isEndReached()) {
+                state.setOffsetSaved(true);
+            }
         }
         return stateSnapshot;
     }

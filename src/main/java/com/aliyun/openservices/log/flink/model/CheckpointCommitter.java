@@ -82,7 +82,6 @@ public class CheckpointCommitter extends Thread {
                     shardInfo.logstore,
                     consumerGroup,
                     shardInfo.shard,
-                    shardInfo.readOnly,
                     shardInfo.cursor);
         }
     }

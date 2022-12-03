@@ -45,20 +45,16 @@ public class LogstoreShardMeta implements Serializable {
         this.shardId = shardId;
     }
 
-    public void setShardStatus(String shardStatus) {
+    public synchronized void setShardStatus(String shardStatus) {
         this.shardStatus = shardStatus;
     }
 
-    public void setEndCursor(String endCursor) {
+    public synchronized void setEndCursor(String endCursor) {
         this.endCursor = endCursor;
     }
 
-    public boolean isReadOnly() {
+    public synchronized boolean isReadOnly() {
         return Consts.READONLY_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
-    }
-
-    public boolean isReadWrite() {
-        return Consts.READWRITE_SHARD_STATUS.equalsIgnoreCase(this.shardStatus);
     }
 
     public String getId() {

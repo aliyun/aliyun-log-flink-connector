@@ -102,7 +102,7 @@ public class LogClientProxy implements Serializable {
                 }
             }
             return null;
-        }, "fetchCheckpoint");
+        }, "GetCheckpoint");
     }
 
     public static class PullResult implements Serializable {
@@ -292,33 +292,30 @@ public class LogClientProxy implements Serializable {
                 throw ex;
             }
             return null;
-        }, "createConsumerGroup");
+        }, "CreateConsumerGroup");
     }
 
     public void updateCheckpoint(final String project,
                                  final String logstore,
                                  final String consumerGroup,
                                  final int shard,
-                                 final boolean readOnly,
                                  final String checkpoint) throws LogException {
         if (checkpoint == null || checkpoint.isEmpty()) {
-            LOG.warn("The checkpoint to update is invalid: {}", checkpoint);
+            LOG.warn("Invalid checkpoint: {}", checkpoint);
             return;
         }
-        try {
-            executor.call((Callable<Void>) () -> {
+        executor.call((Callable<Void>) () -> {
+            try {
                 client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
-                return null;
-            }, "updateCheckpoint");
-        } catch (LogException ex) {
-            if ("ConsumerGroupNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
-                LOG.warn("Consumer group not exist: {}", consumerGroup);
-            } else if ("ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
-                LOG.warn("Shard {} not exist, readonly = {}", shard, readOnly);
-            } else {
-                throw ex;
+            } catch (LogException ex) {
+                if (ex.GetHttpCode() == 404) {
+                    LOG.warn("Error updating checkpoint, code={}, error={}", ex.GetErrorCode(), ex.getMessage());
+                } else {
+                    throw ex;
+                }
             }
-        }
+            return null;
+        }, "UpdateCheckpoint");
     }
 
     public void putLogs(String project,
