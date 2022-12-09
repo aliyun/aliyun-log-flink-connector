@@ -305,20 +305,18 @@ public class LogClientProxy implements Serializable {
             LOG.warn("The checkpoint to update is invalid: {}", checkpoint);
             return;
         }
-        try {
-            executor.call((Callable<Void>) () -> {
+        executor.call((Callable<Void>) () -> {
+            try {
                 client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
-                return null;
-            }, "updateCheckpoint");
-        } catch (LogException ex) {
-            if ("ConsumerGroupNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
-                LOG.warn("Consumer group not exist: {}", consumerGroup);
-            } else if ("ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
-                LOG.warn("Shard {} not exist, readonly = {}", shard, readOnly);
-            } else {
-                throw ex;
+            } catch (LogException ex) {
+                if (ex.GetHttpCode() == 404) {
+                    LOG.warn("Fail to save checkpoint code={}, error={}", ex.GetErrorCode(), ex.GetErrorMessage());
+                } else {
+                    throw ex;
+                }
             }
-        }
+            return null;
+        }, "Update checkpoint");
     }
 
     public void putLogs(String project,
