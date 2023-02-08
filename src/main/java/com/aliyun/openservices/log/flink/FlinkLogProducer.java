@@ -165,7 +165,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             LOG.error("Error while sending logs", e);
             throw new ProducerException(e.getMessage(), e);
         }
-        LOG.warn("Sending data to {} success.", logstore);
+        LOG.debug("Sending data to {} success.", logstore);
     }
 
     private static List<TagContent> getTags(RawLogGroup logGroup) {
