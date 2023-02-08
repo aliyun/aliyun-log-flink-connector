@@ -9,7 +9,8 @@ public interface Producer {
 
     void open();
 
-    void send(String topic,
+    void send(String logstore,
+              String topic,
               String source,
               String shardHash,
               List<TagContent> tags,
