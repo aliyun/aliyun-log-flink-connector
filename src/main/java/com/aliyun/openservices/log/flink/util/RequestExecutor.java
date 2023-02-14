@@ -27,6 +27,10 @@ final class RequestExecutor {
     }
 
     <T> T call(Callable<T> callable, String action) throws LogException {
+        return call(callable, true, action);
+    }
+
+    <T> T call(Callable<T> callable, boolean retryOn403, String action) throws LogException {
         long backoff = baseBackoff;
         int retries = 0;
         LogException lastException;
@@ -36,7 +40,7 @@ final class RequestExecutor {
                 return callable.call();
             } catch (LogException ex) {
                 int status = ex.GetHttpCode();
-                if (status == 400 || isCanceled) {
+                if (status == 400 || isCanceled || (status == 403 && !retryOn403)) {
                     throw ex;
                 }
                 if (status >= 500 || status == 403 || status < 0) {
