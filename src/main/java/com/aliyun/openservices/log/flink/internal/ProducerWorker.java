@@ -15,18 +15,15 @@ public class ProducerWorker implements Runnable {
     private volatile boolean isStopped = false;
     private final LogClientProxy clientProxy;
     private final String project;
-    private final String logstore;
     private final Semaphore semaphore;
 
     public ProducerWorker(BlockingQueue<ProducerEvent> queue,
                           LogClientProxy clientProxy,
                           String project,
-                          String logstore,
                           Semaphore semaphore) {
         this.queue = queue;
         this.clientProxy = clientProxy;
         this.project = project;
-        this.logstore = logstore;
         this.semaphore = semaphore;
     }
 
@@ -41,21 +38,22 @@ public class ProducerWorker implements Runnable {
                     break;
                 }
                 LogGroupHolder logGroup = event.getLogGroup();
-                semaphore.release(logGroup.getSizeInBytes());
-                LOG.debug("Send {} to sls", logGroup.getLogs().size());
+                LOG.debug("Send {} logs to sls", logGroup.getCount());
                 clientProxy.putLogs(
                         project,
-                        logstore,
+                        logGroup.getLogstore(),
                         logGroup.getTopic(),
                         logGroup.getSource(),
                         logGroup.getHashKey(),
                         logGroup.getTags(),
                         logGroup.getLogs());
+                semaphore.release(logGroup.getSizeInBytes());
             } catch (InterruptedException ex) {
                 LOG.warn("Producer worker interrupted");
                 break;
             } catch (LogException ex) {
-                LOG.error("Error putting data", ex);
+                LOG.error(ex.GetErrorMessage(), ex);
+                throw new RuntimeException(ex.GetErrorMessage(), ex);
             }
         }
         LOG.info("Producer worker exited");

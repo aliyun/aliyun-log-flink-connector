@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -80,7 +81,9 @@ public class ProducerImpl implements Producer {
                     Thread.sleep(flushInterval);
                     producer.flush();
                 } catch (InterruptedException ex) {
-                    LOG.warn("Flush thread interrupted");
+                    if (!isStopped) {
+                        LOG.warn("Flush thread interrupted");
+                    }
                     break;
                 }
             }
@@ -117,7 +120,6 @@ public class ProducerImpl implements Producer {
                     queue,
                     clientProxy,
                     producerConfig.getProject(),
-                    producerConfig.getLogstore(),
                     semaphore);
             workers.add(worker);
             threadPool.submit(worker);
@@ -129,7 +131,8 @@ public class ProducerImpl implements Producer {
     }
 
     @Override
-    public void send(String topic,
+    public void send(String logstore,
+                     String topic,
                      String source,
                      String shardHash,
                      List<TagContent> tags,
@@ -138,56 +141,67 @@ public class ProducerImpl implements Producer {
             return;
         }
         if (isStopped) {
-            throw new IllegalStateException("Producer is stopped");
+            throw new ProducerException("Producer is stopped");
         }
         if (shardHash != null && shardHashAdjuster != null) {
             shardHash = shardHashAdjuster.adjust(shardHash);
         }
-        int bytes = 0;
-        List<LogItem> buffer = new ArrayList<>();
-        for (LogItem item : logItems) {
-            long bytesForItem = 0;
-            for (LogContent f : item.GetLogContents()) {
-                bytesForItem += f.mKey.length();
-                if (f.mValue != null) {
-                    bytesForItem += f.mValue.length();
-                }
-            }
-            // TODO What if bytesForItem > 10M?
-            buffer.add(item);
-            bytes += bytesForItem;
-            if (shouldSend(bytes, buffer.size())) {
-                semaphore.acquire(bytes);
-                LOG.debug("Add to queue {}", buffer.size());
-                queue.put(ProducerEvent.makeEvent(new LogGroupHolder(source, topic, shardHash, tags, buffer, bytes)));
-                buffer = new ArrayList<>();
-                bytes = 0;
-            }
-        }
-        if (buffer.isEmpty()) {
-            return;
-        }
-        semaphore.acquire(bytes);
-
-        LogGroupKey logGroupKey = new LogGroupKey(source, topic, shardHash, tags);
-        String key = logGroupKey.getKey();
-
+        String key = LogGroupKey.buildKey(logstore, source, topic, shardHash, tags);
         lock.lock();
         try {
             LogGroupHolder prev = cache.get(key);
-            if (prev != null) {
-                prev.addLogs(buffer, bytes);
-                if (shouldSend(prev.getSizeInBytes(), prev.getLogs().size())) {
-                    queue.put(ProducerEvent.makeEvent(prev));
-                    LOG.debug("Add to queue {}", prev.getLogs().size());
-                    cache.remove(key);
+            for (LogItem item : logItems) {
+                int size = getSizeOfLogItem(item);
+                if (size >= ProducerConfig.MAX_LOG_GROUP_SIZE) {
+                    throw new ProducerException("LogItem size is too large: " + size);
                 }
-                return;
+                if (shouldSend(size, 1)) {
+                    // The current row is large enough
+                    if (prev != null) {
+                        // flush first to keep order
+                        queue.put(ProducerEvent.makeEvent(prev));
+                        prev = null;
+                    }
+                    semaphore.acquire(size);
+                    LogGroupHolder tmpHolder = new LogGroupHolder(logstore, source, topic, shardHash, tags,
+                            Collections.singletonList(item), size);
+                    queue.put(ProducerEvent.makeEvent(tmpHolder));
+                    continue;
+                }
+                semaphore.acquire(size);
+                if (prev == null) {
+                    List<LogItem> buffer = new ArrayList<>();
+                    buffer.add(item);
+                    prev = new LogGroupHolder(logstore, source, topic, shardHash, tags, buffer, size);
+                    continue;
+                }
+                prev.pushBack(item, size);
+                if (shouldSend(prev.getSizeInBytes(), prev.getCount())) {
+                    queue.put(ProducerEvent.makeEvent(prev));
+                    prev = null;
+                }
             }
-            cache.put(key, new LogGroupHolder(source, topic, shardHash, tags, buffer, bytes));
+            if (prev != null) {
+                cache.put(key, prev);
+            } else {
+                cache.remove(key);
+            }
         } finally {
             lock.unlock();
         }
+    }
+
+    private static int getSizeOfLogItem(LogItem item) {
+        int bytesForItem = 0;
+        for (LogContent f : item.GetLogContents()) {
+            if (f.mKey != null) {
+                bytesForItem += f.mKey.length();
+            }
+            if (f.mValue != null) {
+                bytesForItem += f.mValue.length();
+            }
+        }
+        return bytesForItem;
     }
 
     @Override
@@ -206,7 +220,7 @@ public class ProducerImpl implements Producer {
         }
         for (Map.Entry<String, LogGroupHolder> entry : tp.entrySet()) {
             LogGroupHolder holder = entry.getValue();
-            LOG.debug("Add {} logs to queue", holder.getLogs().size());
+            LOG.debug("Add {} logs to queue", holder.getCount());
             queue.put(ProducerEvent.makeEvent(holder));
         }
     }

@@ -6,6 +6,7 @@ import com.aliyun.openservices.log.common.TagContent;
 import java.util.List;
 
 public class LogGroupHolder {
+    private final String logstore;
     private final String source;
     private final String topic;
     private final String hashKey;
@@ -13,12 +14,14 @@ public class LogGroupHolder {
     private final List<TagContent> tags;
     private int sizeInBytes;
 
-    public LogGroupHolder(String source,
+    public LogGroupHolder(String logstore,
+                          String source,
                           String topic,
                           String hashKey,
                           List<TagContent> tags,
                           List<LogItem> logs,
                           int logsSize) {
+        this.logstore = logstore;
         this.source = source;
         this.topic = topic == null ? "" : topic;
         this.hashKey = hashKey;
@@ -27,13 +30,17 @@ public class LogGroupHolder {
         this.sizeInBytes = logsSize;
     }
 
-    public void addLogs(List<LogItem> logs, int sizeInBytes) {
-        this.logs.addAll(logs);
-        this.sizeInBytes += sizeInBytes;
+    public void pushBack(LogItem item, int size) {
+        logs.add(item);
+        sizeInBytes += size;
     }
 
     public int getSizeInBytes() {
         return sizeInBytes;
+    }
+
+    public String getLogstore() {
+        return logstore;
     }
 
     public String getSource() {
@@ -46,6 +53,10 @@ public class LogGroupHolder {
 
     public String getHashKey() {
         return hashKey;
+    }
+
+    public int getCount() {
+        return logs.size();
     }
 
     public List<LogItem> getLogs() {

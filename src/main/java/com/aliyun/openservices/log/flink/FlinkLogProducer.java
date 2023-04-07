@@ -4,10 +4,7 @@ import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.TagContent;
 import com.aliyun.openservices.log.flink.data.RawLog;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
-import com.aliyun.openservices.log.flink.internal.ConfigParser;
-import com.aliyun.openservices.log.flink.internal.Producer;
-import com.aliyun.openservices.log.flink.internal.ProducerConfig;
-import com.aliyun.openservices.log.flink.internal.ProducerImpl;
+import com.aliyun.openservices.log.flink.internal.*;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.RetryPolicy;
@@ -35,6 +32,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
     private final Properties properties;
+    private String defaultLogstore;
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
         if (schema == null) {
@@ -98,6 +96,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             ConfigParser parser = new ConfigParser(properties);
             producer = createProducer(parser);
             producer.open();
+            defaultLogstore = parser.getString(ConfigConstants.LOG_LOGSTORE);
         }
     }
 
@@ -136,25 +135,37 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 continue;
             }
             LogItem record = new LogItem(rawLog.getTime());
+            boolean hasField = false;
             for (Map.Entry<String, String> kv : rawLog.getContents().entrySet()) {
                 String key = kv.getKey();
                 if (key == null) {
                     continue;
                 }
                 record.PushBack(key, kv.getValue());
+                hasField = true;
             }
-            logs.add(record);
+            if (hasField) {
+                logs.add(record);
+            }
         }
         if (logs.isEmpty()) {
             return;
         }
         List<TagContent> tags = getTags(logGroup);
+        String logstore = logGroup.getLogstore();
+        if (logstore == null) {
+            if (defaultLogstore == null) {
+                throw new ProducerException("Logstore not found from config or serialized LogGroup");
+            }
+            logstore = defaultLogstore;
+        }
         try {
-            producer.send(logGroup.getTopic(), logGroup.getSource(), shardHashKey, tags, logs);
+            producer.send(logstore, logGroup.getTopic(), logGroup.getSource(), shardHashKey, tags, logs);
         } catch (InterruptedException e) {
             LOG.error("Error while sending logs", e);
-            throw new RuntimeException(e);
+            throw new ProducerException(e.getMessage(), e);
         }
+        LOG.debug("Sending data to {} success.", logstore);
     }
 
     private static List<TagContent> getTags(RawLogGroup logGroup) {

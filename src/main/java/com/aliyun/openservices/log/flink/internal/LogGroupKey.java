@@ -8,20 +8,11 @@ import java.util.List;
 
 public class LogGroupKey {
 
-    private final String key;
-
-    public LogGroupKey(String source, String topic, String hashKey, List<TagContent> tags) {
-        this.key = makeKey(source, topic, hashKey, tags);
-    }
-
-    private static String makeKey(String source, String topic, String hashKey, List<TagContent> tags) {
-        StringBuilder builder = new StringBuilder();
-        boolean addSeparator = false;
+    public static String buildKey(String logstore, String source, String topic, String hashKey, List<TagContent> tags) {
+        // TODO What if source topic tag contains $?
+        StringBuilder builder = new StringBuilder(logstore);
         for (String it : Arrays.asList(source, topic, hashKey)) {
-            if (addSeparator) {
-                builder.append("$");
-            }
-            addSeparator = true;
+            builder.append("$");
             if (it != null) {
                 builder.append(it);
             }
@@ -33,9 +24,5 @@ public class LogGroupKey {
             }
         }
         return builder.toString();
-    }
-
-    public String getKey() {
-        return key;
     }
 }
