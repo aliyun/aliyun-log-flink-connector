@@ -67,7 +67,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     public FlinkLogConsumer(String project, List<String> logstores, LogDeserializationSchema<T> deserializer, Properties configProps) {
         if (project == null || project.isEmpty()) {
-            throw new IllegalArgumentException("The project is null or emoty");
+            throw new IllegalArgumentException("The project is null or empty");
         }
         if (logstores == null || logstores.isEmpty()) {
             throw new IllegalArgumentException("The logstores is null or empty");
@@ -90,7 +90,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     public FlinkLogConsumer(String project, Pattern logstorePattern, LogDeserializationSchema<T> deserializer, Properties configProps) {
         if (project == null || project.isEmpty()) {
-            throw new IllegalArgumentException("The project is null or emoty");
+            throw new IllegalArgumentException("The project is null or empty");
         }
         if (logstorePattern == null) {
             throw new IllegalArgumentException("The logstore pattern is null");
