@@ -285,8 +285,10 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     @Override
     public void close() throws Exception {
         cancel();
-        fetcher.awaitTermination();
-        fetcher = null;
+        if (fetcher != null) {
+            fetcher.awaitTermination();
+            fetcher = null;
+        }
         super.close();
     }
 }
