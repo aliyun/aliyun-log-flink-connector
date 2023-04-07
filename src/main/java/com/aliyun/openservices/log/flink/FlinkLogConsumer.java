@@ -66,6 +66,12 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     }
 
     public FlinkLogConsumer(String project, List<String> logstores, LogDeserializationSchema<T> deserializer, Properties configProps) {
+        if (project == null || project.isEmpty()) {
+            throw new IllegalArgumentException("The project is null or empty");
+        }
+        if (logstores == null || logstores.isEmpty()) {
+            throw new IllegalArgumentException("The logstores is null or empty");
+        }
         this.configProps = configProps;
         this.deserializer = deserializer;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
@@ -77,9 +83,18 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     public FlinkLogConsumer(String project, String logstore, LogDeserializationSchema<T> deserializer, Properties configProps) {
         this(project, Collections.singletonList(logstore), deserializer, configProps);
+        if (logstore == null || logstore.isEmpty()) {
+            throw new IllegalArgumentException("The logstore is null or empty");
+        }
     }
 
     public FlinkLogConsumer(String project, Pattern logstorePattern, LogDeserializationSchema<T> deserializer, Properties configProps) {
+        if (project == null || project.isEmpty()) {
+            throw new IllegalArgumentException("The project is null or empty");
+        }
+        if (logstorePattern == null) {
+            throw new IllegalArgumentException("The logstore pattern is null");
+        }
         this.configProps = configProps;
         this.deserializer = deserializer;
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
