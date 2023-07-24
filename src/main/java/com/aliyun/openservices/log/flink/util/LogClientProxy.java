@@ -5,7 +5,7 @@ import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.common.Consts.CursorMode;
 import com.aliyun.openservices.log.common.ConsumerGroup;
 import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
-import com.aliyun.openservices.log.common.LZ4Encoder;
+import com.aliyun.openservices.log.util.LZ4Encoder;
 import com.aliyun.openservices.log.common.LogGroupData;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.Shard;
@@ -185,10 +185,15 @@ public class LogClientProxy implements Serializable {
     }
 
     public <T> PullResult pullLogs(String project, String logstore,
-                                   int shard, String cursor, String stopCursor, int count,
+                                   int shard, String cursor, String stopCursor, String query, int count,
                                    ResultHandler<T> resultHandler)
             throws LogException, InterruptedException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
+        if (query != null && !query.isEmpty()) {
+            request.setQuery(query);
+            request.setPullMode("scan_on_stream");
+            request.setResponseWithMeta(true);
+        }
         if (!memoryLimiter.isEnabled()) {
             PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
             resultHandler.handle(response.getLogGroups(), cursor, response.getNextCursor(), response.getRawSize());

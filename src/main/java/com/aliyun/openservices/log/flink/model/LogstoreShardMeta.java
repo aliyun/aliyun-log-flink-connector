@@ -11,6 +11,8 @@ public class LogstoreShardMeta implements Serializable {
     private String shardStatus;
     private String endCursor;
 
+    private String query;
+
     // DO NOT remove
     public LogstoreShardMeta() {
     }
@@ -51,6 +53,14 @@ public class LogstoreShardMeta implements Serializable {
 
     public void setEndCursor(String endCursor) {
         this.endCursor = endCursor;
+    }
+
+    public String getQuery() {
+        return query;
+    }
+
+    public void setQuery(String query) {
+        this.query = query;
     }
 
     public boolean isReadOnly() {
