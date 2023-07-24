@@ -221,11 +221,13 @@ public class LogDataFetcher<T> {
 
     private List<LogstoreShardMeta> listAssignedShards() throws Exception {
         List<String> logstores = getLogstores();
+        String query = configProps.getProperty(ConfigConstants.LOG_QUERY);
         List<LogstoreShardMeta> shardMetas = new ArrayList<>();
         for (String logstore : logstores) {
             List<Shard> shards = logClient.listShards(project, logstore);
             for (Shard shard : shards) {
                 LogstoreShardMeta shardMeta = new LogstoreShardMeta(logstore, shard.GetShardId(), shard.getStatus());
+                shardMeta.setQuery(query);
                 int hash = shardAssigner.assign(shardMeta, totalNumberOfSubtasks);
                 int taskId = ((hash % totalNumberOfSubtasks) + totalNumberOfSubtasks) % totalNumberOfSubtasks;
                 if (taskId == indexOfThisSubtask) {

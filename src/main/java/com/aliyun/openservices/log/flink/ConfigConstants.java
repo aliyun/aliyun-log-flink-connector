@@ -6,6 +6,9 @@ public class ConfigConstants {
     public static String LOG_ACCESSKEY = "ACCESSKEY";
     public static String LOG_PROJECT = "PROJECT";
     public static String LOG_LOGSTORE = "LOGSTORE";
+
+    public static String LOG_QUERY = "LOGSTORE_QUERY";
+
     public static String LOG_USER_AGENT = "USER_AGENT";
 
     //for consumer

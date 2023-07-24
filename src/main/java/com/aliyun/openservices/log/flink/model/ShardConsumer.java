@@ -133,6 +133,7 @@ public class ShardConsumer<T> implements Runnable {
             final LogstoreShardMeta shardMeta = state.getShardMeta();
             final int shardId = shardMeta.getShardId();
             String logstore = shardMeta.getLogstore();
+            String query = shardMeta.getQuery();
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             String stopCursor = getStopCursor(logstore, shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
@@ -141,7 +142,7 @@ public class ShardConsumer<T> implements Runnable {
                 LogClientProxy.PullResult response;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
-                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, stopCursor, fetchSize, resultHandler);
+                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, stopCursor, query, fetchSize, resultHandler);
                 } catch (LogException ex) {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
                     String errorCode = ex.GetErrorCode();
