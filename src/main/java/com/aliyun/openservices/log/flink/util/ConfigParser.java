@@ -1,4 +1,4 @@
-package com.aliyun.openservices.log.flink.internal;
+package com.aliyun.openservices.log.flink.util;
 
 import org.apache.flink.util.PropertiesUtil;
 

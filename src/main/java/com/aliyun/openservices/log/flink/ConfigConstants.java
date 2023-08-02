@@ -37,15 +37,27 @@ public class ConfigConstants {
     public static final String TOTAL_SIZE_IN_BYTES = "total.size.in.bytes";
     public static final String LOG_GROUP_MAX_SIZE = "logGroup.max.size";
     public static final String LOG_GROUP_MAX_LINES = "logGroup.max.lines";
-    public static final String PRODUCER_QUEUE_SIZE = "producer.queue.size";
     public static final String BUCKETS = "producer.buckets";
     public static final String PRODUCER_ADJUST_SHARD_HASH = "producer.adjust.shard.hash";
+    /**
+     * initial retry back off time.
+     */
+    public static final String BASE_RETRY_BACK_OFF_TIME_MS = "base.retry.backoff.time.ms";
+
+    /**
+     * max retry back off time.
+     */
+    public static final String MAX_RETRY_BACK_OFF_TIME_MS = "max.retry.backoff.time.ms";
+
+    /**
+     * wait forever while sending record.
+     */
+    public static final String MAX_BLOCK_TIME_MS = "max.block.time.ms";
 
     /**
      * initial retry back off time.
      */
-    public static final String BASE_RETRY_BACKOFF_TIME_MS =
-            "base.retry.backoff.time.ms";
+    public static final String BASE_RETRY_BACKOFF_TIME_MS = "base.retry.backoff.time.ms";
 
     /**
      * max retry back off time.
@@ -56,4 +68,9 @@ public class ConfigConstants {
      * io thread num of sls producer
      */
     public static final String IO_THREAD_NUM = "io.thread.num";
+
+    /**
+     * Flush timeout, default value is 10000 ms.
+     */
+    public static final String PRODUCER_FLUSH_TIMEOUT_MS = "producer.flush.timeout.ms";
 }
