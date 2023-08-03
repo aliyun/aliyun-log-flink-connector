@@ -143,7 +143,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             }
             LogItem record = new LogItem(rawLog.getTime());
             for (Map.Entry<String, String> kv : rawLog.getContents().entrySet()) {
-                record.PushBack(kv.getKey(), kv.getValue());
+                if (kv.getKey() != null) {
+                    record.PushBack(kv.getKey(), kv.getValue());
+                }
             }
             logs.add(record);
         }
