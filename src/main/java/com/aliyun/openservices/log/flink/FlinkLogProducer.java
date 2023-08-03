@@ -36,17 +36,19 @@ import static com.aliyun.openservices.log.flink.ConfigConstants.*;
 
 public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
+    private static final long DEFAULT_FLUSH_TIMEOUT_MS = 10000;
+
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducer.class);
     private final LogSerializationSchema<T> schema;
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
     private transient ProducerCallback callback;
-    private String project;
-    private String logstore;
+    private final String project;
+    private final String logstore;
     private ExecutorService executor;
-    private Properties properties;
     private final AtomicLong buffered = new AtomicLong(0);
-    private long flushTimeoutMs = 0;
+    private final long flushTimeoutMs;
+    private final ConfigParser configParser;
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
         if (schema == null) {
@@ -56,7 +58,10 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             throw new IllegalArgumentException("configProps cannot be null");
         }
         this.schema = schema;
-        this.properties = configProps;
+        this.configParser = new ConfigParser(configProps);
+        this.project = configParser.getString(ConfigConstants.LOG_PROJECT);
+        this.logstore = configParser.getString(ConfigConstants.LOG_LOGSTORE);
+        this.flushTimeoutMs = configParser.getLong(PRODUCER_FLUSH_TIMEOUT_MS, DEFAULT_FLUSH_TIMEOUT_MS);
     }
 
     public void setCustomPartitioner(LogPartitioner<T> customPartitioner) {
@@ -97,12 +102,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     getRuntimeContext().getIndexOfThisSubtask(),
                     getRuntimeContext().getNumberOfParallelSubtasks());
         }
-        ConfigParser parser = new ConfigParser(properties);
-        project = parser.getString(ConfigConstants.LOG_PROJECT);
-        logstore = parser.getString(ConfigConstants.LOG_LOGSTORE);
-        flushTimeoutMs = parser.getLong(PRODUCER_FLUSH_TIMEOUT_MS, 10000);
         if (producer == null) {
-            producer = createProducer(parser);
+            producer = createProducer(configParser);
         }
         executor = Executors.newSingleThreadExecutor();
     }
