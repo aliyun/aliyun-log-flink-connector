@@ -10,6 +10,7 @@ import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import com.aliyun.openservices.log.flink.util.RetryPolicy;
+import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.CheckpointListener;
 import org.apache.flink.api.common.state.ListState;
@@ -52,7 +53,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private Pattern logstorePattern;
     private final CheckpointMode checkpointMode;
     private ShardAssigner shardAssigner = LogDataFetcher.DEFAULT_SHARD_ASSIGNER;
-    private MemoryLimiter memoryLimiter;
+    private final MemoryLimiter memoryLimiter;
 
     @Deprecated
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -132,13 +133,24 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 .maxRetryBackoff(parser.getLong(ConfigConstants.MAX_RETRY_BACKOFF_TIME_MS,
                         Consts.DEFAULT_MAX_RETRY_BACKOFF_TIME_MS))
                 .build();
+        ClientConfiguration clientConfig = new ClientConfiguration();
+        clientConfig.setMaxConnections(com.aliyun.openservices.log.common.Consts.HTTP_CONNECT_MAX_COUNT);
+        clientConfig.setConnectionTimeout(com.aliyun.openservices.log.common.Consts.HTTP_CONNECT_TIME_OUT);
+        clientConfig.setSocketTimeout(com.aliyun.openservices.log.common.Consts.HTTP_SEND_TIME_OUT);
+        clientConfig.setProxyHost(parser.getString(ConfigConstants.PROXY_HOST));
+        clientConfig.setProxyPort(parser.getInt(ConfigConstants.PROXY_PORT, -1));
+        clientConfig.setProxyUsername(parser.getString(ConfigConstants.PROXY_USERNAME));
+        clientConfig.setProxyPassword(parser.getString(ConfigConstants.PROXY_PASSWORD));
+        clientConfig.setProxyDomain(parser.getString(ConfigConstants.PROXY_DOMAIN));
+        clientConfig.setProxyWorkstation(parser.getString(ConfigConstants.PROXY_WORKSTATION));
         logClient = new LogClientProxy(
                 parser.getString(ConfigConstants.LOG_ENDPOINT),
                 parser.getString(ConfigConstants.LOG_ACCESSKEYID),
                 parser.getString(ConfigConstants.LOG_ACCESSKEY),
                 getOrCreateUserAgent(indexOfSubTask),
                 retryPolicy,
-                memoryLimiter);
+                memoryLimiter,
+                clientConfig);
         if (parser.getBool(ConfigConstants.DIRECT_MODE, false)) {
             logClient.enableDirectMode(project);
         }
