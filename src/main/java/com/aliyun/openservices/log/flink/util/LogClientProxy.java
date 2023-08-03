@@ -3,13 +3,7 @@ package com.aliyun.openservices.log.flink.util;
 import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.common.Consts.CursorMode;
-import com.aliyun.openservices.log.common.ConsumerGroup;
-import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
-import com.aliyun.openservices.log.common.LZ4Encoder;
-import com.aliyun.openservices.log.common.LogGroupData;
-import com.aliyun.openservices.log.common.LogItem;
-import com.aliyun.openservices.log.common.Shard;
-import com.aliyun.openservices.log.common.TagContent;
+import com.aliyun.openservices.log.common.*;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.model.MemoryLimiter;
 import com.aliyun.openservices.log.flink.model.ResultHandler;
@@ -19,7 +13,9 @@ import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
 import com.aliyun.openservices.log.response.ListConsumerGroupResponse;
 import com.aliyun.openservices.log.response.ListLogStoresResponse;
 import com.aliyun.openservices.log.response.PullLogsResponse;
+import com.aliyun.openservices.log.util.LZ4Encoder;
 import com.aliyun.openservices.log.util.VarintUtil;
+import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,8 +42,9 @@ public class LogClientProxy implements Serializable {
                           String accessKey,
                           String userAgent,
                           RetryPolicy retryPolicy,
-                          MemoryLimiter memoryLimiter) {
-        this.client = new Client(endpoint, accessKeyId, accessKey);
+                          MemoryLimiter memoryLimiter,
+                          ClientConfiguration clientConfiguration) {
+        this.client = new Client(endpoint, accessKeyId, accessKey, clientConfiguration);
         this.client.setUserAgent(userAgent);
         this.executor = new RequestExecutor(retryPolicy);
         this.memoryLimiter = memoryLimiter;
@@ -57,7 +54,7 @@ public class LogClientProxy implements Serializable {
         try {
             String serverIp = client.GetServerIpAddress(project);
             if (serverIp != null && !serverIp.isEmpty()) {
-                client.EnableDirectMode();
+                client.setUseDirectMode(true);
                 LOG.info("Enable direct mode success.");
                 return;
             }

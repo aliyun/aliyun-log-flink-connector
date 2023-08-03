@@ -73,4 +73,14 @@ public class ConfigConstants {
      * Flush timeout, default value is 10000 ms.
      */
     public static final String PRODUCER_FLUSH_TIMEOUT_MS = "producer.flush.timeout.ms";
+
+    /**
+     * Proxy configuration.
+     */
+    public static final String PROXY_HOST = "proxy.host";
+    public static final String PROXY_PORT = "proxy.port";
+    public static final String PROXY_USERNAME = "proxy.username";
+    public static final String PROXY_PASSWORD = "proxy.password";
+    public static final String PROXY_WORKSTATION = "proxy.workstation";
+    public static final String PROXY_DOMAIN = "proxy.domain";
 }
