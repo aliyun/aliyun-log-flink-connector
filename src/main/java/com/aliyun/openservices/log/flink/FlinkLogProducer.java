@@ -113,7 +113,16 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             return;
         }
         long beginAt = System.currentTimeMillis();
-        while (System.currentTimeMillis() - beginAt < flushTimeoutMs) {
+        while (true) {
+            long usedTime = System.currentTimeMillis() - beginAt;
+            if (buffered.get() <= 0) {
+                LOG.info("snapshotState succeed, usedTime={}", usedTime);
+                return;
+            }
+            if (usedTime >= flushTimeoutMs) {
+                LOG.warn("Wait snapshotState timeout, timeout={}", flushTimeoutMs);
+                break;
+            }
             LOG.info("Sleep 100 ms to wait all records flushed");
             Thread.sleep(100);
         }
