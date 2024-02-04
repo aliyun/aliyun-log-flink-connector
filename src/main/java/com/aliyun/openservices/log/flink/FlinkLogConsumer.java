@@ -135,13 +135,13 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         clientConfig.setProxyPassword(parser.getString(ConfigConstants.PROXY_PASSWORD));
         clientConfig.setProxyDomain(parser.getString(ConfigConstants.PROXY_DOMAIN));
         clientConfig.setProxyWorkstation(parser.getString(ConfigConstants.PROXY_WORKSTATION));
-        clientConfig.setRegion(parser.getString(ConfigConstants.REGION_ID));
         SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(ConfigConstants.SIGNATURE_VERSION));
         if (signVersion == SignVersion.V4) {
             String regionId = parser.getString(REGION_ID);
             if (StringUtils.isBlank(regionId)) {
                 throw new IllegalArgumentException("The " + REGION_ID + " was not specified for signature " + signVersion.name() + ".");
             }
+            clientConfig.setRegion(regionId);
         }
         clientConfig.setSignatureVersion(signVersion);
         logClient = new LogClientProxy(
