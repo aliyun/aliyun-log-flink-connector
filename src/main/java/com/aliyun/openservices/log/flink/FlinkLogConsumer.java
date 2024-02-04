@@ -1,16 +1,10 @@
 package com.aliyun.openservices.log.flink;
 
-import com.aliyun.openservices.log.flink.util.ConfigParser;
-import com.aliyun.openservices.log.flink.model.CheckpointMode;
-import com.aliyun.openservices.log.flink.model.LogDataFetcher;
-import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
-import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
-import com.aliyun.openservices.log.flink.model.MemoryLimiter;
-import com.aliyun.openservices.log.flink.util.Consts;
-import com.aliyun.openservices.log.flink.util.LogClientProxy;
-import com.aliyun.openservices.log.flink.util.LogUtil;
-import com.aliyun.openservices.log.flink.util.RetryPolicy;
+import com.aliyun.openservices.log.flink.model.*;
+import com.aliyun.openservices.log.flink.util.*;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
+import com.aliyun.openservices.log.http.signer.SignVersion;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.CheckpointListener;
 import org.apache.flink.api.common.state.ListState;
@@ -26,12 +20,10 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.regex.Pattern;
+
+import static com.aliyun.openservices.log.flink.ConfigConstants.REGION_ID;
 
 public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implements ResultTypeQueryable<T>,
         CheckpointedFunction, CheckpointListener {
@@ -143,6 +135,15 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         clientConfig.setProxyPassword(parser.getString(ConfigConstants.PROXY_PASSWORD));
         clientConfig.setProxyDomain(parser.getString(ConfigConstants.PROXY_DOMAIN));
         clientConfig.setProxyWorkstation(parser.getString(ConfigConstants.PROXY_WORKSTATION));
+        clientConfig.setRegion(parser.getString(ConfigConstants.REGION_ID));
+        SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(ConfigConstants.SIGNATURE_VERSION));
+        if (signVersion == SignVersion.V4) {
+            String regionId = parser.getString(REGION_ID);
+            if (StringUtils.isBlank(regionId)) {
+                throw new IllegalArgumentException("The " + REGION_ID + " was not specified for signature " + signVersion.name() + ".");
+            }
+        }
+        clientConfig.setSignatureVersion(signVersion);
         logClient = new LogClientProxy(
                 parser.getString(ConfigConstants.LOG_ENDPOINT),
                 parser.getString(ConfigConstants.LOG_ACCESSKEYID),

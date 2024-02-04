@@ -10,10 +10,13 @@ import com.aliyun.openservices.log.flink.data.RawLog;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
+import com.aliyun.openservices.log.flink.util.LogUtil;
+import com.aliyun.openservices.log.http.signer.SignVersion;
 import com.shade.aliyun.openservices.log.common.LogItem;
 import com.shade.google.common.util.concurrent.FutureCallback;
 import com.shade.google.common.util.concurrent.Futures;
 import com.shade.google.common.util.concurrent.ListenableFuture;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
@@ -82,6 +85,17 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         producerConfig.setBuckets(parser.getInt(BUCKETS, ProducerConfig.DEFAULT_BUCKETS));
         producerConfig.setTotalSizeInBytes(parser.getInt(TOTAL_SIZE_IN_BYTES, ProducerConfig.DEFAULT_TOTAL_SIZE_IN_BYTES));
         producerConfig.setAdjustShardHash(parser.getBool(PRODUCER_ADJUST_SHARD_HASH, true));
+        SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(SIGNATURE_VERSION));
+        if (signVersion == SignVersion.V4) {
+            String regionId = parser.getString(REGION_ID);
+            if (StringUtils.isBlank(regionId)) {
+                throw new IllegalArgumentException("The " + REGION_ID + " was not specified for signature " + signVersion.name() + ".");
+            }
+            producerConfig.setRegion(regionId);
+            producerConfig.setSignVersion(com.shade.aliyun.openservices.log.http.signer.SignVersion.V4);
+        } else {
+            producerConfig.setSignVersion(com.shade.aliyun.openservices.log.http.signer.SignVersion.V1);
+        }
         Producer producer = new LogProducer(producerConfig);
         ProjectConfig config = new ProjectConfig(project,
                 parser.getString(ConfigConstants.LOG_ENDPOINT),

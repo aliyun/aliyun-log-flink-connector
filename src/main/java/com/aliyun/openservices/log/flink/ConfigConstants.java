@@ -83,4 +83,10 @@ public class ConfigConstants {
     public static final String PROXY_PASSWORD = "proxy.password";
     public static final String PROXY_WORKSTATION = "proxy.workstation";
     public static final String PROXY_DOMAIN = "proxy.domain";
+
+    /**
+     * Signature Version4.
+     */
+    public static final String REGION_ID = "region.id";
+    public static final String SIGNATURE_VERSION = "signature.version"; // V4 or V1
 }
