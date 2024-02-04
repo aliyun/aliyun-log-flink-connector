@@ -2,6 +2,7 @@ package com.aliyun.openservices.log.flink.util;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
+import com.aliyun.openservices.log.http.signer.SignVersion;
 import org.apache.flink.util.PropertiesUtil;
 
 import java.util.Properties;
@@ -46,5 +47,14 @@ public final class LogUtil {
     public static String getDefaultPosition(Properties properties) {
         final String val = properties.getProperty(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION);
         return val != null && !val.isEmpty() ? val : Consts.LOG_BEGIN_CURSOR;
+    }
+
+    public static SignVersion parseSignVersion(String signVersion) {
+        for (SignVersion version : SignVersion.values()) {
+            if (version.name().equalsIgnoreCase(signVersion)) {
+                return version;
+            }
+        }
+        return SignVersion.V1; // default v1
     }
 }
