@@ -330,7 +330,7 @@ public class LogDataFetcher<T> {
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
         ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, recordEmitter);
         if (!running) {
-            // Do not create consumer any more
+            // Do not create consumer anymore
             return;
         }
         consumerCache.put(shard.getId(), consumer);

@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.Callable;
 
 final class RequestExecutor {
-    private static final Logger LOG = LoggerFactory.getLogger(LogClientProxy.class);
+    private static final Logger LOG = LoggerFactory.getLogger(RequestExecutor.class);
 
     private volatile boolean isCanceled = false;
     private final int maxRetries;

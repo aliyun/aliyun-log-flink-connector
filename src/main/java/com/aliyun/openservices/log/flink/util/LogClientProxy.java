@@ -1,21 +1,22 @@
 package com.aliyun.openservices.log.flink.util;
 
 import com.aliyun.openservices.log.Client;
-import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.common.Consts.CursorMode;
-import com.aliyun.openservices.log.common.*;
+import com.aliyun.openservices.log.common.ConsumerGroup;
+import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
+import com.aliyun.openservices.log.common.LogGroupData;
+import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.model.MemoryLimiter;
 import com.aliyun.openservices.log.flink.model.ResultHandler;
+import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import com.aliyun.openservices.log.request.PullLogsRequest;
-import com.aliyun.openservices.log.request.PutLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
 import com.aliyun.openservices.log.response.ListConsumerGroupResponse;
 import com.aliyun.openservices.log.response.ListLogStoresResponse;
 import com.aliyun.openservices.log.response.PullLogsResponse;
 import com.aliyun.openservices.log.util.LZ4Encoder;
 import com.aliyun.openservices.log.util.VarintUtil;
-import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -302,39 +303,20 @@ public class LogClientProxy implements Serializable {
             LOG.warn("The checkpoint to update is invalid: {}", checkpoint);
             return;
         }
-        try {
-            executor.call((Callable<Void>) () -> {
-                client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
-                return null;
-            }, "updateCheckpoint");
-        } catch (LogException ex) {
-            if ("ConsumerGroupNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
-                LOG.warn("Consumer group not exist: {}", consumerGroup);
-            } else if ("ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
-                LOG.warn("Shard {} not exist, readonly = {}", shard, readOnly);
-            } else {
-                throw ex;
-            }
-        }
-    }
-
-    public void putLogs(String project,
-                        String logstore,
-                        String topic,
-                        String source,
-                        String hashKey,
-                        List<TagContent> tags,
-                        List<LogItem> logItems) throws LogException {
-        PutLogsRequest request = new PutLogsRequest(project, logstore, topic,
-                source, logItems, hashKey);
-        request.SetCompressType(Consts.CompressType.LZ4);
-        if (tags != null) {
-            request.SetTags(tags);
-        }
         executor.call((Callable<Void>) () -> {
-            client.PutLogs(request);
+            try {
+                client.UpdateCheckPoint(project, logstore, consumerGroup, shard, checkpoint);
+            } catch (LogException ex) {
+                if ("ConsumerGroupNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
+                    LOG.warn("Consumer group not exist: {}", consumerGroup);
+                } else if ("ShardNotExist".equalsIgnoreCase(ex.GetErrorCode())) {
+                    LOG.warn("Shard {} not exist, readonly = {}", shard, readOnly);
+                } else {
+                    throw ex;
+                }
+            }
             return null;
-        }, "PutLogs");
+        }, "updateCheckpoint");
     }
 
     public void close() {
