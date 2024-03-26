@@ -24,14 +24,11 @@ public class ConfigConstants {
     public static String LOG_CONSUMER_DEFAULT_POSITION = "CONSUMER_DEFAULT_POSITION";
     public static String LOG_CHECKPOINT_MODE = "LOG_CHECKPOINT_MODE";
     public static String LOG_COMMIT_INTERVAL_MILLIS = "LOG_COMMIT_INTERVAL";
-
-
     public static final String FLUSH_INTERVAL_MS = "flush.interval.ms";
     public static final String MAX_RETRIES = "max.retries";
     public static final String MAX_RETRIES_FOR_RETRYABLE_ERROR = "max.retries.for.retryable.error";
     public static final String STOP_TIME = "stop.time";
     public static final String DIRECT_MODE = "direct.mode";
-
     public static final String TOTAL_SIZE_IN_BYTES = "total.size.in.bytes";
     public static final String LOG_GROUP_MAX_SIZE = "logGroup.max.size";
     public static final String LOG_GROUP_MAX_LINES = "logGroup.max.lines";
@@ -54,4 +51,9 @@ public class ConfigConstants {
      * io thread num of sls producer
      */
     public static final String IO_THREAD_NUM = "io.thread.num";
+    /**
+     * Signature Version.
+     */
+    public static final String REGION_ID = "region.id";
+    public static final String SIGNATURE_VERSION = "signature.version"; // V4 or V1
 }

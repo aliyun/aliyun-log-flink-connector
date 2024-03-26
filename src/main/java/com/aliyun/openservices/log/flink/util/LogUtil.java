@@ -1,10 +1,17 @@
 package com.aliyun.openservices.log.flink.util;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.internal.ConfigParser;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
+import com.aliyun.openservices.log.http.client.ClientConfiguration;
+import com.aliyun.openservices.log.http.signer.SignVersion;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.util.PropertiesUtil;
 
 import java.util.Properties;
+
+import static com.aliyun.openservices.log.flink.ConfigConstants.REGION_ID;
+import static com.aliyun.openservices.log.flink.ConfigConstants.SIGNATURE_VERSION;
 
 public final class LogUtil {
 
@@ -46,5 +53,31 @@ public final class LogUtil {
     public static String getDefaultPosition(Properties properties) {
         final String val = properties.getProperty(ConfigConstants.LOG_CONSUMER_DEFAULT_POSITION);
         return val != null && !val.isEmpty() ? val : Consts.LOG_BEGIN_CURSOR;
+    }
+
+    private static SignVersion parseSignVersion(String signVersion) {
+        for (SignVersion version : SignVersion.values()) {
+            if (version.name().equalsIgnoreCase(signVersion)) {
+                return version;
+            }
+        }
+        return SignVersion.V1; // default v1
+    }
+
+    public static ClientConfiguration getClientConfiguration(ConfigParser parser) {
+        SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(SIGNATURE_VERSION));
+        ClientConfiguration clientConfiguration = new ClientConfiguration();
+        clientConfiguration.setMaxConnections(com.aliyun.openservices.log.common.Consts.HTTP_CONNECT_MAX_COUNT);
+        clientConfiguration.setConnectionTimeout(com.aliyun.openservices.log.common.Consts.HTTP_CONNECT_TIME_OUT);
+        clientConfiguration.setSocketTimeout(com.aliyun.openservices.log.common.Consts.HTTP_SEND_TIME_OUT);
+        clientConfiguration.setSignatureVersion(signVersion);
+        if (signVersion == SignVersion.V4) {
+            String regionId = parser.getString(REGION_ID);
+            if (StringUtils.isBlank(regionId)) {
+                throw new IllegalArgumentException("The " + REGION_ID + " was not specified for signature " + signVersion.name() + ".");
+            }
+            clientConfiguration.setRegion(regionId);
+        }
+        return clientConfiguration;
     }
 }

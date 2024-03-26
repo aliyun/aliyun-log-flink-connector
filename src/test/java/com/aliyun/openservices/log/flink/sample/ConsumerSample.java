@@ -54,6 +54,8 @@ public class ConsumerSample {
         configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.ON_CHECKPOINTS.name());
         configProps.put(ConfigConstants.LOG_COMMIT_INTERVAL_MILLIS, "10000");
         configProps.put(ConfigConstants.STOP_TIME, "1627878020");
+        configProps.put(ConfigConstants.SIGNATURE_VERSION, "v4");
+        configProps.put(ConfigConstants.REGION_ID, "cn-hangzhou");
 
         FastLogGroupDeserializer deserializer = new FastLogGroupDeserializer();
         DataStream<FastLogGroupList> stream = env.addSource(

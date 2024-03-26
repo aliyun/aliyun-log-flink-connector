@@ -24,11 +24,7 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.regex.Pattern;
 
 public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implements ResultTypeQueryable<T>,
@@ -117,7 +113,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 parser.getString(ConfigConstants.LOG_ACCESSKEYID),
                 parser.getString(ConfigConstants.LOG_ACCESSKEY),
                 getOrCreateUserAgent(indexOfSubTask),
-                retryPolicy);
+                retryPolicy,
+                LogUtil.getClientConfiguration(parser));
         if (parser.getBool(ConfigConstants.DIRECT_MODE, false)) {
             logClient.enableDirectMode(project);
         }

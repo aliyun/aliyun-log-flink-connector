@@ -10,6 +10,7 @@ import com.aliyun.openservices.log.flink.internal.ProducerConfig;
 import com.aliyun.openservices.log.flink.internal.ProducerImpl;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
 import com.aliyun.openservices.log.flink.util.Consts;
+import com.aliyun.openservices.log.flink.util.LogUtil;
 import com.aliyun.openservices.log.flink.util.RetryPolicy;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
@@ -19,11 +20,7 @@ import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 
 import static com.aliyun.openservices.log.flink.ConfigConstants.FLUSH_INTERVAL_MS;
 import static com.aliyun.openservices.log.flink.ConfigConstants.IO_THREAD_NUM;
@@ -83,7 +80,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 .maxRetryBackoff(parser.getLong(ConfigConstants.MAX_RETRY_BACKOFF_TIME_MS,
                         Consts.DEFAULT_MAX_RETRY_BACKOFF_TIME_MS))
                 .build();
-        return new ProducerImpl(producerConfig, retryPolicy);
+        return new ProducerImpl(producerConfig, retryPolicy, LogUtil.getClientConfiguration(parser));
     }
 
     @Override
@@ -102,9 +99,11 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
+        LOG.info("Snapshotting state.");
         if (producer != null) {
             try {
                 producer.flush();
+                LOG.info("Flushing producer success");
             } catch (InterruptedException ex) {
                 LOG.warn("Interrupted while flushing producer.");
                 Thread.currentThread().interrupt();

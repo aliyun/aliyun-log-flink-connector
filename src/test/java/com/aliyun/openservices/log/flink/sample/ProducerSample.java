@@ -36,6 +36,8 @@ public class ProducerSample {
         configProps.put(ConfigConstants.LOG_GROUP_MAX_LINES, "5000");
         // Set max size of one logGroup to 3MB
         configProps.put(ConfigConstants.LOG_GROUP_MAX_SIZE, "3145728");
+        configProps.put(ConfigConstants.SIGNATURE_VERSION, "v4");
+        configProps.put(ConfigConstants.REGION_ID, "cn-hangzhou");
 
         FlinkLogProducer<String> logProducer = new FlinkLogProducer<>(new SimpleLogSerializer(), configProps);
         logProducer.setCustomPartitioner(new LogPartitioner<String>() {

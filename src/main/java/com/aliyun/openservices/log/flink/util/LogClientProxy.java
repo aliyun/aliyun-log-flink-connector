@@ -3,12 +3,9 @@ package com.aliyun.openservices.log.flink.util;
 import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.common.Consts.CursorMode;
-import com.aliyun.openservices.log.common.ConsumerGroup;
-import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
-import com.aliyun.openservices.log.common.LogItem;
-import com.aliyun.openservices.log.common.Shard;
-import com.aliyun.openservices.log.common.TagContent;
+import com.aliyun.openservices.log.common.*;
 import com.aliyun.openservices.log.exception.LogException;
+import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.request.PutLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
@@ -36,8 +33,9 @@ public class LogClientProxy implements Serializable {
                           String accessKeyId,
                           String accessKey,
                           String userAgent,
-                          RetryPolicy retryPolicy) {
-        this.client = new Client(endpoint, accessKeyId, accessKey);
+                          RetryPolicy retryPolicy,
+                          ClientConfiguration clientConfiguration) {
+        this.client = new Client(endpoint, accessKeyId, accessKey, clientConfiguration);
         this.client.setUserAgent(userAgent);
         this.executor = new RequestExecutor(retryPolicy);
     }

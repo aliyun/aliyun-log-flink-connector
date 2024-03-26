@@ -6,6 +6,7 @@ import com.aliyun.openservices.log.common.TagContent;
 import com.aliyun.openservices.log.flink.util.Consts;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import com.aliyun.openservices.log.flink.util.RetryPolicy;
+import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +42,7 @@ public class ProducerImpl implements Producer {
     private final Semaphore semaphore;
     private final ShardHashAdjuster shardHashAdjuster;
 
-    public ProducerImpl(ProducerConfig producerConfig, RetryPolicy retryPolicy) {
+    public ProducerImpl(ProducerConfig producerConfig, RetryPolicy retryPolicy, ClientConfiguration clientConfiguration) {
         this.cache = new ConcurrentHashMap<>();
         this.queue = new LinkedBlockingQueue<>(producerConfig.getProducerQueueSize());
         this.producerConfig = producerConfig;
@@ -50,7 +51,8 @@ public class ProducerImpl implements Producer {
                 producerConfig.getAccessKeyId(),
                 producerConfig.getAccessKeySecret(),
                 "Flink-Connector-producer-" + Consts.FLINK_CONNECTOR_VERSION,
-                retryPolicy);
+                retryPolicy,
+                clientConfiguration);
         int maxSizeInBytes = producerConfig.getTotalSizeInBytes();
         this.logGroupSizeThreshold = producerConfig.getLogGroupSize();
         this.logGroupMaxLines = producerConfig.getLogGroupMaxLines();
