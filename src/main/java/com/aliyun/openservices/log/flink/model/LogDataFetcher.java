@@ -332,7 +332,12 @@ public class LogDataFetcher<T> {
     }
 
     public void awaitTermination() throws InterruptedException {
+        long begin = System.currentTimeMillis();
         while (!shardConsumersExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+            if (System.currentTimeMillis() - begin > 60000) {
+                LOG.warn("Waiting executor terminating timeout.");
+                break;
+            }
             LOG.warn("Executor is still running, check again after 1s.");
         }
         LOG.warn("LogDataFetcher exit awaitTermination");
