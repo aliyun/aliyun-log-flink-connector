@@ -37,15 +37,17 @@ public class ShardConsumer<T> implements Runnable {
     private volatile boolean isRunning = true;
     private int stopTimeSec = -1;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
-    private final LogDataFetcher.RecordEmitter<T> recordEmitter;
+    private final RecordEmitter<T> recordEmitter;
 
     ShardConsumer(LogDataFetcher<T> fetcher,
+                  String logProject,
                   LogDeserializationSchema<T> deserializer,
                   int subscribedShardStateIndex,
                   Properties configProps,
                   LogClientProxy logClient,
-                  LogDataFetcher.RecordEmitter<T> recordEmitter) {
+                  RecordEmitter<T> recordEmitter) {
         this.fetcher = fetcher;
+        this.logProject = logProject;
         this.deserializer = deserializer;
         this.subscribedShardStateIndex = subscribedShardStateIndex;
         // TODO Move configs to a class
@@ -53,7 +55,6 @@ public class ShardConsumer<T> implements Runnable {
         this.fetchIntervalMs = LogUtil.getFetchIntervalMillis(configProps);
         this.logClient = logClient;
         this.recordEmitter = recordEmitter;
-        this.logProject = fetcher.getProject();
         this.initialPosition = configProps.getProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, Consts.LOG_BEGIN_CURSOR);
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         if (Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)
@@ -128,11 +129,11 @@ public class ShardConsumer<T> implements Runnable {
     }
 
     public void run() {
+        LogstoreShardState state = fetcher.getShardState(subscribedShardStateIndex);
+        final LogstoreShardMeta shardMeta = state.getShardMeta();
+        final int shardId = shardMeta.getShardId();
+        String logstore = shardMeta.getLogstore();
         try {
-            LogstoreShardState state = fetcher.getShardState(subscribedShardStateIndex);
-            final LogstoreShardMeta shardMeta = state.getShardMeta();
-            final int shardId = shardMeta.getShardId();
-            String logstore = shardMeta.getLogstore();
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             String stopCursor = getStopCursor(logstore, shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
@@ -182,9 +183,10 @@ public class ShardConsumer<T> implements Runnable {
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
             fetcher.complete(shardMeta.getId());
-        } catch (Throwable t) {
+        } catch (Exception t) {
             LOG.error("Unexpected error", t);
             fetcher.stopWithError(t);
+            LOG.warn("Consumer for shard {} exited.", shardId);
         }
     }
 
