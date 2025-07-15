@@ -185,6 +185,7 @@ public class ShardConsumer<T> implements Runnable {
             fetcher.complete(shardMeta.getId());
         } catch (Exception t) {
             LOG.error("Unexpected error", t);
+            fetcher.complete(shardMeta.getId());
             fetcher.stopWithError(t);
             LOG.warn("Consumer for shard {} exited.", shardId);
         }
