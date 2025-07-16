@@ -148,7 +148,6 @@ public class LogClientProxy implements Serializable {
         if (!memoryLimiter.isEnabled()) {
             PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
             String readLastCursor = response.GetHeader("x-log-read-last-cursor");
-            System.out.println("readLastCursor=" + readLastCursor);
             resultHandler.handle(response.getLogGroups(), cursor, response.getNextCursor(), response.getRawSize(), readLastCursor);
             return new PullResult(response.getCount(), response.getRawSize(), response.getNextCursor());
         }
@@ -159,7 +158,6 @@ public class LogClientProxy implements Serializable {
             memoryLimiter.acquire(rawSize);
             String nextCursor = response.getNextCursor();
             String readLastCursor = response.GetHeader("x-log-read-last-cursor");
-            System.out.println("readLastCursor=" + readLastCursor);
             resultHandler.handle(response.getLogGroups(), cursor, nextCursor, rawSize, readLastCursor);
             return new PullResult(response.getCount(), rawSize, nextCursor);
         } finally {
