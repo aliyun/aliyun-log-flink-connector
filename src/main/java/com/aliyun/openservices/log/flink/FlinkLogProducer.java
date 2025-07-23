@@ -1,21 +1,14 @@
 package com.aliyun.openservices.log.flink;
 
-import com.aliyun.openservices.aliyun.log.producer.LogProducer;
-import com.aliyun.openservices.aliyun.log.producer.Producer;
-import com.aliyun.openservices.aliyun.log.producer.ProducerConfig;
-import com.aliyun.openservices.aliyun.log.producer.ProjectConfig;
-import com.aliyun.openservices.aliyun.log.producer.Result;
+import com.aliyun.openservices.aliyun.log.producer.*;
 import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.flink.data.RawLog;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
-import com.aliyun.openservices.log.flink.util.ConfigParser;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
+import com.aliyun.openservices.log.flink.util.ConfigParser;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import com.aliyun.openservices.log.http.signer.SignVersion;
 import com.shade.aliyun.openservices.log.common.LogItem;
-import com.shade.google.common.util.concurrent.FutureCallback;
-import com.shade.google.common.util.concurrent.Futures;
-import com.shade.google.common.util.concurrent.ListenableFuture;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
@@ -25,14 +18,10 @@ import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.aliyun.openservices.log.flink.ConfigConstants.*;
@@ -45,10 +34,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private final LogSerializationSchema<T> schema;
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
-    private transient ProducerCallback callback;
+    private final transient Callback callback;
     private final String project;
     private final String logstore;
-    private ExecutorService executor;
     private final AtomicLong buffered = new AtomicLong(0);
     private final long flushTimeoutMs;
     private final ConfigParser configParser;
@@ -65,6 +53,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         this.project = configParser.getString(ConfigConstants.LOG_PROJECT);
         this.logstore = configParser.getString(ConfigConstants.LOG_LOGSTORE);
         this.flushTimeoutMs = configParser.getLong(PRODUCER_FLUSH_TIMEOUT_MS, DEFAULT_FLUSH_TIMEOUT_MS);
+        this.callback = new ProducerCallback(buffered);
     }
 
     public void setCustomPartitioner(LogPartitioner<T> customPartitioner) {
@@ -108,9 +97,6 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     @Override
     public void open(Configuration parameters) throws Exception {
         super.open(parameters);
-        if (callback == null) {
-            callback = new ProducerCallback(buffered);
-        }
         if (customPartitioner != null) {
             customPartitioner.initialize(
                     getRuntimeContext().getIndexOfThisSubtask(),
@@ -119,7 +105,6 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (producer == null) {
             producer = createProducer(configParser);
         }
-        executor = Executors.newSingleThreadExecutor();
     }
 
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
@@ -137,7 +122,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 LOG.warn("Wait snapshotState timeout, timeout={}", flushTimeoutMs);
                 break;
             }
-            LOG.info("Sleep 100 ms to wait all records flushed");
+            LOG.info("Sleep 100 ms to wait all records flushed, buffered={}", buffered.get());
             Thread.sleep(100);
         }
     }
@@ -153,7 +138,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         }
         RawLogGroup logGroup = schema.serialize(value);
         if (logGroup == null) {
-            LOG.info("The serialized log group is null, will not send any data to log service");
+            LOG.info("Skipping null LogGroup.");
             return;
         }
         String shardHashKey = null;
@@ -177,13 +162,13 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             return;
         }
         try {
-            ListenableFuture<Result> future = producer.send(project,
+            producer.send(project,
                     logstore,
                     logGroup.getTopic(),
                     logGroup.getSource(),
                     shardHashKey,
-                    logs);
-            Futures.addCallback(future, callback, executor);
+                    logs,
+                    callback);
             buffered.incrementAndGet();
         } catch (InterruptedException | ProducerException e) {
             LOG.error("Error while sending logs", e);
@@ -197,41 +182,28 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             producer.close();
             producer = null;
         }
-        if (executor != null) {
-            executor.shutdown();
-            if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-                if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
-                    LOG.warn("Stop executor failed");
-                }
-            }
-        }
         super.close();
         LOG.info("Flink log producer has been closed");
     }
 
-    public static class ProducerCallback implements FutureCallback<Result> {
-        private AtomicLong count;
+    private static class ProducerCallback implements Callback {
+        private final AtomicLong buffered;
 
-        ProducerCallback(AtomicLong count) {
-            this.count = count;
+        private ProducerCallback(AtomicLong buffered) {
+            this.buffered = buffered;
         }
 
         @Override
-        public void onSuccess(@Nullable Result result) {
-            count.decrementAndGet();
-            if (result != null && !result.isSuccessful()) {
-                LOG.error("Send logs failed, code={}, errorMsg={}, retries={}",
+        public void onCompletion(Result result) {
+            if (result == null) {
+                LOG.error("Unexpected null result, buffered={}", buffered.get());
+            } else if (!result.isSuccessful()) {
+                LOG.error("Failed to send log due to code={}, message={}, retries={}",
                         result.getErrorCode(),
                         result.getErrorMessage(),
                         result.getAttemptCount());
             }
-        }
-
-        @Override
-        public void onFailure(Throwable throwable) {
-            count.decrementAndGet();
-            LOG.error("Send logs failed", throwable);
+            buffered.decrementAndGet();
         }
     }
 }
