@@ -1,10 +1,6 @@
 package com.aliyun.openservices.log.flink.data;
 
-import com.aliyun.openservices.log.common.FastLog;
-import com.aliyun.openservices.log.common.FastLogContent;
-import com.aliyun.openservices.log.common.FastLogGroup;
-import com.aliyun.openservices.log.common.FastLogTag;
-import com.aliyun.openservices.log.common.LogGroupData;
+import com.aliyun.openservices.log.common.*;
 import com.aliyun.openservices.log.flink.model.LogDeserializationSchema;
 import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -24,12 +20,6 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
 
     public void setSequenceNumberKey(String sequenceNumberKey) {
         this.sequenceNumberKey = sequenceNumberKey;
-    }
-
-    private static long decodeCursor(String cursor) {
-        byte[] timestampAsBytes = Base64.getDecoder().decode(cursor.getBytes(StandardCharsets.UTF_8));
-        String timestamp = new String(timestampAsBytes, StandardCharsets.UTF_8);
-        return Long.parseLong(timestamp);
     }
 
     private static String encodeCursor(long offset) {
