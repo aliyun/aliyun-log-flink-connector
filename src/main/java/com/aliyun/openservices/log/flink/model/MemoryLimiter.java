@@ -8,14 +8,9 @@ import java.util.Properties;
 import java.util.concurrent.Semaphore;
 
 public class MemoryLimiter implements Serializable {
-    private static final int MIN_MEMORY_LIMIT_MB = 20;
-    private final boolean isEnabled;
+    private static final int MIN_MEMORY_LIMIT_MB = 100;
     private final Semaphore semaphore;
 
-    public MemoryLimiter() {
-        this.isEnabled = false;
-        this.semaphore = null;
-    }
 
     public MemoryLimiter(Properties configProps) {
         if (configProps.containsKey(ConfigConstants.SOURCE_MEMORY_LIMIT)) {
@@ -25,22 +20,9 @@ public class MemoryLimiter implements Serializable {
                         + MIN_MEMORY_LIMIT_MB + "MB");
             }
             this.semaphore = new Semaphore(memoryLimit);
-            this.isEnabled = true;
         } else {
-            this.isEnabled = false;
             this.semaphore = null;
         }
-    }
-
-    public boolean isEnabled() {
-        return isEnabled;
-    }
-
-    public boolean tryAcquire(int permits) {
-        if (semaphore != null) {
-            return semaphore.tryAcquire(permits);
-        }
-        return true;
     }
 
     public void acquire(int permits) throws InterruptedException {

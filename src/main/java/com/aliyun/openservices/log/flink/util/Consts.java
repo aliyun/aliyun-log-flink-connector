@@ -25,5 +25,5 @@ public class Consts {
     public static final long DEFAULT_BASE_RETRY_BACKOFF_TIME_MS = 200;
 
     public static final long DEFAULT_MAX_RETRY_BACKOFF_TIME_MS = 5000;
-    public static final String FLINK_CONNECTOR_VERSION = "0.1.38";
+    public static final String FLINK_CONNECTOR_VERSION = "0.1.39";
 }

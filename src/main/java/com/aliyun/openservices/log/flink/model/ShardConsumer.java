@@ -133,6 +133,7 @@ public class ShardConsumer<T> implements Runnable {
         final LogstoreShardMeta shardMeta = state.getShardMeta();
         final int shardId = shardMeta.getShardId();
         String logstore = shardMeta.getLogstore();
+        String logstoreShard = shardMeta.getId();
         try {
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             String stopCursor = getStopCursor(logstore, shardId);
@@ -159,38 +160,44 @@ public class ShardConsumer<T> implements Runnable {
                     }
                     throw ex;
                 }
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Fetch request cost {} ms", System.currentTimeMillis() - fetchStartTimeMs);
+                long fetchEnd = System.currentTimeMillis();
+                long fetchCostMs = fetchEnd - fetchStartTimeMs;
+                if (fetchCostMs >= 50) {
+                    LOG.warn("Slow fetch cost {} ms, shard={}", fetchCostMs, logstoreShard);
                 }
                 if (!isRunning) {
-                    LOG.warn("LogFetcher already stopped, shard={}", shardMeta.getId());
+                    LOG.warn("LogFetcher already stopped, shard={}", logstoreShard);
                     break;
                 }
                 String nextCursor = result.getNextCursor();
                 if (result.getCount() > 0) {
                     processRecords(shardMeta, result);
+                    long processCostMs = System.currentTimeMillis() - fetchEnd;
+                    if (processCostMs >= 50) {
+                        LOG.warn("Slow process cost {} ms, shard={}", processCostMs, logstoreShard);
+                    }
                     cursor = nextCursor;
-                    adjustFetchFrequency(result.getRawSize());
+                    adjustFetchFrequency(result.getRawSize(), logstoreShard);
                     continue;
                 }
                 if ((cursor.equals(nextCursor) && isReadOnly)
                         || cursor.equals(stopCursor)) {
-                    LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", shardMeta.getId(), isReadOnly, stopCursor);
+                    LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", logstoreShard, isReadOnly, stopCursor);
                     break;
                 }
-                adjustFetchFrequency(result.getRawSize());
+                adjustFetchFrequency(result.getRawSize(), logstoreShard);
             }
-            LOG.warn("Consumer for shard {} stopped", shardId);
+            LOG.warn("Consumer for shard {} stopped", logstoreShard);
             fetcher.complete(shardMeta.getId());
         } catch (Exception t) {
-            LOG.error("Unexpected error", t);
-            fetcher.complete(shardMeta.getId());
+            LOG.error("Unexpected error, shard=" + logstoreShard, t);
+            fetcher.complete(logstoreShard);
             fetcher.stopWithError(t);
             LOG.warn("Consumer for shard {} exited.", shardId);
         }
     }
 
-    private void adjustFetchFrequency(long responseSize) throws Exception {
+    private void adjustFetchFrequency(long responseSize, String shardId) throws Exception {
         long sleepTime = 0;
         if (responseSize <= 1) {
             // Outflow: 1
@@ -202,7 +209,9 @@ public class ShardConsumer<T> implements Runnable {
             sleepTime = fetchIntervalMs;
         }
         if (sleepTime > 0) {
-            LOG.debug("Wait {} ms before next fetching", sleepTime);
+            if (sleepTime >= 50) {
+                LOG.warn("Sleep {}ms, last response size {}, shard {}", sleepTime, responseSize, shardId);
+            }
             try {
                 cancelFuture.get(sleepTime, TimeUnit.MILLISECONDS);
             } catch (TimeoutException ex) {
