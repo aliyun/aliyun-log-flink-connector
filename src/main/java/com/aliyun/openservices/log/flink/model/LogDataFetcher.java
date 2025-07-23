@@ -12,23 +12,8 @@ import org.apache.flink.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -117,67 +102,6 @@ public class LogDataFetcher<T> {
                 PropertiesUtil.getInt(configProps, ConfigConstants.SOURCE_QUEUE_SIZE, DEFAULT_QUEUE_SIZE));
     }
 
-    public static class RecordEmitter<T> implements Runnable {
-        private final BlockingQueue<SourceRecord<T>> queue;
-        private final LogDataFetcher<T> fetcher;
-        private final CheckpointCommitter committer;
-        private final CountDownLatch latch = new CountDownLatch(1);
-        private final long idleInterval;
-        private final MemoryLimiter memoryLimiter;
-
-        public RecordEmitter(BlockingQueue<SourceRecord<T>> queue,
-                             LogDataFetcher<T> fetcher,
-                             CheckpointCommitter committer,
-                             long idleInterval,
-                             MemoryLimiter memoryLimiter) {
-            this.queue = queue;
-            this.fetcher = fetcher;
-            this.committer = committer;
-            this.idleInterval = idleInterval;
-            this.memoryLimiter = memoryLimiter;
-        }
-
-        public void produce(SourceRecord<T> record) throws InterruptedException {
-            while (fetcher.isRunning()) {
-                if (queue.offer(record, idleInterval, TimeUnit.MILLISECONDS)) {
-                    return;
-                }
-            }
-        }
-
-        @Override
-        public void run() {
-            while (fetcher.isRunning()) {
-                try {
-                    SourceRecord<T> record = queue.poll(idleInterval, TimeUnit.MILLISECONDS);
-                    if (record == null) {
-                        continue;
-                    }
-                    fetcher.emitRecordAndUpdateState(
-                            record.getRecord(), record.getTimestamp(), record.getSubscribedShardStateIndex(),
-                            record.getNextCursor());
-                    if (committer != null) {
-                        committer.updateCheckpoint(record.getShard(), record.getNextCursor(), record.isReadOnly());
-                    }
-                    if (memoryLimiter != null) {
-                        memoryLimiter.release(record.getDataRawSize());
-                    }
-                } catch (Exception ex) {
-                    LOG.error("Fail to emit record {}", ex.getMessage(), ex);
-                    latch.countDown();
-                    fetcher.stopWithError(ex);
-                    return;
-                }
-            }
-            latch.countDown();
-            LOG.warn("Record emitter exited");
-        }
-
-        public void waitForIdle() throws InterruptedException {
-            latch.await();
-        }
-    }
-
     public boolean isRunning() {
         return running && !Thread.interrupted();
     }
@@ -188,10 +112,6 @@ public class LogDataFetcher<T> {
         } catch (NumberFormatException ex) {
             throw new IllegalArgumentException("Invalid " + ConfigConstants.STOP_TIME + ": " + stopTime);
         }
-    }
-
-    public String getProject() {
-        return project;
     }
 
     private static class GetDataThreadFactory implements ThreadFactory {
@@ -328,9 +248,9 @@ public class LogDataFetcher<T> {
     }
 
     private void createConsumerForShard(int index, LogstoreShardMeta shard) {
-        ShardConsumer<T> consumer = new ShardConsumer<>(this, deserializer, index, configProps, logClient, recordEmitter);
+        ShardConsumer<T> consumer = new ShardConsumer<>(this, project, deserializer, index, configProps, logClient, recordEmitter);
         if (!running) {
-            // Do not create consumer any more
+            // Do not create consumer anymore
             return;
         }
         consumerCache.put(shard.getId(), consumer);
@@ -412,7 +332,12 @@ public class LogDataFetcher<T> {
     }
 
     public void awaitTermination() throws InterruptedException {
+        long begin = System.currentTimeMillis();
         while (!shardConsumersExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+            if (System.currentTimeMillis() - begin > 60000) {
+                LOG.warn("Waiting executor terminating timeout.");
+                break;
+            }
             LOG.warn("Executor is still running, check again after 1s.");
         }
         LOG.warn("LogDataFetcher exit awaitTermination");
@@ -427,6 +352,7 @@ public class LogDataFetcher<T> {
 
         cancelFuture.complete(null);
         if (recordEmitter != null) {
+            LOG.info("Waiting for recordEmitter idle.");
             try {
                 recordEmitter.waitForIdle();
             } catch (Exception ex) {
@@ -439,6 +365,7 @@ public class LogDataFetcher<T> {
             LOG.info("Stopping checkpoint committer thread.");
             autoCommitter.cancel();
         }
+        LOG.warn("shutdownFetcher exited");
     }
 
     void emitRecordAndUpdateState(T record, long recordTimestamp, int shardStateIndex, String cursor) {

@@ -46,7 +46,7 @@ final class RequestExecutor {
                     if (maxRetriesForRetryableError >= 0 && ++retryableError >= maxRetriesForRetryableError) {
                         throw ex;
                     }
-                    LOG.error("{} fail: {}, sleep {}ms", action, ex.GetErrorMessage(), backoff);
+                    LOG.error("{} fail: {}, status={}, sleep {}ms", action, ex.GetErrorMessage(), status, backoff);
                 } else if (retries < maxRetries) {
                     LOG.error("{} fail: {}, retry {}/{}", action, ex.GetErrorMessage(), retries, maxRetries);
                     retries++;

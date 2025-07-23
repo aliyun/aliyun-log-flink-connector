@@ -48,20 +48,6 @@ public class LogClientProxy implements Serializable {
         this.memoryLimiter = memoryLimiter;
     }
 
-    public void enableDirectMode(String project) {
-        try {
-            String serverIp = client.GetServerIpAddress(project);
-            if (serverIp != null && !serverIp.isEmpty()) {
-                client.setUseDirectMode(true);
-                LOG.info("Enable direct mode success.");
-                return;
-            }
-            LOG.warn("This region does not support direct mode.");
-        } catch (Exception ex) {
-            LOG.warn("Error getting server ip {}", ex.getMessage());
-        }
-    }
-
     public String getEndCursor(final String project, final String logstore, final int shard) throws LogException {
         return executor.call(() -> client.GetCursor(project, logstore, shard, CursorMode.END).GetCursor(), "getEndCursor");
     }
