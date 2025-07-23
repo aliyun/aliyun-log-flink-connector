@@ -137,8 +137,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 LOG.warn("Wait snapshotState timeout, timeout={}", flushTimeoutMs);
                 break;
             }
-            LOG.info("Sleep 100 ms to wait all records flushed");
-            Thread.sleep(100);
+            LOG.info("Sleep 10 ms to wait all records flushed");
+            Thread.sleep(10);
         }
     }
 

@@ -10,13 +10,23 @@ public class PullLogsResult implements java.io.Serializable {
     private String cursor;
     private String nextCursor;
     private String readLastCursor;
+    private int rawSize;
+    private int count;
 
-    public PullLogsResult(List<LogGroupData> logGroupList, int shard, String cursor, String nextCursor, String readLastCursor) {
+    public PullLogsResult(List<LogGroupData> logGroupList,
+                          int shard,
+                          String cursor,
+                          String nextCursor,
+                          String readLastCursor,
+                          int rawSize,
+                          int count) {
         this.logGroupList = logGroupList;
         this.shard = shard;
         this.cursor = cursor;
         this.nextCursor = nextCursor;
         this.readLastCursor = readLastCursor;
+        this.rawSize = rawSize;
+        this.count = count;
     }
 
     public List<LogGroupData> getLogGroupList() {
@@ -57,5 +67,21 @@ public class PullLogsResult implements java.io.Serializable {
 
     public void setReadLastCursor(String readLastCursor) {
         this.readLastCursor = readLastCursor;
+    }
+
+    public int getRawSize() {
+        return rawSize;
+    }
+
+    public void setRawSize(int rawSize) {
+        this.rawSize = rawSize;
+    }
+
+    public int getCount() {
+        return count;
+    }
+
+    public void setCount(int count) {
+        this.count = count;
     }
 }

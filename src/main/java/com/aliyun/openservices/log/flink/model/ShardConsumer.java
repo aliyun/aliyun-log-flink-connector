@@ -137,12 +137,11 @@ public class ShardConsumer<T> implements Runnable {
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             String stopCursor = getStopCursor(logstore, shardId);
             LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
-            ResultHandler<T> resultHandler = new ResultHandler<>(shardMeta, this);
             while (isRunning) {
-                LogClientProxy.PullResult response;
+                PullLogsResult result;
                 long fetchStartTimeMs = System.currentTimeMillis();
                 try {
-                    response = logClient.pullLogs(logProject, logstore, shardId, cursor, stopCursor, fetchSize, resultHandler);
+                    result = logClient.pullLogs(logProject, logstore, shardId, cursor, stopCursor, fetchSize);
                 } catch (LogException ex) {
                     LOG.warn("Failed to pull logs, message: {}, shard: {}", ex.GetErrorMessage(), shardId);
                     String errorCode = ex.GetErrorCode();
@@ -163,15 +162,15 @@ public class ShardConsumer<T> implements Runnable {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Fetch request cost {} ms", System.currentTimeMillis() - fetchStartTimeMs);
                 }
-                if (response == null) {
-                    continue;
-                }
-                if (!isRunning)
+                if (!isRunning) {
+                    LOG.warn("LogFetcher already stopped, shard={}", shardMeta.getId());
                     break;
-                String nextCursor = response.getNextCursor();
-                if (response.getCount() > 0) {
+                }
+                String nextCursor = result.getNextCursor();
+                if (result.getCount() > 0) {
+                    processRecords(shardMeta, result);
                     cursor = nextCursor;
-                    adjustFetchFrequency(response.getRawSize());
+                    adjustFetchFrequency(result.getRawSize());
                     continue;
                 }
                 if ((cursor.equals(nextCursor) && isReadOnly)
@@ -179,7 +178,7 @@ public class ShardConsumer<T> implements Runnable {
                     LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", shardMeta.getId(), isReadOnly, stopCursor);
                     break;
                 }
-                adjustFetchFrequency(response.getRawSize());
+                adjustFetchFrequency(result.getRawSize());
             }
             LOG.warn("Consumer for shard {} stopped", shardId);
             fetcher.complete(shardMeta.getId());
@@ -191,7 +190,7 @@ public class ShardConsumer<T> implements Runnable {
         }
     }
 
-    private void adjustFetchFrequency(int responseSize) throws Exception {
+    private void adjustFetchFrequency(long responseSize) throws Exception {
         long sleepTime = 0;
         if (responseSize <= 1) {
             // Outflow: 1
@@ -221,15 +220,11 @@ public class ShardConsumer<T> implements Runnable {
         cancelFuture.complete(null);
     }
 
-    public void processRecords(List<LogGroupData> records,
-                               String cursor,
-                               LogstoreShardMeta shard,
-                               String nextCursor,
-                               int dataRawSize,
-                               String readLastCursor) throws InterruptedException {
-        PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor, readLastCursor);
-        final T value = deserializer.deserialize(record);
+    public void processRecords(LogstoreShardMeta shard,
+                               PullLogsResult result) throws InterruptedException {
+        final T value = deserializer.deserialize(result);
         long timestamp = System.currentTimeMillis();
+        List<LogGroupData> records = result.getLogGroupList();
         if (!records.isEmpty()) {
             // Use the timestamp of first log for perf consideration.
             FastLogGroup logGroup = records.get(0).GetFastLogGroup();
@@ -239,7 +234,7 @@ public class ShardConsumer<T> implements Runnable {
             }
         }
         SourceRecord<T> sourceRecord = new SourceRecord<>(
-                value, timestamp, subscribedShardStateIndex, nextCursor, shard, isReadOnly, dataRawSize);
+                value, timestamp, subscribedShardStateIndex, result.getNextCursor(), shard, isReadOnly, result.getRawSize());
         recordEmitter.produce(sourceRecord);
     }
 }

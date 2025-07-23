@@ -6,7 +6,7 @@ import com.aliyun.openservices.log.common.Consts.CursorMode;
 import com.aliyun.openservices.log.common.*;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.model.MemoryLimiter;
-import com.aliyun.openservices.log.flink.model.ResultHandler;
+import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.request.PutLogsRequest;
@@ -86,66 +86,38 @@ public class LogClientProxy implements Serializable {
         }, "fetchCheckpoint");
     }
 
-    public static class PullResult implements Serializable {
-        private int count;
-        private int rawSize;
-        private String nextCursor;
-
-        public PullResult(int count, int rawSize, String nextCursor) {
-            this.count = count;
-            this.rawSize = rawSize;
-            this.nextCursor = nextCursor;
-        }
-
-        public int getCount() {
-            return count;
-        }
-
-        public void setCount(int count) {
-            this.count = count;
-        }
-
-        public int getRawSize() {
-            return rawSize;
-        }
-
-        public void setRawSize(int rawSize) {
-            this.rawSize = rawSize;
-        }
-
-        public String getNextCursor() {
-            return nextCursor;
-        }
-
-        public void setNextCursor(String nextCursor) {
-            this.nextCursor = nextCursor;
-        }
-    }
-
-    public <T> PullResult pullLogs(String project,
+    public PullLogsResult pullLogs(String project,
                                    String logstore,
                                    int shard,
                                    String cursor,
                                    String stopCursor,
-                                   int count,
-                                   ResultHandler<T> resultHandler)
+                                   int count)
             throws LogException, InterruptedException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
         if (!memoryLimiter.isEnabled()) {
             PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
             String readLastCursor = response.GetHeader("x-log-read-last-cursor");
-            resultHandler.handle(response.getLogGroups(), cursor, response.getNextCursor(), response.getRawSize(), readLastCursor);
-            return new PullResult(response.getCount(), response.getRawSize(), response.getNextCursor());
+            return new PullLogsResult(response.getLogGroups(),
+                    shard,
+                    cursor,
+                    response.getNextCursor(),
+                    readLastCursor,
+                    response.getRawSize(),
+                    response.getCount());
         }
         lock.lockInterruptibly();
         try {
             PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
             int rawSize = response.getRawSize();
             memoryLimiter.acquire(rawSize);
-            String nextCursor = response.getNextCursor();
             String readLastCursor = response.GetHeader("x-log-read-last-cursor");
-            resultHandler.handle(response.getLogGroups(), cursor, nextCursor, rawSize, readLastCursor);
-            return new PullResult(response.getCount(), rawSize, nextCursor);
+            return new PullLogsResult(response.getLogGroups(),
+                    shard,
+                    cursor,
+                    response.getNextCursor(),
+                    readLastCursor,
+                    response.getRawSize(),
+                    response.getCount());
         } finally {
             lock.unlock();
         }
