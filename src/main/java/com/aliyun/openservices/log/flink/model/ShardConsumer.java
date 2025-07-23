@@ -225,8 +225,9 @@ public class ShardConsumer<T> implements Runnable {
                                String cursor,
                                LogstoreShardMeta shard,
                                String nextCursor,
-                               int dataRawSize) throws InterruptedException {
-        PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor);
+                               int dataRawSize,
+                               String readLastCursor) throws InterruptedException {
+        PullLogsResult record = new PullLogsResult(records, shard.getShardId(), cursor, nextCursor, readLastCursor);
         final T value = deserializer.deserialize(record);
         long timestamp = System.currentTimeMillis();
         if (!records.isEmpty()) {
