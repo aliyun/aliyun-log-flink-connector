@@ -32,11 +32,20 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
         return Long.parseLong(timestamp);
     }
 
+    private static String encodeCursor(long offset) {
+        byte[] cursorAsBytes = Base64.getEncoder().encode(String.valueOf(offset).getBytes(StandardCharsets.UTF_8));
+        return new String(cursorAsBytes, StandardCharsets.UTF_8);
+    }
+
     public RawLogGroupList deserialize(PullLogsResult record) {
         RawLogGroupList logGroupList = new RawLogGroupList();
         List<LogGroupData> logGroups = record.getLogGroupList();
-        long offset = decodeCursor(record.getCursor());
-        String seqNoPrefix = record.getShard() + "_";
+        if (logGroups.isEmpty()) {
+            return logGroupList;
+        }
+        long offset = Long.parseLong(record.getReadLastCursor()) - logGroups.size() + 1;
+        String lastCursor = encodeCursor(offset);
+        String seqNoPrefix = record.getShard() + "|";
         for (LogGroupData logGroup : logGroups) {
             FastLogGroup flg = logGroup.GetFastLogGroup();
             RawLogGroup rawLogGroup = new RawLogGroup();
@@ -55,13 +64,13 @@ public class RawLogGroupListDeserializer implements LogDeserializationSchema<Raw
                     rlog.addContent(content.getKey(), content.getValue());
                 }
                 if (sequenceNumberKey != null) {
-                    String seqNum = seqNoPrefix + offset + "_" + lIdx;
+                    String seqNum = seqNoPrefix + lastCursor + "|" + lIdx;
                     rlog.addContent(sequenceNumberKey, seqNum);
                 }
                 rawLogGroup.addLog(rlog);
             }
             logGroupList.add(rawLogGroup);
-            ++offset;
+            lastCursor = encodeCursor(++offset);
         }
         return logGroupList;
     }

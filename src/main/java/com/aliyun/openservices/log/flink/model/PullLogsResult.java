@@ -9,12 +9,14 @@ public class PullLogsResult implements java.io.Serializable {
     private int shard;
     private String cursor;
     private String nextCursor;
+    private String readLastCursor;
 
-    public PullLogsResult(List<LogGroupData> logGroupList, int shard, String cursor, String nextCursor) {
+    public PullLogsResult(List<LogGroupData> logGroupList, int shard, String cursor, String nextCursor, String readLastCursor) {
         this.logGroupList = logGroupList;
         this.shard = shard;
         this.cursor = cursor;
         this.nextCursor = nextCursor;
+        this.readLastCursor = readLastCursor;
     }
 
     public List<LogGroupData> getLogGroupList() {
@@ -47,5 +49,13 @@ public class PullLogsResult implements java.io.Serializable {
 
     public void setNextCursor(String nextCursor) {
         this.nextCursor = nextCursor;
+    }
+
+    public String getReadLastCursor() {
+        return readLastCursor;
+    }
+
+    public void setReadLastCursor(String readLastCursor) {
+        this.readLastCursor = readLastCursor;
     }
 }
