@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 public class RawLogGroup implements Serializable {
+    private String logstore;
     private String source;
     private String topic = "";
     private Map<String, String> tags;
@@ -32,6 +33,14 @@ public class RawLogGroup implements Serializable {
 
     public void setTags(Map<String, String> tags) {
         this.tags = tags;
+    }
+
+    public String getLogstore() {
+        return logstore;
+    }
+
+    public void setLogstore(String logstore) {
+        this.logstore = logstore;
     }
 
     public String getTopic() {
