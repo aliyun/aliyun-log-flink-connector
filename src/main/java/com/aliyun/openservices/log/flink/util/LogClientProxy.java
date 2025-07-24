@@ -1,15 +1,15 @@
 package com.aliyun.openservices.log.flink.util;
 
 import com.aliyun.openservices.log.Client;
-import com.aliyun.openservices.log.common.Consts;
 import com.aliyun.openservices.log.common.Consts.CursorMode;
-import com.aliyun.openservices.log.common.*;
+import com.aliyun.openservices.log.common.ConsumerGroup;
+import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
+import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.model.MemoryLimiter;
-import com.aliyun.openservices.log.flink.model.ResultHandler;
+import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
 import com.aliyun.openservices.log.request.PullLogsRequest;
-import com.aliyun.openservices.log.request.PutLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
 import com.aliyun.openservices.log.response.ListConsumerGroupResponse;
 import com.aliyun.openservices.log.response.ListLogStoresResponse;
@@ -22,8 +22,6 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 public class LogClientProxy implements Serializable {
@@ -33,7 +31,6 @@ public class LogClientProxy implements Serializable {
     private final Client client;
     private final RequestExecutor executor;
     private final MemoryLimiter memoryLimiter;
-    private final Lock lock = new ReentrantLock();
 
     public LogClientProxy(String endpoint,
                           String accessKeyId,
@@ -86,69 +83,25 @@ public class LogClientProxy implements Serializable {
         }, "fetchCheckpoint");
     }
 
-    public static class PullResult implements Serializable {
-        private int count;
-        private int rawSize;
-        private String nextCursor;
-
-        public PullResult(int count, int rawSize, String nextCursor) {
-            this.count = count;
-            this.rawSize = rawSize;
-            this.nextCursor = nextCursor;
-        }
-
-        public int getCount() {
-            return count;
-        }
-
-        public void setCount(int count) {
-            this.count = count;
-        }
-
-        public int getRawSize() {
-            return rawSize;
-        }
-
-        public void setRawSize(int rawSize) {
-            this.rawSize = rawSize;
-        }
-
-        public String getNextCursor() {
-            return nextCursor;
-        }
-
-        public void setNextCursor(String nextCursor) {
-            this.nextCursor = nextCursor;
-        }
-    }
-
-    public <T> PullResult pullLogs(String project,
+    public PullLogsResult pullLogs(String project,
                                    String logstore,
                                    int shard,
                                    String cursor,
                                    String stopCursor,
-                                   int count,
-                                   ResultHandler<T> resultHandler)
+                                   int count)
             throws LogException, InterruptedException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
-        if (!memoryLimiter.isEnabled()) {
-            PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
-            String readLastCursor = response.GetHeader("x-log-read-last-cursor");
-            resultHandler.handle(response.getLogGroups(), cursor, response.getNextCursor(), response.getRawSize(), readLastCursor);
-            return new PullResult(response.getCount(), response.getRawSize(), response.getNextCursor());
-        }
-        lock.lockInterruptibly();
-        try {
-            PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
-            int rawSize = response.getRawSize();
-            memoryLimiter.acquire(rawSize);
-            String nextCursor = response.getNextCursor();
-            String readLastCursor = response.GetHeader("x-log-read-last-cursor");
-            resultHandler.handle(response.getLogGroups(), cursor, nextCursor, rawSize, readLastCursor);
-            return new PullResult(response.getCount(), rawSize, nextCursor);
-        } finally {
-            lock.unlock();
-        }
+        PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
+        int rawSize = response.getRawSize();
+        memoryLimiter.acquire(rawSize);
+        String readLastCursor = response.GetHeader("x-log-read-last-cursor");
+        return new PullLogsResult(response.getLogGroups(),
+                shard,
+                cursor,
+                response.getNextCursor(),
+                readLastCursor,
+                response.getRawSize(),
+                response.getCount());
     }
 
     @VisibleForTesting
@@ -236,25 +189,6 @@ public class LogClientProxy implements Serializable {
                 throw ex;
             }
         }
-    }
-
-    public void putLogs(String project,
-                        String logstore,
-                        String topic,
-                        String source,
-                        String hashKey,
-                        List<TagContent> tags,
-                        List<LogItem> logItems) throws LogException {
-        PutLogsRequest request = new PutLogsRequest(project, logstore, topic,
-                source, logItems, hashKey);
-        request.SetCompressType(Consts.CompressType.LZ4);
-        if (tags != null) {
-            request.SetTags(tags);
-        }
-        executor.call((Callable<Void>) () -> {
-            client.PutLogs(request);
-            return null;
-        }, "PutLogs");
     }
 
     public void close() {

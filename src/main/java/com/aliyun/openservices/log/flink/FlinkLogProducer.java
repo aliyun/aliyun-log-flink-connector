@@ -34,7 +34,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private final LogSerializationSchema<T> schema;
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
-    private final transient Callback callback;
+    private transient ProducerCallback callback;
     private final String project;
     private final String logstore;
     private final AtomicLong buffered = new AtomicLong(0);
@@ -53,7 +53,6 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         this.project = configParser.getString(ConfigConstants.LOG_PROJECT);
         this.logstore = configParser.getString(ConfigConstants.LOG_LOGSTORE);
         this.flushTimeoutMs = configParser.getLong(PRODUCER_FLUSH_TIMEOUT_MS, DEFAULT_FLUSH_TIMEOUT_MS);
-        this.callback = new ProducerCallback(buffered);
     }
 
     public void setCustomPartitioner(LogPartitioner<T> customPartitioner) {
@@ -102,6 +101,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     getRuntimeContext().getIndexOfThisSubtask(),
                     getRuntimeContext().getNumberOfParallelSubtasks());
         }
+        if (callback == null) {
+            callback = new ProducerCallback(buffered);
+        }
         if (producer == null) {
             producer = createProducer(configParser);
         }
@@ -112,6 +114,8 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             return;
         }
         long beginAt = System.currentTimeMillis();
+        long sleepTime = 10;
+        long maxSleepTime = 100;
         while (true) {
             long usedTime = System.currentTimeMillis() - beginAt;
             if (buffered.get() <= 0) {
@@ -122,8 +126,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                 LOG.warn("Wait snapshotState timeout, timeout={}", flushTimeoutMs);
                 break;
             }
-            LOG.info("Sleep 100 ms to wait all records flushed, buffered={}", buffered.get());
-            Thread.sleep(100);
+            LOG.info("Sleep {} ms to wait all records flushed, buffered={}", sleepTime, buffered.get());
+            Thread.sleep(sleepTime);
+            sleepTime = Math.min(sleepTime * 2, maxSleepTime);
         }
     }
 

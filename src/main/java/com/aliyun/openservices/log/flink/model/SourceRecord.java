@@ -6,8 +6,8 @@ public class SourceRecord<T> {
     private int subscribedShardStateIndex;
     private String nextCursor;
     private LogstoreShardMeta shard;
-    private boolean isReadOnly;
-    private int dataRawSize;
+    private final boolean isReadOnly;
+    private final int dataRawSize;
 
     public SourceRecord(T record,
                         long timestamp,
@@ -69,15 +69,7 @@ public class SourceRecord<T> {
         return isReadOnly;
     }
 
-    public void setReadOnly(boolean readOnly) {
-        isReadOnly = readOnly;
-    }
-
     public int getDataRawSize() {
         return dataRawSize;
-    }
-
-    public void setDataRawSize(int dataRawSize) {
-        this.dataRawSize = dataRawSize;
     }
 }
