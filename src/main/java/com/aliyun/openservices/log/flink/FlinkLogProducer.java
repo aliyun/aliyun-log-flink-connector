@@ -166,9 +166,10 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (logs.isEmpty()) {
             return;
         }
+        String sinkLogStore = logGroup.getLogstore() != null ? logGroup.getLogstore() : logstore;
         try {
             producer.send(project,
-                    logstore,
+                    sinkLogStore,
                     logGroup.getTopic(),
                     logGroup.getSource(),
                     shardHashKey,

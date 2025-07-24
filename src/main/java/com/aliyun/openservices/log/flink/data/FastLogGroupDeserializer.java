@@ -13,12 +13,9 @@ public class FastLogGroupDeserializer implements LogDeserializationSchema<FastLo
     @Override
     public FastLogGroupList deserialize(PullLogsResult record) {
         List<LogGroupData> logGroupDataList = record.getLogGroupList();
-        int count = logGroupDataList == null ? 0 : logGroupDataList.size();
-        FastLogGroupList logGroupList = new FastLogGroupList(count);
-        if (logGroupDataList != null && !logGroupDataList.isEmpty()) {
-            for (LogGroupData logGroupData : logGroupDataList) {
-                logGroupList.addLogGroup(logGroupData.GetFastLogGroup());
-            }
+        FastLogGroupList logGroupList = new FastLogGroupList(logGroupDataList.size());
+        for (LogGroupData logGroupData : logGroupDataList) {
+            logGroupList.addLogGroup(logGroupData.GetFastLogGroup());
         }
         return logGroupList;
     }

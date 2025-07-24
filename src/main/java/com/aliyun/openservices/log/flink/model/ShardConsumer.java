@@ -137,7 +137,7 @@ public class ShardConsumer<T> implements Runnable {
         try {
             String cursor = restoreCursorFromStateOrCheckpoint(logstore, state.getOffset(), shardId);
             String stopCursor = getStopCursor(logstore, shardId);
-            LOG.info("Starting consumer for shard {} with initial cursor {}", shardId, cursor);
+            LOG.info("Starting consumer for shard {}, cursor {}", shardId, cursor);
             while (isRunning) {
                 PullLogsResult result;
                 long fetchStartTimeMs = System.currentTimeMillis();
@@ -150,13 +150,6 @@ public class ShardConsumer<T> implements Runnable {
                         // The shard has been deleted
                         LOG.warn("The shard {} already not exist, project {} logstore {}", shardId, logProject, logstore);
                         break;
-                    }
-                    // TODO PullData will never throw InvalidCursor
-                    if (ERR_INVALID_CURSOR.equalsIgnoreCase(errorCode)
-                            && Consts.LOG_FROM_CHECKPOINT.equalsIgnoreCase(initialPosition)) {
-                        LOG.warn("Cursor is invalid {}, start from default position {}", cursor, defaultPosition);
-                        cursor = findInitialCursor(logstore, defaultPosition, shardId);
-                        continue;
                     }
                     throw ex;
                 }
