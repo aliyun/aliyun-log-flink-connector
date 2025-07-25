@@ -2,9 +2,8 @@ package com.aliyun.openservices.log.flink;
 
 import com.aliyun.openservices.aliyun.log.producer.*;
 import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
-import com.aliyun.openservices.log.flink.data.RawLog;
-import com.aliyun.openservices.log.flink.data.RawLogGroup;
-import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
+import com.aliyun.openservices.log.flink.data.SinkRecord;
+import com.aliyun.openservices.log.flink.model.LogSerializationSchemaV2;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
 import com.aliyun.openservices.log.flink.util.LogUtil;
 import com.aliyun.openservices.log.http.signer.SignVersion;
@@ -18,18 +17,15 @@ import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.aliyun.openservices.log.flink.ConfigConstants.*;
 
-public class FlinkLogProducer<T> extends RichSinkFunction<T> implements CheckpointedFunction {
+public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
-    private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducer.class);
-    private final LogSerializationSchema<T> schema;
+    private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducerV2.class);
+    private final LogSerializationSchemaV2<T> schema;
     private LogPartitioner<T> customPartitioner = null;
     private transient Producer producer;
     private transient ProducerCallback callback;
@@ -38,7 +34,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private final AtomicLong buffered = new AtomicLong(0);
     private final ConfigParser configParser;
 
-    public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
+    public FlinkLogProducerV2(final LogSerializationSchemaV2<T> schema, Properties configProps) {
         if (schema == null) {
             throw new IllegalArgumentException("schema cannot be null");
         }
@@ -132,39 +128,26 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         if (this.producer == null) {
             throw new IllegalStateException("Flink log producer has not been initialized yet!");
         }
-        RawLogGroup logGroup = schema.serialize(value);
-        if (logGroup == null) {
-            LOG.info("Skipping null LogGroup.");
+        SinkRecord record = schema.serialize(value);
+        if (record == null) {
             return;
         }
         String shardHashKey = null;
         if (customPartitioner != null) {
             shardHashKey = customPartitioner.getHashKey(value);
         }
-        List<LogItem> logs = new ArrayList<>();
-        for (RawLog rawLog : logGroup.getLogs()) {
-            if (rawLog == null) {
-                continue;
-            }
-            LogItem record = new LogItem(rawLog.getTime());
-            for (Map.Entry<String, String> kv : rawLog.getContents().entrySet()) {
-                if (kv.getKey() != null) {
-                    record.PushBack(kv.getKey(), kv.getValue());
-                }
-            }
-            logs.add(record);
-        }
-        if (logs.isEmpty()) {
+        LogItem logItem = record.getLogItem();
+        if (logItem == null) {
             return;
         }
-        String sinkLogStore = logGroup.getLogstore() != null ? logGroup.getLogstore() : logstore;
+        String sinkLogStore = record.getLogstore() != null ? record.getLogstore() : logstore;
         try {
             producer.send(project,
                     sinkLogStore,
-                    logGroup.getTopic(),
-                    logGroup.getSource(),
+                    record.getTopic(),
+                    record.getSource(),
                     shardHashKey,
-                    logs,
+                    logItem,
                     callback);
             buffered.incrementAndGet();
         } catch (InterruptedException | ProducerException e) {

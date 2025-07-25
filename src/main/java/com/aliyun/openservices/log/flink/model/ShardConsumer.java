@@ -20,9 +20,8 @@ public class ShardConsumer<T> implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(ShardConsumer.class);
 
     private static final int FORCE_SLEEP_THRESHOLD = 256 * 1024;
+    private static final int SLOW_LOG_THRESHOLD_MILLIS = 1000;
     private static final String ERR_SHARD_NOT_EXIST = "ShardNotExist";
-    private static final String ERR_INVALID_CURSOR = "InvalidCursor";
-
     private final LogDataFetcher<T> fetcher;
     private final LogDeserializationSchema<T> deserializer;
     private final int subscribedShardStateIndex;
@@ -155,7 +154,7 @@ public class ShardConsumer<T> implements Runnable {
                 }
                 long fetchEnd = System.currentTimeMillis();
                 long fetchCostMs = fetchEnd - fetchStartTimeMs;
-                if (fetchCostMs >= 50) {
+                if (fetchCostMs >= SLOW_LOG_THRESHOLD_MILLIS) {
                     LOG.warn("Slow fetch cost {} ms, shard={}", fetchCostMs, logstoreShard);
                 }
                 if (!isRunning) {
@@ -166,7 +165,7 @@ public class ShardConsumer<T> implements Runnable {
                 if (result.getCount() > 0) {
                     processRecords(shardMeta, result);
                     long processCostMs = System.currentTimeMillis() - fetchEnd;
-                    if (processCostMs >= 50) {
+                    if (processCostMs >= SLOW_LOG_THRESHOLD_MILLIS) {
                         LOG.warn("Slow process cost {} ms, shard={}", processCostMs, logstoreShard);
                     }
                     cursor = nextCursor;
@@ -194,15 +193,15 @@ public class ShardConsumer<T> implements Runnable {
         long sleepTime = 0;
         if (responseSize <= 1) {
             // Outflow: 1
-            sleepTime = 500;
+            sleepTime = 1000;
         } else if (responseSize < FORCE_SLEEP_THRESHOLD) {
-            sleepTime = 200;
+            sleepTime = 100;
         }
         if (sleepTime < fetchIntervalMs) {
             sleepTime = fetchIntervalMs;
         }
         if (sleepTime > 0) {
-            if (sleepTime >= 50) {
+            if (sleepTime >= SLOW_LOG_THRESHOLD_MILLIS) {
                 LOG.warn("Sleep {}ms, last response size {}, shard {}", sleepTime, responseSize, shardId);
             }
             try {
