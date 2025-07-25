@@ -113,10 +113,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
         long sleepTime = 10;
         long maxSleepTime = 100;
         while (true) {
-            long usedTime = System.currentTimeMillis() - beginAt;
             if (buffered.get() <= 0) {
-                LOG.info("snapshotState succeed, usedTime={}", usedTime);
-                return;
+                LOG.info("snapshotState succeed, usedTime={}", System.currentTimeMillis() - beginAt);
+                break;
             }
             LOG.info("Sleep {} ms to wait all records flushed, buffered={}", sleepTime, buffered.get());
             Thread.sleep(sleepTime);

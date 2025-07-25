@@ -17,7 +17,6 @@ import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -110,10 +109,9 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
         long sleepTime = 10;
         long maxSleepTime = 100;
         while (true) {
-            long usedTime = System.currentTimeMillis() - beginAt;
             if (buffered.get() <= 0) {
-                LOG.info("snapshotState succeed, usedTime={}", usedTime);
-                return;
+                LOG.info("snapshotState succeed, usedTime={}", System.currentTimeMillis() - beginAt);
+                break;
             }
             LOG.info("Sleep {} ms to wait all records flushed, buffered={}", sleepTime, buffered.get());
             Thread.sleep(sleepTime);
