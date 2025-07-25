@@ -67,12 +67,6 @@ public class ConfigConstants {
      * io thread num of sls producer
      */
     public static final String IO_THREAD_NUM = "io.thread.num";
-
-    /**
-     * Flush timeout, default value is 10000 ms.
-     */
-    public static final String PRODUCER_FLUSH_TIMEOUT_MS = "producer.flush.timeout.ms";
-
     /**
      * Proxy configuration.
      */
