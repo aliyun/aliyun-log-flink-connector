@@ -1,6 +1,6 @@
 package com.aliyun.openservices.log.flink.data;
 
-import com.shade.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.common.LogItem;
 
 import java.io.Serializable;
 
@@ -8,6 +8,7 @@ public class SinkRecord implements Serializable {
     private String logstore;
     private String source;
     private String topic = "";
+    private String hashKey;
     private LogItem logItem;
 
     public LogItem getLogItem() {
@@ -44,6 +45,14 @@ public class SinkRecord implements Serializable {
         if (source != null) {
             this.source = source;
         }
+    }
+
+    public String getHashKey() {
+        return hashKey;
+    }
+
+    public void setHashKey(String hashKey) {
+        this.hashKey = hashKey;
     }
 
     @Override

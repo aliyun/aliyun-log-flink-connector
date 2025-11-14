@@ -24,7 +24,7 @@ public class CheckpointCommitter extends Thread {
     private final Lock lock;
     private final CompletableFuture<Void> cancelFuture = new CompletableFuture<>();
 
-    CheckpointCommitter(LogClientProxy client,
+    public CheckpointCommitter(LogClientProxy client,
                         long commitInterval,
                         String project,
                         String consumerGroup) {
@@ -87,7 +87,7 @@ public class CheckpointCommitter extends Thread {
         }
     }
 
-    void updateCheckpoint(LogstoreShardMeta shard, String cursor, boolean readOnly) {
+    public void updateCheckpoint(LogstoreShardMeta shard, String cursor, boolean readOnly) {
         LOG.debug("Updating checkpoint for shard {}, cursor {}", shard, cursor);
         lock.lock();
         try {
@@ -97,7 +97,7 @@ public class CheckpointCommitter extends Thread {
         }
     }
 
-    void cancel() {
+    public void cancel() {
         if (!running) {
             return;
         }
