@@ -6,9 +6,11 @@ import com.aliyun.openservices.log.common.ConsumerGroup;
 import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.exception.LogException;
+import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.model.MemoryLimiter;
 import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
+import com.aliyun.openservices.log.http.signer.SignVersion;
 import com.aliyun.openservices.log.request.PullLogsRequest;
 import com.aliyun.openservices.log.response.ConsumerGroupCheckPointResponse;
 import com.aliyun.openservices.log.response.ListConsumerGroupResponse;
@@ -21,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 
@@ -43,6 +46,62 @@ public class LogClientProxy implements Serializable {
         this.client.setUserAgent(userAgent);
         this.executor = new RequestExecutor(retryPolicy);
         this.memoryLimiter = memoryLimiter;
+    }
+
+    public static LogClientProxy makeClient(Properties configProps,
+                                            String accessKeyId,
+                                            String accessKey,
+                                            int subtaskIndex) {
+        ConfigParser parser = new ConfigParser(configProps);
+        RetryPolicy retryPolicy = RetryPolicy.builder()
+                .maxRetries(parser.getInt(ConfigConstants.MAX_RETRIES, com.aliyun.openservices.log.flink.util.Consts.DEFAULT_MAX_RETRIES))
+                .maxRetriesForRetryableError(parser.getInt(ConfigConstants.MAX_RETRIES_FOR_RETRYABLE_ERROR,
+                        com.aliyun.openservices.log.flink.util.Consts.DEFAULT_MAX_RETRIES_FOR_RETRYABLE_ERROR))
+                .baseRetryBackoff(parser.getLong(ConfigConstants.BASE_RETRY_BACKOFF_TIME_MS,
+                        com.aliyun.openservices.log.flink.util.Consts.DEFAULT_BASE_RETRY_BACKOFF_TIME_MS))
+                .maxRetryBackoff(parser.getLong(ConfigConstants.MAX_RETRY_BACKOFF_TIME_MS,
+                        com.aliyun.openservices.log.flink.util.Consts.DEFAULT_MAX_RETRY_BACKOFF_TIME_MS))
+                .build();
+
+        ClientConfiguration clientConfig = new ClientConfiguration();
+        clientConfig.setMaxConnections(com.aliyun.openservices.log.common.Consts.HTTP_CONNECT_MAX_COUNT);
+        clientConfig.setConnectionTimeout(com.aliyun.openservices.log.common.Consts.HTTP_CONNECT_TIME_OUT);
+        clientConfig.setSocketTimeout(com.aliyun.openservices.log.common.Consts.HTTP_SEND_TIME_OUT);
+        clientConfig.setProxyHost(parser.getString(ConfigConstants.PROXY_HOST));
+        clientConfig.setProxyPort(parser.getInt(ConfigConstants.PROXY_PORT, -1));
+        clientConfig.setProxyUsername(parser.getString(ConfigConstants.PROXY_USERNAME));
+        clientConfig.setProxyPassword(parser.getString(ConfigConstants.PROXY_PASSWORD));
+        clientConfig.setProxyDomain(parser.getString(ConfigConstants.PROXY_DOMAIN));
+        clientConfig.setProxyWorkstation(parser.getString(ConfigConstants.PROXY_WORKSTATION));
+
+        SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(ConfigConstants.SIGNATURE_VERSION));
+        if (signVersion == SignVersion.V4) {
+            String regionId = parser.getString(ConfigConstants.REGION_ID);
+            if (regionId == null || regionId.isEmpty()) {
+                throw new IllegalArgumentException("The " + ConfigConstants.REGION_ID + " was not specified for signature " + signVersion.name() + ".");
+            }
+            clientConfig.setRegion(regionId);
+        }
+        clientConfig.setSignatureVersion(signVersion);
+        MemoryLimiter memoryLimiter = new MemoryLimiter(configProps);
+        String userAgent = resolveUserAgent(configProps, subtaskIndex);
+        return new LogClientProxy(
+                parser.getString(ConfigConstants.LOG_ENDPOINT),
+                accessKeyId,
+                accessKey,
+                userAgent,
+                retryPolicy,
+                memoryLimiter,
+                clientConfig);
+    }
+
+    private static String resolveUserAgent(Properties configProps, int subtaskIndex) {
+        String userAgent = configProps.getProperty(ConfigConstants.LOG_USER_AGENT);
+        if (userAgent == null || userAgent.isEmpty()) {
+            userAgent = "flink-connector/" + com.aliyun.openservices.log.flink.util.Consts.FLINK_CONNECTOR_VERSION
+                    + " (Subtask " + subtaskIndex + ")";
+        }
+        return userAgent;
     }
 
     public String getEndCursor(final String project, final String logstore, final int shard) throws LogException {
@@ -101,7 +160,8 @@ public class LogClientProxy implements Serializable {
                 response.getNextCursor(),
                 readLastCursor,
                 response.getRawSize(),
-                response.getCount());
+                response.getCount(),
+                response.getCursorTime() * 1000L);
     }
 
     @VisibleForTesting
