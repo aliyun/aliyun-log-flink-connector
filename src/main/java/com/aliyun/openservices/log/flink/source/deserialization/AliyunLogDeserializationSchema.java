@@ -11,8 +11,8 @@ public interface AliyunLogDeserializationSchema<T> extends Serializable, ResultT
     /**
      * Deserialize pull logs result to Flink records.
      *
-     * @param record LogGroup list.
-     * @return
+     * @param record the PullLogsResult containing log groups to deserialize
+     * @param out    the collector to emit deserialized records
      */
     void deserialize(PullLogsResult record, Collector<T> out);
 }

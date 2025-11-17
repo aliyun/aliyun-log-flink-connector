@@ -77,6 +77,10 @@ public class AliyunLogSourceFetcherManager extends SplitFetcherManager<PullLogsR
 
     /**
      * Get a running fetcher if available.
+     * Used as a fallback when committing checkpoints for splits that don't have
+     * an assigned fetcher (e.g., when a split was removed but checkpoint needs to be committed).
+     *
+     * @return a running fetcher if available, null otherwise
      */
     protected SplitFetcher<PullLogsResult, AliyunLogSourceSplit> getRunningFetcher() {
         return this.fetchers.isEmpty() ? null : this.fetchers.values().iterator().next();

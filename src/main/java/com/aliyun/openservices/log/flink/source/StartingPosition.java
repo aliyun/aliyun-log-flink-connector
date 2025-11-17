@@ -41,6 +41,10 @@ public enum StartingPosition implements Serializable {
     /**
      * Parse a string to StartingPosition enum.
      * Supports both enum names and legacy string values.
+     *
+     * @param str the string to parse (can be enum name, value, or legacy value)
+     * @return the corresponding StartingPosition enum value
+     * @throws IllegalArgumentException if the string cannot be parsed
      */
     public static StartingPosition fromString(String str) {
         if (str == null || str.isEmpty()) {

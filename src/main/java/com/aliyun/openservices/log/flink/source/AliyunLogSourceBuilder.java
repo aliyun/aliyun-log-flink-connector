@@ -20,6 +20,9 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set the Aliyun Log Service project name.
+     *
+     * @param project the project name
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setProject(String project) {
         this.project = project;
@@ -28,6 +31,9 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set the LogStore to consume from.
+     *
+     * @param logstore the logstore name
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setLogStore(String logstore) {
         this.logstore = logstore;
@@ -36,6 +42,9 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set the endpoint for Aliyun Log Service.
+     *
+     * @param endpoint the endpoint URL
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setEndpoint(String endpoint) {
         configProps.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
@@ -44,6 +53,10 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set both access key ID and access key (convenience method).
+     *
+     * @param accessKeyId the access key ID
+     * @param accessKey  the access key secret
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setCredentials(String accessKeyId, String accessKey) {
         this.accessKeyId = accessKeyId;
@@ -53,6 +66,9 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set the consumer group name.
+     *
+     * @param consumerGroup the consumer group name
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setConsumerGroup(String consumerGroup) {
         configProps.setProperty(ConfigConstants.LOG_CONSUMERGROUP, consumerGroup);
@@ -61,6 +77,9 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set the deserialization schema using AliyunLogDeserializationSchema.
+     *
+     * @param deserializer the deserialization schema
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setDeserializer(AliyunLogDeserializationSchema<T> deserializer) {
         this.deserializer = deserializer;
@@ -69,12 +88,23 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set the beginning position for consumption using StartingPosition enum.
+     *
+     * @param startingPosition the starting position enum value
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setStartingPosition(StartingPosition startingPosition) {
         configProps.setProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, startingPosition.getValue());
         return this;
     }
 
+    /**
+     * Set the beginning position for consumption using string.
+     * Valid values: "earliest", "latest", "checkpoint", "timestamp", or a unix timestamp.
+     * Legacy values: "begin_cursor", "end_cursor", "consumer_from_checkpoint" are also supported.
+     *
+     * @param startingPosition the starting position string
+     * @return this builder for method chaining
+     */
     public AliyunLogSourceBuilder<T> setStartingPosition(String startingPosition) {
         configProps.setProperty(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION, startingPosition);
         return this;
@@ -132,6 +162,10 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set a custom property.
+     *
+     * @param key   the property key
+     * @param value the property value
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setProperty(String key, String value) {
         configProps.setProperty(key, value);
@@ -140,6 +174,9 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Set all properties from a Properties object.
+     *
+     * @param properties the properties to set
+     * @return this builder for method chaining
      */
     public AliyunLogSourceBuilder<T> setProperties(Properties properties) {
         this.configProps.putAll(properties);
@@ -148,6 +185,9 @@ public class AliyunLogSourceBuilder<T> {
 
     /**
      * Build the AliyunLogSource instance.
+     *
+     * @return the configured AliyunLogSource instance
+     * @throws IllegalArgumentException if required fields are not set
      */
     public AliyunLogSource<T> build() {
         if (project == null || project.isEmpty()) {

@@ -25,7 +25,8 @@ public class RawLog implements Serializable {
     /**
      * Use LogGroup getTags instead.
      *
-     * @return
+     * @return the tags map (deprecated, use LogGroup getTags instead)
+     * @deprecated Use LogGroup getTags instead
      */
     @Deprecated
     public Map<String, String> getTags() {
