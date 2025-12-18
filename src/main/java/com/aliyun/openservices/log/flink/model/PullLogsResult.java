@@ -10,7 +10,8 @@ public class PullLogsResult implements java.io.Serializable {
     private String cursor;
     private String nextCursor;
     private String readLastCursor;
-    private int rawSize;
+    private int rawSize;  // Actual data size received by Flink (used for memoryLimiter)
+    private int flowControlSize;  // Original data size processed by SLS (used for backend flow control)
     private int count;
     private long cursorTime;
 
@@ -20,6 +21,7 @@ public class PullLogsResult implements java.io.Serializable {
                           String nextCursor,
                           String readLastCursor,
                           int rawSize,
+                          int flowControlSize,
                           int count,
                           long cursorTime) {
         this.logGroupList = logGroupList;
@@ -28,6 +30,7 @@ public class PullLogsResult implements java.io.Serializable {
         this.nextCursor = nextCursor;
         this.readLastCursor = readLastCursor;
         this.rawSize = rawSize;
+        this.flowControlSize = flowControlSize;
         this.count = count;
         this.cursorTime = cursorTime;
     }
@@ -78,6 +81,14 @@ public class PullLogsResult implements java.io.Serializable {
 
     public void setRawSize(int rawSize) {
         this.rawSize = rawSize;
+    }
+
+    public int getFlowControlSize() {
+        return flowControlSize;
+    }
+
+    public void setFlowControlSize(int flowControlSize) {
+        this.flowControlSize = flowControlSize;
     }
 
     public int getCount() {

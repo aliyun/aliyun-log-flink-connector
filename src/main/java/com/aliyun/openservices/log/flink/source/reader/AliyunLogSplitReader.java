@@ -90,7 +90,7 @@ public class AliyunLogSplitReader implements SplitReader<PullLogsResult, AliyunL
             }
 
             // Adjust fetch frequency
-            long sleepTime = calculateSleepTime(result.getRawSize());
+            long sleepTime = calculateSleepTime(result.getFlowControlSize());
             if (sleepTime > 0 && result.getCount() == 0) {
                 try {
                     Thread.sleep(sleepTime);

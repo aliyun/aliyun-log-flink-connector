@@ -159,16 +159,33 @@ public class LogClientProxy implements Serializable {
             request.setProcessor(processor);
         }
         PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
+        
+        // For memory limiter: always use actual data size received by Flink
         int rawSize = response.getRawSize();
         memoryLimiter.acquire(rawSize);
+        
+        // For backend flow control: use different metrics based on whether processor is configured
+        int flowControlSize;
+        if (processor != null && !processor.isEmpty()) {
+            // With processor: use raw data size (before filtering) for accurate backend flow control
+            flowControlSize = (int) response.getRawDataSize();
+        } else {
+            // Without processor: use response metrics directly
+            flowControlSize = rawSize;
+        }
+
+        // Count should always reflect actual data received by Flink (after processor filtering)
+        int logCount = response.getCount();
+        
         String readLastCursor = response.GetHeader("x-log-read-last-cursor");
         return new PullLogsResult(response.getLogGroups(),
                 shard,
                 cursor,
                 response.getNextCursor(),
                 readLastCursor,
-                response.getRawSize(),
-                response.getCount(),
+                rawSize,
+                flowControlSize,
+                logCount,
                 response.getCursorTime() * 1000L);
     }
 
