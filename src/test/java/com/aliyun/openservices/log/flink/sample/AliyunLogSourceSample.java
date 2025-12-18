@@ -132,6 +132,8 @@ public class AliyunLogSourceSample {
                 // Optional: Set signature version and region for v4 signature
                 .setProperty(ConfigConstants.SIGNATURE_VERSION, "v4")
                 .setProperty(ConfigConstants.REGION_ID, "cn-hangzhou")
+                // Optional: Set SPL Consume Processor, reference: https://help.aliyun.com/zh/sls/data-consumption-processor/
+                // .setProperty(ConfigConstants.PROCESSOR, "consume-processor-12345678")
                 .build();
 
         // Create data stream from source

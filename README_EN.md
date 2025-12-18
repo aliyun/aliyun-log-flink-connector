@@ -39,6 +39,8 @@ configProps.put(ConfigConstants.LOG_PROJECT， "ali-cn-hangzhou-sls-admin");
 configProps.put(ConfigConstants.LOG_LOGSTORE， "sls_consumergroup_log");
 // Set the start position to consume Log Service
 configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION， Consts.LOG_END_CURSOR);
+// Set SPL Consume Procesor, reference: https://help.aliyun.com/zh/sls/data-consumption-processor/
+configProps.put(ConfigConstants.PROCESSOR, "consume-processor-12345678");
 // Set the message deserialization method for Log Service
 RawLogGroupListDeserializer deserializer = new RawLogGroupListDeserializer();
 final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();

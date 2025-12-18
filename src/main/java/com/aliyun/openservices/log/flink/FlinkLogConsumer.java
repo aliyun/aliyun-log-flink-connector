@@ -144,6 +144,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             clientConfig.setRegion(regionId);
         }
         clientConfig.setSignatureVersion(signVersion);
+        String processor = parser.getString(ConfigConstants.PROCESSOR);
         logClient = new LogClientProxy(
                 parser.getString(ConfigConstants.LOG_ENDPOINT),
                 parser.getString(ConfigConstants.LOG_ACCESSKEYID),
@@ -151,7 +152,8 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                 getOrCreateUserAgent(indexOfSubTask),
                 retryPolicy,
                 memoryLimiter,
-                clientConfig);
+                clientConfig,
+                processor);
     }
 
     public void setShardAssigner(ShardAssigner shardAssigner) {

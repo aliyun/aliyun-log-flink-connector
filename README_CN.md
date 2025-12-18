@@ -47,6 +47,8 @@ configProps.put(ConfigConstants.LOG_LOGSTORE， "sls_consumergroup_log");
 configProps.put(ConfigConstants.LOG_CONSUMER_BEGIN_POSITION， Consts.LOG_END_CURSOR);
 // 设置每次读取的LogGroup个数，默认100
 configProps.put(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, "100");
+// 设置SLS消费处理器，参考：https://help.aliyun.com/zh/sls/data-consumption-processor/
+configProps.put(ConfigConstants.PROCESSOR, "consume-processor-12345678");
 // 设置日志服务的消息反序列化方法
 RawLogGroupListDeserializer deserializer = new RawLogGroupListDeserializer();
 final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();

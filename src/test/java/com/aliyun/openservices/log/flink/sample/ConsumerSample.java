@@ -56,6 +56,8 @@ public class ConsumerSample {
         configProps.put(ConfigConstants.STOP_TIME, "1627878020");
         configProps.put(ConfigConstants.SIGNATURE_VERSION, "v4");
         configProps.put(ConfigConstants.REGION_ID, "cn-hangzhou");
+        // SPL Consume Processor, reference: https://help.aliyun.com/zh/sls/data-consumption-processor/
+        // configProps.put(ConfigConstants.PROCESSOR, "consume-processor-12345678");
 
         FastLogGroupDeserializer deserializer = new FastLogGroupDeserializer();
         DataStream<FastLogGroupList> stream = env.addSource(

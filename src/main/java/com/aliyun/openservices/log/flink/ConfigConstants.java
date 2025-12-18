@@ -82,4 +82,9 @@ public class ConfigConstants {
      */
     public static final String REGION_ID = "region.id";
     public static final String SIGNATURE_VERSION = "signature.version"; // V4 or V1
+    
+    /**
+     * Processor for PullLogs request.
+     */
+    public static final String PROCESSOR = "processor";
 }
