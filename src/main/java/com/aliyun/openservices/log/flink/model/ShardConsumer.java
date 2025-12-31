@@ -169,7 +169,7 @@ public class ShardConsumer<T> implements Runnable {
                         LOG.warn("Slow process cost {} ms, shard={}", processCostMs, logstoreShard);
                     }
                     cursor = nextCursor;
-                    adjustFetchFrequency(result.getRawSize(), logstoreShard);
+                    adjustFetchFrequency(result.getFlowControlSize(), logstoreShard);
                     continue;
                 }
                 if ((cursor.equals(nextCursor) && isReadOnly)
@@ -177,7 +177,7 @@ public class ShardConsumer<T> implements Runnable {
                     LOG.info("Shard [{}] is finished, readonly={}, stopCursor={}", logstoreShard, isReadOnly, stopCursor);
                     break;
                 }
-                adjustFetchFrequency(result.getRawSize(), logstoreShard);
+                adjustFetchFrequency(result.getFlowControlSize(), logstoreShard);
             }
             LOG.warn("Consumer for shard {} stopped", logstoreShard);
             fetcher.complete(shardMeta.getId());

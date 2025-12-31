@@ -34,6 +34,7 @@ public class LogClientProxy implements Serializable {
     private final Client client;
     private final RequestExecutor executor;
     private final MemoryLimiter memoryLimiter;
+    private final String processor;
 
     public LogClientProxy(String endpoint,
                           String accessKeyId,
@@ -41,11 +42,13 @@ public class LogClientProxy implements Serializable {
                           String userAgent,
                           RetryPolicy retryPolicy,
                           MemoryLimiter memoryLimiter,
-                          ClientConfiguration clientConfiguration) {
+                          ClientConfiguration clientConfiguration,
+                          String processor) {
         this.client = new Client(endpoint, accessKeyId, accessKey, clientConfiguration);
         this.client.setUserAgent(userAgent);
         this.executor = new RequestExecutor(retryPolicy);
         this.memoryLimiter = memoryLimiter;
+        this.processor = processor;
     }
 
     public static LogClientProxy makeClient(Properties configProps,
@@ -85,6 +88,7 @@ public class LogClientProxy implements Serializable {
         clientConfig.setSignatureVersion(signVersion);
         MemoryLimiter memoryLimiter = new MemoryLimiter(configProps);
         String userAgent = resolveUserAgent(configProps, subtaskIndex);
+        String processor = parser.getString(ConfigConstants.PROCESSOR);
         return new LogClientProxy(
                 parser.getString(ConfigConstants.LOG_ENDPOINT),
                 accessKeyId,
@@ -92,7 +96,8 @@ public class LogClientProxy implements Serializable {
                 userAgent,
                 retryPolicy,
                 memoryLimiter,
-                clientConfig);
+                clientConfig,
+                processor);
     }
 
     private static String resolveUserAgent(Properties configProps, int subtaskIndex) {
@@ -150,17 +155,37 @@ public class LogClientProxy implements Serializable {
                                    int count)
             throws LogException, InterruptedException {
         final PullLogsRequest request = new PullLogsRequest(project, logstore, shard, count, cursor, stopCursor);
+        if (processor != null && !processor.isEmpty()) {
+            request.setProcessor(processor);
+        }
         PullLogsResponse response = executor.call(() -> client.pullLogs(request), "pullLogs [" + logstore + "] shard=[" + shard + "] ");
+        
+        // For memory limiter: always use actual data size received by Flink
         int rawSize = response.getRawSize();
         memoryLimiter.acquire(rawSize);
+        
+        // For backend flow control: use different metrics based on whether processor is configured
+        int flowControlSize;
+        if (processor != null && !processor.isEmpty()) {
+            // With processor: use raw data size (before filtering) for accurate backend flow control
+            flowControlSize = (int) response.getRawDataSize();
+        } else {
+            // Without processor: use response metrics directly
+            flowControlSize = rawSize;
+        }
+
+        // Count should always reflect actual data received by Flink (after processor filtering)
+        int logCount = response.getCount();
+        
         String readLastCursor = response.GetHeader("x-log-read-last-cursor");
         return new PullLogsResult(response.getLogGroups(),
                 shard,
                 cursor,
                 response.getNextCursor(),
                 readLastCursor,
-                response.getRawSize(),
-                response.getCount(),
+                rawSize,
+                flowControlSize,
+                logCount,
                 response.getCursorTime() * 1000L);
     }
 
