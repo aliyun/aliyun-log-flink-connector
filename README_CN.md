@@ -125,7 +125,36 @@ configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.DISABLED.nam
 
     > 注意: 这个配置只和消费组提交checkpoint到日志服务有关，无论这个配置如何配置，都不影响Flink的State。
 
-#### 1.5 关联 API 与 RAM 权限设置
+#### 1.5 SQL Connector
+
+FLIP-27 Source 同时支持 Flink SQL，connector 标识为 `aliyun-log`。每条 SLS log 会展开成一行，普通列按同名 log content 取值；保留列名 `__time__`、`__topic__`、`__source__`、`__machine_uuid__`、`__shard__`、`__cursor__` 可用于读取内置元数据。
+
+```sql
+CREATE TABLE sls_logs (
+  `__time__` TIMESTAMP(3),
+  `__topic__` STRING,
+  `__source__` STRING,
+  level STRING,
+  message STRING,
+  status_code INT
+) WITH (
+  'connector' = 'aliyun-log',
+  'endpoint' = 'cn-hangzhou.log.aliyuncs.com',
+  'project' = 'your-project',
+  'logstore' = 'your-logstore',
+  'access-key-id' = '${ACCESS_KEY_ID}',
+  'access-key' = '${ACCESS_KEY_SECRET}',
+  'consumer-group' = 'flink-sql-consumer',
+  'scan.startup.mode' = 'checkpoint',
+  'scan.startup.default-position' = 'earliest',
+  'checkpoint.mode' = 'on-checkpoints',
+  'max.number.per.fetch' = '100',
+  'shards.discovery.interval.ms' = '60000',
+  'ignore-parse-errors' = 'true'
+);
+```
+
+#### 1.6 关联 API 与 RAM 权限设置
 FlinkLogConsumer 会用到的阿里云日志服务接口如下：
 * GetCursorOrData
 

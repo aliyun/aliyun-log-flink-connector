@@ -46,6 +46,7 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
     private final Map<String, AliyunLogSourceSplit> discoveredSplits = new HashMap<>();
     private boolean consumerGroupCreated = false;
     private final SplitAssignerContext splitAssignerContext;
+    private final Set<Integer> readersWithRestoredAssignments = new HashSet<>();
 
     public AliyunLogSourceEnumerator(
             SplitEnumeratorContext<AliyunLogSourceSplit> context,
@@ -122,9 +123,8 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         if (!assignedSplits.isEmpty() || !discoveredSplits.isEmpty()) {
             LOG.info("Restored state detected: {} assigned split groups, {} discovered splits. Reassigning splits to registered readers.",
                     assignedSplits.size(), discoveredSplits.size());
-            // Reassign splits that were previously assigned
-            // reassignSplitsFromCheckpoint();
-            // Also assign any pending splits
+            moveOutOfRangeAssignmentsToPending();
+            reassignRestoredSplitsToRegisteredReaders();
             assignPendingSplits();
         } else {
             // Fresh start - discover and assign splits
@@ -139,39 +139,14 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
      * This is called when restoring from a checkpoint to ensure splits are properly
      * assigned to the currently registered readers.
      */
-    private void reassignSplitsFromCheckpoint() {
-        LOG.info("Reassigning splits from checkpoint to registered readers");
-        Map<Integer, List<AliyunLogSourceSplit>> splitsToAssign = new HashMap<>();
-
-        // Collect all splits that need to be reassigned
-        for (Map.Entry<Integer, Set<AliyunLogSourceSplit>> entry : assignedSplits.entrySet()) {
-            int readerId = entry.getKey();
-            Set<AliyunLogSourceSplit> splits = entry.getValue();
-
-            // Only reassign if the reader is currently registered
-            if (context.registeredReaders().containsKey(readerId)) {
-                splitsToAssign.put(readerId, new ArrayList<>(splits));
-                LOG.debug("Will reassign {} splits to reader {}", splits.size(), readerId);
-            } else {
-                LOG.warn("Reader {} from checkpoint is not currently registered, splits will be reassigned later", readerId);
-                // Move splits back to pending for reassignment
-                for (AliyunLogSourceSplit split : splits) {
-                    discoveredSplits.put(split.splitId(), split);
-                }
-                assignedSplits.remove(readerId);
-            }
-        }
-
-        // Actually assign the splits
-        if (!splitsToAssign.isEmpty()) {
-            LOG.info("Reassigning {} split groups to registered readers", splitsToAssign.size());
-            context.assignSplits(new SplitsAssignment<>(splitsToAssign));
-        }
+    private void reassignRestoredSplitsToRegisteredReaders() {
+        context.registeredReaders().keySet().forEach(this::assignRestoredSplitsToReader);
     }
 
     @Override
     public void handleSplitRequest(int subtaskId, @Nullable String requesterHostname) {
         LOG.info("Received split request from subtask {}", subtaskId);
+        assignRestoredSplitsToReader(subtaskId);
         // Assign any pending splits to this reader
         assignPendingSplitsToReader(subtaskId);
     }
@@ -193,6 +168,7 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
     public void addReader(int subtaskId) {
         LOG.info("Adding reader {}", subtaskId);
         assignedSplits.putIfAbsent(subtaskId, new HashSet<>());
+        assignRestoredSplitsToReader(subtaskId);
         // Assign any pending splits to this new reader
         assignPendingSplitsToReader(subtaskId);
     }
@@ -226,14 +202,13 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
 
     private void schedulePeriodicDiscovery() {
         context.callAsync(
-                () -> {
-                    discoverAndAssignSplits();
-                    return null;
-                },
-                (unused, throwable) -> {
+                this::discoverSplits,
+                (newSplits, throwable) -> {
                     if (throwable != null) {
                         LOG.error("Error during periodic shard discovery", throwable);
+                        return;
                     }
+                    addDiscoveredSplitsAndAssign(newSplits);
                 },
                 discoveryIntervalMs,
                 discoveryIntervalMs);
@@ -241,28 +216,37 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
 
     private void discoverAndAssignSplits() {
         try {
-            LOG.info("Starting shard discovery for project={}, logstore={}", project, logstore);
-            List<LogstoreShardMeta> shards = discoverShards();
-            LOG.info("Discovered {} shards", shards.size());
-
-            List<AliyunLogSourceSplit> newSplits = createSplitsForShards(shards);
-            LOG.info("Created {} splits from shards", newSplits.size());
-
-            int newSplitCount = 0;
-            for (AliyunLogSourceSplit split : newSplits) {
-                if (!discoveredSplits.containsKey(split.splitId())) {
-                    LOG.info("Discovered new shard: {} (shardId: {}, cursor: {})",
-                            split.splitId(), split.getShardId(), split.getNextCursor());
-                    discoveredSplits.put(split.splitId(), split);
-                    newSplitCount++;
-                }
-            }
-            LOG.info("Added {} new splits, total discovered splits: {}", newSplitCount, discoveredSplits.size());
-
-            assignPendingSplits();
+            addDiscoveredSplitsAndAssign(discoverSplits());
         } catch (Exception e) {
             LOG.error("Error discovering shards", e);
         }
+    }
+
+    private List<AliyunLogSourceSplit> discoverSplits() throws Exception {
+        LOG.info("Starting shard discovery for project={}, logstore={}", project, logstore);
+        List<LogstoreShardMeta> shards = discoverShards();
+        LOG.info("Discovered {} shards", shards.size());
+
+        List<AliyunLogSourceSplit> newSplits = createSplitsForShards(shards);
+        LOG.info("Created {} splits from shards", newSplits.size());
+        return newSplits;
+    }
+
+    private void addDiscoveredSplitsAndAssign(List<AliyunLogSourceSplit> newSplits) {
+        if (newSplits == null || newSplits.isEmpty()) {
+            return;
+        }
+        int newSplitCount = 0;
+        for (AliyunLogSourceSplit split : newSplits) {
+            if (!discoveredSplits.containsKey(split.splitId())) {
+                LOG.info("Discovered new shard: {} (shardId: {}, cursor: {})",
+                        split.splitId(), split.getShardId(), split.getNextCursor());
+                discoveredSplits.put(split.splitId(), split);
+                newSplitCount++;
+            }
+        }
+        LOG.info("Added {} new splits, total discovered splits: {}", newSplitCount, discoveredSplits.size());
+        assignPendingSplits();
     }
 
     private List<LogstoreShardMeta> discoverShards() throws Exception {
@@ -302,16 +286,7 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         for (LogstoreShardMeta shardMeta : shards) {
             String splitId = shardMeta.getId();
 
-            // Check if this split already exists - skip cursor fetching for existing splits
-            if (discoveredSplits.containsKey(splitId)) {
-                LOG.debug("Split {} already discovered, skipping cursor fetch", splitId);
-                continue;
-            }
-
-            // This is a new split - get cursors only for new splits
-            LOG.debug("New split detected: {}, fetching cursors", splitId);
-
-            // Get initial cursor only for new splits
+            LOG.debug("Creating split candidate: {}, fetching cursors", splitId);
             String initialCursor = getInitialCursor(shardMeta);
             if (initialCursor == null) {
                 LOG.warn("Could not get initial cursor for shard {}, skipping", shardMeta.getId());
@@ -332,6 +307,34 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
 
         LOG.info("Created {} new splits from {} shards", splits.size(), shards.size());
         return splits;
+    }
+
+    private void moveOutOfRangeAssignmentsToPending() {
+        int parallelism = context.currentParallelism();
+        Iterator<Map.Entry<Integer, Set<AliyunLogSourceSplit>>> iterator = assignedSplits.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Integer, Set<AliyunLogSourceSplit>> entry = iterator.next();
+            int readerId = entry.getKey();
+            if (readerId < 0 || readerId >= parallelism) {
+                LOG.warn("Reader {} from checkpoint is outside current parallelism {}, moving {} splits back to pending",
+                        readerId, parallelism, entry.getValue().size());
+                iterator.remove();
+            }
+        }
+    }
+
+    private void assignRestoredSplitsToReader(int readerId) {
+        if (!readersWithRestoredAssignments.add(readerId)) {
+            return;
+        }
+        Set<AliyunLogSourceSplit> splits = assignedSplits.get(readerId);
+        if (splits == null || splits.isEmpty()) {
+            return;
+        }
+        List<AliyunLogSourceSplit> splitsToAssign = new ArrayList<>(splits);
+        LOG.info("Reassigning {} restored splits to reader {}: {}", splitsToAssign.size(), readerId,
+                splitsToAssign.stream().map(AliyunLogSourceSplit::splitId).collect(java.util.stream.Collectors.toList()));
+        context.assignSplits(new SplitsAssignment<>(Collections.singletonMap(readerId, splitsToAssign)));
     }
 
     private String getInitialCursor(LogstoreShardMeta shardMeta) throws Exception {
@@ -492,4 +495,3 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         // No-op for now
     }
 }
-

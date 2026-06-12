@@ -154,7 +154,7 @@ public class LogClientProxy implements Serializable {
         int rawSize = response.getRawSize();
         memoryLimiter.acquire(rawSize);
         String readLastCursor = response.GetHeader("x-log-read-last-cursor");
-        return new PullLogsResult(response.getLogGroups(),
+        PullLogsResult result = new PullLogsResult(response.getLogGroups(),
                 shard,
                 cursor,
                 response.getNextCursor(),
@@ -162,6 +162,8 @@ public class LogClientProxy implements Serializable {
                 response.getRawSize(),
                 response.getCount(),
                 response.getCursorTime() * 1000L);
+        result.setMemoryReleaseCallback(() -> memoryLimiter.release(rawSize));
+        return result;
     }
 
     @VisibleForTesting
@@ -254,6 +256,7 @@ public class LogClientProxy implements Serializable {
     public void close() {
         if (client != null) {
             executor.cancel();
+            client.shutdown();
         }
     }
 }

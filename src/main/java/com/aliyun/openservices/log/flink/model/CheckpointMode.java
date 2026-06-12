@@ -16,8 +16,9 @@ public enum CheckpointMode {
     PERIODIC;
 
     public static CheckpointMode fromString(String value) {
+        String normalized = value == null ? "" : value.replace('-', '_');
         for (CheckpointMode mode : CheckpointMode.values()) {
-            if (mode.name().equalsIgnoreCase(value)) {
+            if (mode.name().equalsIgnoreCase(normalized)) {
                 return mode;
             }
         }

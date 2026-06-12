@@ -28,9 +28,12 @@ public class AliyunLogRecordEmitter<T> implements RecordEmitter<PullLogsResult, 
             AliyunLogSourceSplitState splitState) throws Exception {
         sourceOutputWrapper.setSourceOutput(output);
         sourceOutputWrapper.setTimestamp(element.getCursorTime());
-        // Use AliyunLogDeserializationSchema which supports Collector pattern
-        deserializer.deserialize(element, sourceOutputWrapper);
-        splitState.setNextCursor(element.getNextCursor());
+        try {
+            deserializer.deserialize(element, sourceOutputWrapper);
+            splitState.setNextCursor(element.getNextCursor());
+        } finally {
+            element.releaseMemory();
+        }
     }
 
     private static class SourceOutputWrapper<T> implements Collector<T> {
@@ -56,4 +59,3 @@ public class AliyunLogRecordEmitter<T> implements RecordEmitter<PullLogsResult, 
         }
     }
 }
-
