@@ -96,10 +96,10 @@ public class AliyunLogSourceFetcherManager extends SplitFetcherManager<PullLogsR
     public void commitCheckpoints(
             Map<AliyunLogSourceSplit, String> checkpointMap,
             Consumer<CommitResult> callback) {
-        LOG.debug("Committing {} checkpoints", checkpointMap.size());
         if (checkpointMap == null || checkpointMap.isEmpty()) {
             return;
         }
+        LOG.debug("Committing {} checkpoints", checkpointMap.size());
 
         AtomicInteger committedSplitCount = new AtomicInteger(0);
         checkpointMap.forEach((split, cursor) -> {
@@ -177,4 +177,3 @@ public class AliyunLogSourceFetcherManager extends SplitFetcherManager<PullLogsR
         }
     }
 }
-

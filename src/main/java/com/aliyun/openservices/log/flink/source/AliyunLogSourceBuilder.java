@@ -208,9 +208,10 @@ public class AliyunLogSourceBuilder<T> {
         if (accessKey == null || accessKey.isEmpty()) {
             throw new IllegalArgumentException("AccessKey must be set");
         }
+        configProps.setProperty(ConfigConstants.LOG_PROJECT, project);
+        configProps.setProperty(ConfigConstants.LOG_LOGSTORE, logstore);
         return new AliyunLogSource<>(
                 project, logstore, deserializer,
                 configProps, splitAssigner, accessKeyId, accessKey);
     }
 }
-

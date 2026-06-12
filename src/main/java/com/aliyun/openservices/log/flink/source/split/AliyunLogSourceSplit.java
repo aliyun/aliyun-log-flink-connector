@@ -65,15 +65,17 @@ public class AliyunLogSourceSplit implements SourceSplit, Serializable {
     }
 
     public boolean isFinished() {
-        if (!isReadOnly || nextCursor == null) {
+        if (nextCursor == null) {
+            return false;
+        }
+        if (stopCursor != null && nextCursor.equals(stopCursor)) {
+            return true;
+        }
+        if (!isReadOnly) {
             return false;
         }
         // Check if we've reached the end cursor for read-only shards
-        if (nextCursor.equals(shardMeta.getEndCursor())) {
-            return true;
-        }
-        // Check if we've reached the stop cursor
-        return stopCursor != null && nextCursor.equals(stopCursor);
+        return nextCursor.equals(shardMeta.getEndCursor());
     }
 
     @Override
@@ -100,5 +102,4 @@ public class AliyunLogSourceSplit implements SourceSplit, Serializable {
                 '}';
     }
 }
-
 

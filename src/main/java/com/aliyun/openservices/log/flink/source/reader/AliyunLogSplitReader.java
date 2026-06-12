@@ -68,25 +68,20 @@ public class AliyunLogSplitReader implements SplitReader<PullLogsResult, AliyunL
                     project, logstore, shardId, cursor, stopCursor, fetchSize);
 
             String nextCursor = result.getNextCursor();
-            boolean isFinished = false;
             // Update cursor
             activeSplit.setNextCursor(nextCursor);
 
-            if (result.getCount() > 0) {
-                // Check if finished
-                if (activeSplit.isReadOnly() && nextCursor.equals(activeSplit.getShardMeta().getEndCursor())) {
-                    LOG.debug("Split {} finished (read-only, reached end cursor)", activeSplit.splitId());
-                    isFinished = true;
-                } else if (nextCursor.equals(stopCursor)) {
-                    LOG.debug("Split {} finished (reached stop cursor)", activeSplit.splitId());
-                    isFinished = true;
-                }
-            } else {
-                // No data, check if finished
-                if (cursor.equals(nextCursor) && activeSplit.isReadOnly()) {
-                    LOG.debug("Split {} finished (read-only, no more data)", activeSplit.splitId());
-                    isFinished = true;
-                }
+            boolean reachedStopCursor = stopCursor != null && stopCursor.equals(nextCursor);
+            boolean reachedReadOnlyEnd = activeSplit.isReadOnly()
+                    && nextCursor != null
+                    && nextCursor.equals(activeSplit.getShardMeta().getEndCursor());
+            boolean readOnlyNoProgress = result.getCount() == 0
+                    && cursor.equals(nextCursor)
+                    && activeSplit.isReadOnly();
+            boolean isFinished = reachedStopCursor || reachedReadOnlyEnd || readOnlyNoProgress;
+            if (isFinished) {
+                LOG.debug("Split {} finished: reachedStopCursor={}, reachedReadOnlyEnd={}, readOnlyNoProgress={}",
+                        activeSplit.splitId(), reachedStopCursor, reachedReadOnlyEnd, readOnlyNoProgress);
             }
 
             // Adjust fetch frequency
@@ -104,6 +99,12 @@ public class AliyunLogSplitReader implements SplitReader<PullLogsResult, AliyunL
                 String finishedSplitId = activeSplit.splitId();
                 activeSplit = null;
                 sourceReaderMetrics.recordFetchEventTimeLag(TimestampAssigner.NO_TIMESTAMP);
+                if (result.getCount() > 0) {
+                    return new AliyunLogRecordsWithSplitIds(
+                            Collections.singletonList(new RecordWithSplitId<>(result, finishedSplitId)),
+                            Collections.singleton(finishedSplitId));
+                }
+                result.releaseMemory();
                 return new AliyunLogRecordsWithSplitIds(Collections.emptyList(),
                         Collections.singleton(finishedSplitId));
             }
@@ -116,6 +117,7 @@ public class AliyunLogSplitReader implements SplitReader<PullLogsResult, AliyunL
                         Collections.emptySet());
             }
 
+            result.releaseMemory();
             return new AliyunLogRecordsWithSplitIds();
         } catch (LogException e) {
             if ("ShardNotExist".equalsIgnoreCase(e.GetErrorCode())) {
@@ -277,4 +279,3 @@ public class AliyunLogSplitReader implements SplitReader<PullLogsResult, AliyunL
         }
     }
 }
-

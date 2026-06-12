@@ -13,6 +13,7 @@ public class PullLogsResult implements java.io.Serializable {
     private int rawSize;
     private int count;
     private long cursorTime;
+    private transient Runnable memoryReleaseCallback;
 
     public PullLogsResult(List<LogGroupData> logGroupList,
                           int shard,
@@ -30,6 +31,17 @@ public class PullLogsResult implements java.io.Serializable {
         this.rawSize = rawSize;
         this.count = count;
         this.cursorTime = cursorTime;
+    }
+
+    public void setMemoryReleaseCallback(Runnable memoryReleaseCallback) {
+        this.memoryReleaseCallback = memoryReleaseCallback;
+    }
+
+    public void releaseMemory() {
+        if (memoryReleaseCallback != null) {
+            memoryReleaseCallback.run();
+            memoryReleaseCallback = null;
+        }
     }
 
     public List<LogGroupData> getLogGroupList() {
