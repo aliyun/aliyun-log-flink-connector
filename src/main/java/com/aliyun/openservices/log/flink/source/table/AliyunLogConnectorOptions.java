@@ -111,6 +111,78 @@ public final class AliyunLogConnectorOptions {
                     .noDefaultValue()
                     .withDescription("Signature version, V1 or V4.");
 
+    public static final ConfigOption<String> SINK_TOPIC =
+            ConfigOptions.key("sink.topic")
+                    .stringType()
+                    .defaultValue("")
+                    .withDescription("Default topic for SQL sink records.");
+
+    public static final ConfigOption<String> SINK_SOURCE =
+            ConfigOptions.key("sink.source")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription("Default source for SQL sink records.");
+
+    public static final ConfigOption<Integer> SINK_PARALLELISM =
+            ConfigOptions.key("sink.parallelism")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription("Parallelism for SQL sink.");
+
+    public static final ConfigOption<Long> FLUSH_INTERVAL =
+            ConfigOptions.key("flush.interval.ms")
+                    .longType()
+                    .noDefaultValue()
+                    .withDescription("SLS producer flush interval in milliseconds.");
+
+    public static final ConfigOption<Integer> MAX_RETRIES =
+            ConfigOptions.key("max.retries")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription("Maximum retries for producer errors.");
+
+    public static final ConfigOption<Long> BASE_RETRY_BACKOFF =
+            ConfigOptions.key("base.retry.backoff.time.ms")
+                    .longType()
+                    .noDefaultValue()
+                    .withDescription("Initial producer retry backoff in milliseconds.");
+
+    public static final ConfigOption<Long> MAX_RETRY_BACKOFF =
+            ConfigOptions.key("max.retry.backoff.time.ms")
+                    .longType()
+                    .noDefaultValue()
+                    .withDescription("Maximum producer retry backoff in milliseconds.");
+
+    public static final ConfigOption<Long> MAX_BLOCK_TIME =
+            ConfigOptions.key("max.block.time.ms")
+                    .longType()
+                    .noDefaultValue()
+                    .withDescription("Maximum producer block time in milliseconds.");
+
+    public static final ConfigOption<Integer> IO_THREAD_NUM =
+            ConfigOptions.key("io.thread.num")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription("SLS producer IO thread count.");
+
+    public static final ConfigOption<Integer> PRODUCER_BUCKETS =
+            ConfigOptions.key("producer.buckets")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription("SLS producer bucket count.");
+
+    public static final ConfigOption<Integer> TOTAL_SIZE_IN_BYTES =
+            ConfigOptions.key("total.size.in.bytes")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription("SLS producer total buffer size.");
+
+    public static final ConfigOption<Boolean> PRODUCER_ADJUST_SHARD_HASH =
+            ConfigOptions.key("producer.adjust.shard.hash")
+                    .booleanType()
+                    .noDefaultValue()
+                    .withDescription("Whether SLS producer adjusts shard hash automatically.");
+
     private AliyunLogConnectorOptions() {
     }
 }
