@@ -21,6 +21,7 @@ import org.apache.flink.types.RowKind;
 import org.apache.flink.util.Collector;
 
 import java.math.BigDecimal;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.LocalDate;
@@ -34,6 +35,8 @@ import java.util.Map;
  * Converts Aliyun Log Service pull results into one RowData record per log line.
  */
 public class AliyunLogRowDataDeserializationSchema implements AliyunLogDeserializationSchema<RowData> {
+    private static final Method FAST_LOG_TIME_NS_PART_METHOD = resolveTimeNsPartMethod();
+
     public static final String FIELD_TIME = "__time__";
     public static final String FIELD_TOPIC = "__topic__";
     public static final String FIELD_SOURCE = "__source__";
@@ -194,8 +197,9 @@ public class AliyunLogRowDataDeserializationSchema implements AliyunLogDeseriali
 
     private TimestampData convertTimestamp(String value, String fieldName, FastLog log) {
         if (FIELD_TIME.equals(fieldName)) {
-            long epochMillis = log.getTime() * 1000L + log.getTimeNsPart() / 1_000_000L;
-            int nanoOfMillisecond = log.getTimeNsPart() % 1_000_000;
+            int timeNsPart = getTimeNsPart(log);
+            long epochMillis = log.getTime() * 1000L + timeNsPart / 1_000_000L;
+            int nanoOfMillisecond = timeNsPart % 1_000_000;
             return TimestampData.fromEpochMillis(epochMillis, nanoOfMillisecond);
         }
         if (isInteger(value)) {
@@ -222,5 +226,25 @@ public class AliyunLogRowDataDeserializationSchema implements AliyunLogDeseriali
             }
         }
         return true;
+    }
+
+    private static Method resolveTimeNsPartMethod() {
+        try {
+            return FastLog.class.getMethod("getTimeNsPart");
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    private static int getTimeNsPart(FastLog log) {
+        if (FAST_LOG_TIME_NS_PART_METHOD == null) {
+            return 0;
+        }
+        try {
+            Object value = FAST_LOG_TIME_NS_PART_METHOD.invoke(log);
+            return value instanceof Number ? ((Number) value).intValue() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 }
