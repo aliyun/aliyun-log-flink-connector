@@ -37,7 +37,6 @@ public class AliyunLogRowDataDeserializationSchema implements AliyunLogDeseriali
     public static final String FIELD_TIME = "__time__";
     public static final String FIELD_TOPIC = "__topic__";
     public static final String FIELD_SOURCE = "__source__";
-    public static final String FIELD_MACHINE_UUID = "__machine_uuid__";
     public static final String FIELD_SHARD = "__shard__";
     public static final String FIELD_CURSOR = "__cursor__";
 
@@ -101,8 +100,6 @@ public class AliyunLogRowDataDeserializationSchema implements AliyunLogDeseriali
                 return logGroup.getTopic();
             case FIELD_SOURCE:
                 return logGroup.getSource();
-            case FIELD_MACHINE_UUID:
-                return logGroup.getMachineUUID();
             case FIELD_SHARD:
                 return String.valueOf(record.getShard());
             case FIELD_CURSOR:

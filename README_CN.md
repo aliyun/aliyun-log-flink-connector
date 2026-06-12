@@ -127,7 +127,7 @@ configProps.put(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.DISABLED.nam
 
 #### 1.5 SQL Connector
 
-FLIP-27 Source 同时支持 Flink SQL，connector 标识为 `aliyun-log`。每条 SLS log 会展开成一行，普通列按同名 log content 取值；保留列名 `__time__`、`__topic__`、`__source__`、`__machine_uuid__`、`__shard__`、`__cursor__` 可用于读取内置元数据。
+FLIP-27 Source 同时支持 Flink SQL，connector 标识为 `aliyun-log`。每条 SLS log 会展开成一行，普通列按同名 log content 取值；保留列名 `__time__`、`__topic__`、`__source__`、`__shard__`、`__cursor__` 可用于读取内置元数据。
 
 ```sql
 CREATE TABLE sls_logs (
