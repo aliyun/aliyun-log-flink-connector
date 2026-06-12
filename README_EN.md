@@ -8,7 +8,7 @@ The producer writes data into Log Service. When using the connector, you must ad
 <dependency>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector</artifactId>
-    <version>0.1.31</version>
+    <version>0.1.44</version>
 </dependency>
 <dependency>
     <groupId>com.google.protobuf</groupId>
@@ -31,7 +31,7 @@ Properties configProps = new Properties();
 // Set the domain to access Log Service
 configProps.put(ConfigConstants.LOG_ENDPOINT， "cn-hangzhou.log.aliyuncs.com");
 // Set the AccessKey
-configProps.put(ConfigConstants.LOG_ACCESSSKEYID， "");
+configProps.put(ConfigConstants.LOG_ACCESSKEYID， "");
 configProps.put(ConfigConstants.LOG_ACCESSKEY， "");
 // Set the Log Service project
 configProps.put(ConfigConstants.LOG_PROJECT， "ali-cn-hangzhou-sls-admin");
@@ -156,7 +156,7 @@ public class ProducerSample {
         // Set the domain to access Log Service
         configProps.put(ConfigConstants.LOG_ENDPOINT， sEndpoint);
         // Set the AccessKey to access Log Service
-        configProps.put(ConfigConstants.LOG_ACCESSSKEYID， sAccessKeyId);
+        configProps.put(ConfigConstants.LOG_ACCESSKEYID， sAccessKeyId);
         configProps.put(ConfigConstants.LOG_ACCESSKEY， sAccessKey);
         // Set the Log Service project into which logs are written
         configProps.put(ConfigConstants.LOG_PROJECT， sProject);
