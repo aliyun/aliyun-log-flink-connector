@@ -194,7 +194,7 @@ public class AliyunLogRowDataDeserializationSchema implements AliyunLogDeseriali
 
     private TimestampData convertTimestamp(String value, String fieldName, FastLog log) {
         if (FIELD_TIME.equals(fieldName)) {
-            int timeNsPart = normalizeTimeNsPart(log.getTimeNsPart());
+            int timeNsPart = log.getTimeNsPart();
             long epochMillis = log.getTime() * 1000L + timeNsPart / 1_000_000L;
             int nanoOfMillisecond = timeNsPart % 1_000_000;
             return TimestampData.fromEpochMillis(epochMillis, nanoOfMillisecond);
@@ -223,12 +223,5 @@ public class AliyunLogRowDataDeserializationSchema implements AliyunLogDeseriali
             }
         }
         return true;
-    }
-
-    private static int normalizeTimeNsPart(int timeNsPart) {
-        if (timeNsPart < 0 || timeNsPart >= 1_000_000_000) {
-            return 0;
-        }
-        return timeNsPart;
     }
 }
