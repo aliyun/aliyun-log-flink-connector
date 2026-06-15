@@ -219,9 +219,9 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         try {
             addDiscoveredSplitsAndAssign(discoverSplits());
         } catch (Exception e) {
-            LOG.error("The source failed to discover Aliyun Log shards for project {} and logstore {}.",
+            LOG.error("Failed to discover Aliyun Log shards for project {} and logstore {}.",
                     project, logstore, e);
-            throw new RuntimeException("The source failed to discover Aliyun Log shards for project "
+            throw new RuntimeException("Failed to discover Aliyun Log shards for project "
                     + project + " and logstore " + logstore + ".", e);
         }
     }
@@ -481,21 +481,21 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         try {
             boolean exists = logClient.checkConsumerGroupExists(project, logstore, consumerGroup);
             if (!exists) {
-                LOG.info("The source is creating consumer group {} for project {} and logstore {}.",
+                LOG.info("Creating consumer group {} for project {} and logstore {}.",
                         consumerGroup, project, logstore);
                 logClient.createConsumerGroup(project, logstore, consumerGroup);
             }
         } catch (Exception e) {
-            LOG.error("The source failed to create or check consumer group {} for project {} and logstore {}.",
+            LOG.error("Failed to create or check consumer group {} for project {} and logstore {}.",
                     consumerGroup, project, logstore, e);
-            throw new RuntimeException("The source failed to create or check consumer group "
+            throw new RuntimeException("Failed to create or check consumer group "
                     + consumerGroup + " for project " + project + " and logstore " + logstore + ".", e);
         }
     }
 
     private void createConsumerGroupIfConfigured() {
         if (!consumerGroupCreated && hasConsumerGroup()) {
-            LOG.info("The source is checking consumer group {} before shard discovery.", consumerGroup);
+            LOG.info("Checking consumer group {} before shard discovery.", consumerGroup);
             createConsumerGroupIfNotExist();
             consumerGroupCreated = true;
         }
