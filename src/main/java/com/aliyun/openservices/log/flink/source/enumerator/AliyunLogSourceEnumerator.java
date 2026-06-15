@@ -220,8 +220,8 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
             addDiscoveredSplitsAndAssign(discoverSplits());
         } catch (Exception e) {
             LOG.error("Error discovering shards", e);
-            throw new RuntimeException("Failed to discover Aliyun Log shards for project " + project
-                    + ", logstore " + logstore, e);
+            throw new RuntimeException("The source failed to discover Aliyun Log shards for project "
+                    + project + " and logstore " + logstore + ".", e);
         }
     }
 
@@ -486,8 +486,8 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         } catch (Exception e) {
             LOG.error("Error creating/checking consumer group {} for project {} logstore {}",
                     consumerGroup, project, logstore, e);
-            throw new RuntimeException("Failed to create/check consumer group " + consumerGroup
-                    + " for project " + project + ", logstore " + logstore, e);
+            throw new RuntimeException("The source failed to create or check consumer group "
+                    + consumerGroup + " for project " + project + " and logstore " + logstore + ".", e);
         }
     }
 
