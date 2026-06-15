@@ -152,7 +152,7 @@ Source 读取会用到的阿里云日志服务接口如下：
      ```
 * CreateConsumerGroup
 
-    该接口调用只有当设置消费进度监控时才会发生，功能是创建consumerGroup，用于同步checkpoint。
+    该接口调用只有当配置了 consumerGroup 时才会发生，功能是创建 consumerGroup，用于同步 checkpoint。若配置了 consumerGroup 但缺少该权限，Source 会启动失败。
 * ConsumerGroupUpdateCheckPoint
 
     该接口用户将flink的snapshot同步到日志服务的consumerGroup中。
