@@ -154,8 +154,8 @@ CREATE TABLE sls_logs (
   'endpoint' = 'cn-hangzhou.log.aliyuncs.com',
   'project' = 'your-project',
   'logstore' = 'your-logstore',
-  'access-key-id' = '${ACCESS_KEY_ID}',
-  'access-key' = '${ACCESS_KEY_SECRET}',
+  'access.key.id' = '${ACCESS_KEY_ID}',
+  'access.key.secret' = '${ACCESS_KEY_SECRET}',
   'consumer-group' = 'flink-sql-consumer',
   'scan.startup.mode' = 'checkpoint',
   'scan.startup.default-position' = 'earliest',
@@ -181,8 +181,8 @@ CREATE TABLE sls_sink (
   'endpoint' = 'cn-hangzhou.log.aliyuncs.com',
   'project' = 'your-project',
   'logstore' = 'your-logstore',
-  'access-key-id' = '${ACCESS_KEY_ID}',
-  'access-key' = '${ACCESS_KEY_SECRET}',
+  'access.key.id' = '${ACCESS_KEY_ID}',
+  'access.key.secret' = '${ACCESS_KEY_SECRET}',
   'sink.topic' = 'flink-sql',
   'sink.source' = 'flink-job',
   'flush.interval.ms' = '100',
@@ -198,8 +198,8 @@ CREATE TABLE sls_sink (
 | `endpoint` | Source / Sink | 是 | 无 | 日志服务 Endpoint，例如 `cn-hangzhou.log.aliyuncs.com`。 |
 | `project` | Source / Sink | 是 | 无 | 日志服务 Project。 |
 | `logstore` | Source / Sink | 是 | 无 | Source 读取或 Sink 默认写入的 Logstore。 |
-| `access-key-id` | Source / Sink | 是 | 无 | 访问日志服务的 AccessKey ID。 |
-| `access-key` | Source / Sink | 是 | 无 | 访问日志服务的 AccessKey Secret。 |
+| `access.key.id` | Source / Sink | 是 | 无 | 访问日志服务的 AccessKey ID。 |
+| `access.key.secret` | Source / Sink | 是 | 无 | 访问日志服务的 AccessKey Secret。 |
 | `consumer-group` | Source | 否 | 无 | ConsumerGroup 名称，用于读取或提交服务端 checkpoint。 |
 | `scan.startup.mode` | Source | 否 | `earliest` | 消费起始位置。支持 `earliest`、`latest`、`checkpoint` 或 Unix 秒级时间戳。 |
 | `scan.startup.default-position` | Source | 否 | `earliest` | 起始位置为 checkpoint 且服务端没有 checkpoint 时使用的兜底位置，不能设置为 checkpoint。 |
