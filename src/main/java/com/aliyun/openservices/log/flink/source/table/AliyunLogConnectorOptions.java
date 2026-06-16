@@ -28,13 +28,13 @@ public final class AliyunLogConnectorOptions {
                     .withDescription("Aliyun Log Service logstore.");
 
     public static final ConfigOption<String> ACCESS_KEY_ID =
-            ConfigOptions.key("access-key-id")
+            ConfigOptions.key("access.key.id")
                     .stringType()
                     .noDefaultValue()
-                    .withDescription("Aliyun access key id.");
+                    .withDescription("Aliyun access key ID.");
 
     public static final ConfigOption<String> ACCESS_KEY =
-            ConfigOptions.key("access-key")
+            ConfigOptions.key("access.key.secret")
                     .stringType()
                     .noDefaultValue()
                     .withDescription("Aliyun access key secret.");

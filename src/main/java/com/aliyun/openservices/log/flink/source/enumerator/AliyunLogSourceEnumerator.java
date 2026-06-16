@@ -118,6 +118,7 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
     public void start() {
         LOG.info("Starting AliyunLogSourceEnumerator");
         this.logClient = LogClientProxy.makeClient(configProps, accessKeyId, accessKey, context.currentParallelism());
+        createConsumerGroupIfConfigured();
         // If we restored from checkpoint, we need to reassign splits to registered readers
         // Otherwise, discover and assign new splits
         if (!assignedSplits.isEmpty() || !discoveredSplits.isEmpty()) {
@@ -218,7 +219,10 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         try {
             addDiscoveredSplitsAndAssign(discoverSplits());
         } catch (Exception e) {
-            LOG.error("Error discovering shards", e);
+            LOG.error("Failed to discover Aliyun Log shards for project {} and logstore {}.",
+                    project, logstore, e);
+            throw new RuntimeException("Failed to discover Aliyun Log shards for project "
+                    + project + " and logstore " + logstore + ".", e);
         }
     }
 
@@ -250,11 +254,7 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
     }
 
     private List<LogstoreShardMeta> discoverShards() throws Exception {
-        if (!consumerGroupCreated) {
-            LOG.info("Creating consumer group: {}", consumerGroup);
-            createConsumerGroupIfNotExist();
-            consumerGroupCreated = true;
-        }
+        createConsumerGroupIfConfigured();
 
         List<LogstoreShardMeta> shardMetas = new ArrayList<>();
         LOG.debug("Listing shards for project={}, logstore={}", project, logstore);
@@ -481,13 +481,32 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
         try {
             boolean exists = logClient.checkConsumerGroupExists(project, logstore, consumerGroup);
             if (!exists) {
-                LOG.info("Creating consumer group {} for project {} logstore {}", consumerGroup, project, logstore);
+                LOG.info("Creating consumer group {} for project {} and logstore {}.",
+                        consumerGroup, project, logstore);
                 logClient.createConsumerGroup(project, logstore, consumerGroup);
             }
         } catch (Exception e) {
-            LOG.warn("Error creating/checking consumer group: {}", e.getMessage());
-            throw new RuntimeException(e);
+            LOG.error("Failed to create or check consumer group {} for project {} and logstore {}.",
+                    consumerGroup, project, logstore, e);
+            throw new RuntimeException("Failed to create or check consumer group "
+                    + consumerGroup + " for project " + project + " and logstore " + logstore + ".", e);
         }
+    }
+
+    private void createConsumerGroupIfConfigured() {
+        if (!consumerGroupCreated && hasConsumerGroup()) {
+            LOG.info("Checking consumer group {} before shard discovery.", consumerGroup);
+            createConsumerGroupIfNotExist();
+            consumerGroupCreated = true;
+        }
+    }
+
+    static boolean hasConsumerGroup(String consumerGroup) {
+        return consumerGroup != null && !consumerGroup.isEmpty();
+    }
+
+    private boolean hasConsumerGroup() {
+        return hasConsumerGroup(consumerGroup);
     }
 
     @Override

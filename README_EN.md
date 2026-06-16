@@ -8,7 +8,7 @@ The producer writes data into Log Service. When using the connector, you must ad
 <dependency>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector</artifactId>
-    <version>0.1.45</version>
+    <version>0.1.46</version>
 </dependency>
 <dependency>
     <groupId>com.google.protobuf</groupId>
@@ -102,7 +102,7 @@ The Flink log consumer uses the following Alibaba Cloud Log Service APIs:
      ```
 * CreateConsumerGroup
 
-    This API is called only when consumption progress monitoring is enabled. It is used to create a ConsumerGroup to synchronize checkpoints.
+    This API is called only when a consumer group is configured. It is used to create a ConsumerGroup to synchronize checkpoints. If a consumer group is configured but this permission is missing, the Source fails to start.
 * ConsumerGroupUpdateCheckPoint
 
     This API is used to synchronize snapshots of Flink to a ConsumerGroup of Log Service.
