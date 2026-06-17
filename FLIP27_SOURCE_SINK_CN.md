@@ -1,6 +1,6 @@
-# 新版 Source / Sink / SQL Connector 使用说明
+# Source / Sink / SQL Connector 使用说明
 
-本文档只说明新版接口：FLIP-27 `AliyunLogSource`、FLIP-27 `AliyunLogSink` 和 SQL Connector。旧 `FlinkLogConsumer` / `FlinkLogProducer` 属于老 DataStream 接口，后续会删除，不要和本文档中的参数混用。
+本文档介绍 `AliyunLogSource`、`AliyunLogSink` 和 SQL Connector 的使用方式。
 
 除特别说明外，时间单位均为毫秒，Unix 时间戳单位为秒。
 
@@ -21,7 +21,7 @@
 
 ## DataStream Source
 
-`AliyunLogSource` 使用 Flink FLIP-27 Source API，通过 `env.fromSource(...)` 接入。Source 的 split/cursor 状态会参与 Flink checkpoint，用于作业 failover 恢复；如果配置了 ConsumerGroup，还可以按配置将 checkpoint 提交到日志服务服务端。
+`AliyunLogSource` 通过 `env.fromSource(...)` 接入。Source 的 split/cursor 状态会参与 Flink checkpoint，用于作业 failover 恢复；如果配置了 ConsumerGroup，还可以按配置将 checkpoint 提交到日志服务服务端。
 
 ```java
 Properties properties = new Properties();
@@ -80,11 +80,238 @@ DataStream<MyRecord> stream = env.fromSource(
 | `ConfigConstants.PROXY_DOMAIN` (`proxy.domain`) | 否 | 无 | NTLM 代理域。 |
 | `ConfigConstants.PROXY_WORKSTATION` (`proxy.workstation`) | 否 | 无 | NTLM 代理工作站。 |
 
+### 自定义 Deserializer 示例
+
+`AliyunLogSource` 可以直接在 `AliyunLogDeserializationSchema` 中完成日志展开和字段转换：一个 `PullLogsResult` 可能包含多个 `LogGroup`，一个 `LogGroup` 可能包含多条日志，反序列化器可以向 `Collector` 输出零条、一条或多条 Flink 记录。
+
+下面示例把每条 SLS 日志展开成包含元数据和 content map 的 POJO：
+
+```java
+import com.aliyun.openservices.log.common.FastLog;
+import com.aliyun.openservices.log.common.FastLogContent;
+import com.aliyun.openservices.log.common.FastLogGroup;
+import com.aliyun.openservices.log.common.LogGroupData;
+import com.aliyun.openservices.log.flink.model.PullLogsResult;
+import com.aliyun.openservices.log.flink.source.deserialization.AliyunLogDeserializationSchema;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.util.Collector;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+class SlsLogRecord {
+    public long time;
+    public String topic;
+    public String source;
+    public int shard;
+    public String cursor;
+    public Map<String, String> fields;
+
+    public SlsLogRecord() {
+    }
+
+    public SlsLogRecord(
+            long time,
+            String topic,
+            String source,
+            int shard,
+            String cursor,
+            Map<String, String> fields) {
+        this.time = time;
+        this.topic = topic;
+        this.source = source;
+        this.shard = shard;
+        this.cursor = cursor;
+        this.fields = fields;
+    }
+}
+
+public class ContentMapDeserializer implements AliyunLogDeserializationSchema<SlsLogRecord> {
+    @Override
+    public TypeInformation<SlsLogRecord> getProducedType() {
+        return TypeInformation.of(SlsLogRecord.class);
+    }
+
+    @Override
+    public void deserialize(PullLogsResult record, Collector<SlsLogRecord> out) {
+        for (LogGroupData logGroupData : record.getLogGroupList()) {
+            FastLogGroup logGroup = logGroupData.GetFastLogGroup();
+            for (int logIndex = 0; logIndex < logGroup.getLogsCount(); logIndex++) {
+                FastLog log = logGroup.getLogs(logIndex);
+                Map<String, String> fields = new LinkedHashMap<>();
+                for (int contentIndex = 0; contentIndex < log.getContentsCount(); contentIndex++) {
+                    FastLogContent content = log.getContents(contentIndex);
+                    fields.put(content.getKey(), content.getValue());
+                }
+
+                out.collect(new SlsLogRecord(
+                        log.getTime(),
+                        logGroup.getTopic(),
+                        logGroup.getSource(),
+                        record.getShard(),
+                        record.getCursor(),
+                        fields));
+            }
+        }
+    }
+}
+```
+
+如果需要按字段过滤或转换类型，可以在 `deserialize` 中读取 `fields.get("field_name")` 后再构造业务 POJO；如果一条 SLS 日志需要拆成多条业务记录，也可以多次调用 `out.collect(...)`。
+
+### 完整消费示例
+
+本示例从环境变量 `ALIBABA_CLOUD_ACCESS_KEY_ID` 和 `ALIBABA_CLOUD_ACCESS_KEY_SECRET` 获取访问凭证，从服务端 ConsumerGroup checkpoint 继续消费；如果服务端还没有 checkpoint，则从最早位置开始消费。
+
+```java
+package com.aliyun.openservices.log.flink.sample;
+
+import com.aliyun.openservices.log.common.FastLog;
+import com.aliyun.openservices.log.common.FastLogContent;
+import com.aliyun.openservices.log.common.FastLogGroup;
+import com.aliyun.openservices.log.common.LogGroupData;
+import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.model.CheckpointMode;
+import com.aliyun.openservices.log.flink.model.PullLogsResult;
+import com.aliyun.openservices.log.flink.source.AliyunLogSource;
+import com.aliyun.openservices.log.flink.source.StartingPosition;
+import com.aliyun.openservices.log.flink.source.deserialization.AliyunLogDeserializationSchema;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.CheckpointingMode;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.util.Collector;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Properties;
+
+public class AliyunLogConsumerSample {
+    private static final String SLS_ENDPOINT = "cn-hangzhou.log.aliyuncs.com";
+    private static final String SLS_PROJECT = "your-project";
+    private static final String SLS_LOGSTORE = "your-logstore";
+    private static final String CONSUMER_GROUP = "your-consumer-group";
+
+    public static void main(String[] args) throws Exception {
+        String accessKeyId = System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID");
+        String accessKeySecret = System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET");
+
+        Configuration configuration = new Configuration();
+        configuration.setString(CheckpointingOptions.CHECKPOINTS_DIRECTORY, "file:///tmp/flink-checkpoints");
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+        env.setParallelism(2);
+        env.enableCheckpointing(60000);
+        env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+        env.getCheckpointConfig().enableExternalizedCheckpoints(
+                CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
+
+        Properties sourceProperties = new Properties();
+        sourceProperties.setProperty(ConfigConstants.LOG_MAX_NUMBER_PER_FETCH, "100");
+        sourceProperties.setProperty(ConfigConstants.LOG_FETCH_DATA_INTERVAL_MILLIS, "100");
+        sourceProperties.setProperty(ConfigConstants.LOG_SHARDS_DISCOVERY_INTERVAL_MILLIS, "30000");
+        sourceProperties.setProperty(ConfigConstants.LOG_CHECKPOINT_MODE, CheckpointMode.ON_CHECKPOINTS.name());
+
+        AliyunLogSource<SlsLogRecord> source = AliyunLogSource.<SlsLogRecord>builder()
+                .setEndpoint(SLS_ENDPOINT)
+                .setProject(SLS_PROJECT)
+                .setLogStore(SLS_LOGSTORE)
+                .setCredentials(accessKeyId, accessKeySecret)
+                .setConsumerGroup(CONSUMER_GROUP)
+                .setStartingPosition(StartingPosition.CHECKPOINT)
+                .setFallbackPosition(StartingPosition.EARLIEST)
+                .setProperties(sourceProperties)
+                .setDeserializer(new ContentMapDeserializer())
+                .build();
+
+        DataStream<SlsLogRecord> stream = env.fromSource(
+                source,
+                WatermarkStrategy.noWatermarks(),
+                "aliyun-log-source");
+
+        stream.print();
+        env.execute("aliyun log consumer");
+    }
+
+    public static class SlsLogRecord {
+        public long time;
+        public String topic;
+        public String source;
+        public int shard;
+        public String cursor;
+        public Map<String, String> fields;
+
+        public SlsLogRecord() {
+        }
+
+        public SlsLogRecord(
+                long time,
+                String topic,
+                String source,
+                int shard,
+                String cursor,
+                Map<String, String> fields) {
+            this.time = time;
+            this.topic = topic;
+            this.source = source;
+            this.shard = shard;
+            this.cursor = cursor;
+            this.fields = fields;
+        }
+
+        @Override
+        public String toString() {
+            return "SlsLogRecord{"
+                    + "time=" + time
+                    + ", topic='" + topic + '\''
+                    + ", source='" + source + '\''
+                    + ", shard=" + shard
+                    + ", cursor='" + cursor + '\''
+                    + ", fields=" + fields
+                    + '}';
+        }
+    }
+
+    public static class ContentMapDeserializer implements AliyunLogDeserializationSchema<SlsLogRecord> {
+        @Override
+        public TypeInformation<SlsLogRecord> getProducedType() {
+            return TypeInformation.of(SlsLogRecord.class);
+        }
+
+        @Override
+        public void deserialize(PullLogsResult record, Collector<SlsLogRecord> out) {
+            for (LogGroupData logGroupData : record.getLogGroupList()) {
+                FastLogGroup logGroup = logGroupData.GetFastLogGroup();
+                for (int logIndex = 0; logIndex < logGroup.getLogsCount(); logIndex++) {
+                    FastLog log = logGroup.getLogs(logIndex);
+                    Map<String, String> fields = new LinkedHashMap<>();
+                    for (int contentIndex = 0; contentIndex < log.getContentsCount(); contentIndex++) {
+                        FastLogContent content = log.getContents(contentIndex);
+                        fields.put(content.getKey(), content.getValue());
+                    }
+
+                    out.collect(new SlsLogRecord(
+                            log.getTime(),
+                            logGroup.getTopic(),
+                            logGroup.getSource(),
+                            record.getShard(),
+                            record.getCursor(),
+                            fields));
+                }
+            }
+        }
+    }
+}
+```
+
 ## DataStream Sink
 
-`AliyunLogSink` 使用 Flink Sink V2 API，通过 `stream.sinkTo(...)` 接入。Sink 基于日志服务 Producer SDK 异步发送数据，并在 Flink checkpoint 或作业结束时等待已提交请求完成，提供 at-least-once 语义。日志服务 Producer 不提供可与 Flink 协调的事务协议，因此不声明 exactly-once。
+`AliyunLogSink` 通过 `stream.sinkTo(...)` 接入。Sink 基于日志服务 Producer SDK 异步发送数据，并在 Flink checkpoint 或作业结束时等待已提交请求完成，提供 at-least-once 语义。日志服务 Producer 不提供可与 Flink 协调的事务协议，因此不声明 exactly-once。
 
-自定义序列化使用 `AliyunLogSerializationSchema<T>`。一个输入元素可以通过 `Collector<SinkRecord>` 输出零条、一条或多条 SLS 记录。新版 Sink 不兼容旧 `LogSerializationSchema` / `LogSerializationSchemaV2`。
+自定义序列化使用 `AliyunLogSerializationSchema<T>`。一个输入元素可以通过 `Collector<SinkRecord>` 输出零条、一条或多条 SLS 记录。
 
 ```java
 class MySerializationSchema implements AliyunLogSerializationSchema<String> {
@@ -134,6 +361,91 @@ stream.sinkTo(sink).name("aliyun-log-sink");
 | `ConfigConstants.PRODUCER_ADJUST_SHARD_HASH` (`producer.adjust.shard.hash`) | 否 | `true` | 是否由 Producer 自动调整 shard hash。 |
 | `ConfigConstants.SIGNATURE_VERSION` (`signature.version`) | 否 | `v1` | 请求签名版本，支持 `v1`、`v4`。 |
 | `ConfigConstants.REGION_ID` (`region.id`) | 使用 `v4` 时必填 | 无 | V4 签名使用的地域 ID。 |
+
+### 完整写入示例
+
+本示例使用 `env.fromSequence(...)` 生成测试数据，并通过 `AliyunLogSerializationSchema` 写入日志服务。实际业务中只需要把 `DataStream<WriteEvent>` 替换成自己的数据流，并在 `serialize` 中把业务字段写入 `LogItem`。
+
+```java
+package com.aliyun.openservices.log.flink.sample;
+
+import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.data.SinkRecord;
+import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
+import com.aliyun.openservices.log.flink.sink.AliyunLogSink;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.util.Collector;
+
+public class AliyunLogProducerSample {
+    private static final String SLS_ENDPOINT = "cn-hangzhou.log.aliyuncs.com";
+    private static final String SLS_PROJECT = "your-project";
+    private static final String SLS_LOGSTORE = "your-logstore";
+
+    public static void main(String[] args) throws Exception {
+        String accessKeyId = System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID");
+        String accessKeySecret = System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET");
+
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(3);
+
+        DataStream<WriteEvent> events = env.fromSequence(1, 1000)
+                .map(sequence -> new WriteEvent(
+                        String.valueOf(sequence),
+                        "message-" + sequence,
+                        System.currentTimeMillis()))
+                .returns(WriteEvent.class);
+
+        AliyunLogSink<WriteEvent> sink = AliyunLogSink.<WriteEvent>builder()
+                .setEndpoint(SLS_ENDPOINT)
+                .setProject(SLS_PROJECT)
+                .setLogStore(SLS_LOGSTORE)
+                .setCredentials(accessKeyId, accessKeySecret)
+                .setSerializer(new WriteEventSerializer())
+                .setProperty(ConfigConstants.FLUSH_INTERVAL_MS, "100")
+                .setProperty(ConfigConstants.MAX_RETRIES, "10")
+                .build();
+
+        events.sinkTo(sink).name("aliyun-log-sink");
+        env.execute("aliyun log producer");
+    }
+
+    public static class WriteEvent {
+        public String id;
+        public String message;
+        public long eventTimeMillis;
+
+        public WriteEvent() {
+        }
+
+        public WriteEvent(String id, String message, long eventTimeMillis) {
+            this.id = id;
+            this.message = message;
+            this.eventTimeMillis = eventTimeMillis;
+        }
+    }
+
+    public static class WriteEventSerializer implements AliyunLogSerializationSchema<WriteEvent> {
+        @Override
+        public void serialize(WriteEvent element, Collector<SinkRecord> output) {
+            LogItem logItem = new LogItem((int) (element.eventTimeMillis / 1000L));
+            logItem.PushBack("id", element.id);
+            logItem.PushBack("message", element.message);
+            logItem.PushBack("event_time_ms", String.valueOf(element.eventTimeMillis));
+
+            SinkRecord record = new SinkRecord();
+            record.setTopic("flink");
+            record.setSource("flink-job");
+            record.setLogItem(logItem);
+
+            output.collect(record);
+        }
+    }
+}
+```
+
+如果需要控制写入 shard，可以在单条记录上调用 `record.setHashKey(...)` 设置 hash key；如果需要动态写入不同 Logstore，可以调用 `record.setLogstore(...)` 覆盖 Sink 默认 Logstore。
 
 ## SQL Connector
 
