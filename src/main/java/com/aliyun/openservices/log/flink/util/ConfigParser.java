@@ -28,4 +28,8 @@ public class ConfigParser implements Serializable {
     public String getString(String key) {
         return props.getProperty(key);
     }
+
+    public void remove(String key) {
+        props.remove(key);
+    }
 }

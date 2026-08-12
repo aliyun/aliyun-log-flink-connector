@@ -5,8 +5,11 @@ import com.aliyun.openservices.log.common.Consts.CursorMode;
 import com.aliyun.openservices.log.common.ConsumerGroup;
 import com.aliyun.openservices.log.common.ConsumerGroupShardCheckPoint;
 import com.aliyun.openservices.log.common.Shard;
+import com.aliyun.openservices.log.common.auth.CredentialsProvider;
 import com.aliyun.openservices.log.exception.LogException;
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.MemoryLimiter;
 import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
@@ -42,7 +45,25 @@ public class LogClientProxy implements Serializable {
                           RetryPolicy retryPolicy,
                           MemoryLimiter memoryLimiter,
                           ClientConfiguration clientConfiguration) {
-        this.client = new Client(endpoint, accessKeyId, accessKey, clientConfiguration);
+        this(endpoint,
+                new StaticCredentialsProviderFactory(accessKeyId, accessKey)
+                        .createCredentialsProvider(),
+                userAgent,
+                retryPolicy,
+                memoryLimiter,
+                clientConfiguration);
+    }
+
+    public LogClientProxy(String endpoint,
+                          CredentialsProvider credentialsProvider,
+                          String userAgent,
+                          RetryPolicy retryPolicy,
+                          MemoryLimiter memoryLimiter,
+                          ClientConfiguration clientConfiguration) {
+        if (credentialsProvider == null) {
+            throw new IllegalArgumentException("CredentialsProvider must not be null");
+        }
+        this.client = new Client(endpoint, credentialsProvider, clientConfiguration, null);
         this.client.setUserAgent(userAgent);
         this.executor = new RequestExecutor(retryPolicy);
         this.memoryLimiter = memoryLimiter;
@@ -52,6 +73,19 @@ public class LogClientProxy implements Serializable {
                                             String accessKeyId,
                                             String accessKey,
                                             int subtaskIndex) {
+        return makeClient(
+                configProps,
+                new StaticCredentialsProviderFactory(accessKeyId, accessKey),
+                subtaskIndex);
+    }
+
+    public static LogClientProxy makeClient(
+            Properties configProps,
+            LogCredentialsProviderFactory credentialsProviderFactory,
+            int subtaskIndex) {
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
         ConfigParser parser = new ConfigParser(configProps);
         RetryPolicy retryPolicy = RetryPolicy.builder()
                 .maxRetries(parser.getInt(ConfigConstants.MAX_RETRIES, com.aliyun.openservices.log.flink.util.Consts.DEFAULT_MAX_RETRIES))
@@ -87,8 +121,7 @@ public class LogClientProxy implements Serializable {
         String userAgent = resolveUserAgent(configProps, subtaskIndex);
         return new LogClientProxy(
                 parser.getString(ConfigConstants.LOG_ENDPOINT),
-                accessKeyId,
-                accessKey,
+                credentialsProviderFactory.createCredentialsProvider(),
                 userAgent,
                 retryPolicy,
                 memoryLimiter,

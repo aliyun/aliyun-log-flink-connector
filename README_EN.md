@@ -46,6 +46,17 @@ DataStream<RawLogGroupList> logTestStream = env.addSource(
         new FlinkLogConsumer<RawLogGroupList>(deserializer， configProps));
 ```
 The preceding is a simple consumption example. As java.util.Properties is used as the configuration tool, configurations of all consumers can be located in ConfigConstants.
+
+For credentials that are obtained and refreshed at runtime, omit the static access key properties and provide a serializable factory:
+
+```java
+FlinkLogConsumer<RawLogGroupList> consumer =
+        new FlinkLogConsumer<RawLogGroupList>(deserializer, configProps)
+                .setCredentialsProviderFactory(new RoleCredentialsFactory(roleArn));
+```
+
+`RoleCredentialsFactory` implements `LogCredentialsProviderFactory` and creates an SLS SDK `CredentialsProvider` in `createCredentialsProvider()`. Only the factory is serialized with the job; the provider and temporary credentials are created in the Flink runtime process. `FlinkLogProducer` and `FlinkLogProducerV2` expose the same setter. The new Source, Sink V2, and SQL APIs are documented in [FLIP27_SOURCE_SINK_CN.md](./FLIP27_SOURCE_SINK_CN.md).
+
 > NOTE: The number of sub-tasks in the Flink stream is independent from that of shards in the Log Service LogStore. If the number of shards is greater than that of sub-tasks, each sub-task consumes multiple shards exactly once. If the number of shards is smaller than that of sub-tasks, some sub-tasks are idle until new shards are generated.
 
 #### 1.2 Set the consumption start position

@@ -8,6 +8,9 @@ import com.aliyun.openservices.aliyun.log.producer.ProjectConfig;
 import com.aliyun.openservices.aliyun.log.producer.Result;
 import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.common.auth.CredentialsProvider;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.SinkRecord;
 import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
@@ -45,8 +48,7 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
     private final String project;
     private final String logstore;
     private final String endpoint;
-    private final String accessKeyId;
-    private final String accessKey;
+    private final LogCredentialsProviderFactory credentialsProviderFactory;
     private final AliyunLogSerializationSchema<T> schema;
     private final AtomicLong pendingRequests = new AtomicLong(0);
     private final AtomicReference<IOException> asyncFailure = new AtomicReference<>();
@@ -62,11 +64,25 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
             String accessKey,
             Properties properties,
             AliyunLogSerializationSchema<T> schema) {
+        this(project,
+                logstore,
+                endpoint,
+                new StaticCredentialsProviderFactory(accessKeyId, accessKey),
+                properties,
+                schema);
+    }
+
+    AliyunLogSinkWriter(
+            String project,
+            String logstore,
+            String endpoint,
+            LogCredentialsProviderFactory credentialsProviderFactory,
+            Properties properties,
+            AliyunLogSerializationSchema<T> schema) {
         this.project = project;
         this.logstore = logstore;
         this.endpoint = endpoint;
-        this.accessKeyId = accessKeyId;
-        this.accessKey = accessKey;
+        this.credentialsProviderFactory = credentialsProviderFactory;
         this.schema = schema;
         this.producer = createProducer(properties);
         this.callback = new ProducerCallback();
@@ -139,9 +155,37 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
             producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V1);
         }
 
+        CredentialsProvider credentialsProvider =
+                credentialsProviderFactory.createCredentialsProvider();
+        if (credentialsProvider == null) {
+            throw new IllegalStateException("CredentialsProviderFactory returned null");
+        }
         Producer newProducer = new LogProducer(producerConfig);
-        newProducer.putProjectConfig(new ProjectConfig(project, endpoint, accessKeyId, accessKey));
-        return newProducer;
+        try {
+            newProducer.putProjectConfig(
+                    new ProjectConfig(
+                            project,
+                            endpoint,
+                            credentialsProvider,
+                            null));
+            return newProducer;
+        } catch (RuntimeException | Error e) {
+            closeAfterInitializationFailure(newProducer, e);
+            throw e;
+        }
+    }
+
+    private static void closeAfterInitializationFailure(
+            Producer producer,
+            Throwable initializationFailure) {
+        try {
+            producer.close();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            initializationFailure.addSuppressed(e);
+        } catch (ProducerException e) {
+            initializationFailure.addSuppressed(e);
+        }
     }
 
     private void send(SinkRecord record) throws IOException, InterruptedException {

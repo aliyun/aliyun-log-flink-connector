@@ -1,6 +1,8 @@
 package com.aliyun.openservices.log.flink.source;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.source.deserialization.AliyunLogDeserializationSchema;
 import com.aliyun.openservices.log.flink.source.enumerator.AliyunLogSplitAssigner;
 
@@ -17,6 +19,7 @@ public class AliyunLogSourceBuilder<T> {
     private AliyunLogSplitAssigner splitAssigner;
     private String accessKeyId;
     private String accessKey;
+    private LogCredentialsProviderFactory credentialsProviderFactory;
 
     /**
      * Set the Aliyun Log Service project name.
@@ -61,6 +64,28 @@ public class AliyunLogSourceBuilder<T> {
     public AliyunLogSourceBuilder<T> setCredentials(String accessKeyId, String accessKey) {
         this.accessKeyId = accessKeyId;
         this.accessKey = accessKey;
+        this.credentialsProviderFactory = null;
+        return this;
+    }
+
+    /**
+     * Set a serializable factory that creates an SLS credentials provider at runtime.
+     *
+     * <p>This is intended for temporary credentials that are refreshed by the returned provider.
+     * The factory, rather than the provider or its current credentials, is serialized with the
+     * Flink job.
+     *
+     * @param credentialsProviderFactory runtime credentials provider factory
+     * @return this builder for method chaining
+     */
+    public AliyunLogSourceBuilder<T> setCredentialsProviderFactory(
+            LogCredentialsProviderFactory credentialsProviderFactory) {
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
+        this.accessKeyId = null;
+        this.accessKey = null;
         return this;
     }
 
@@ -202,16 +227,25 @@ public class AliyunLogSourceBuilder<T> {
         if (configProps.getProperty(ConfigConstants.LOG_ENDPOINT) == null) {
             throw new IllegalArgumentException("Endpoint must be set");
         }
-        if (accessKeyId == null || accessKeyId.isEmpty()) {
-            throw new IllegalArgumentException("AccessKeyId must be set");
-        }
-        if (accessKey == null || accessKey.isEmpty()) {
-            throw new IllegalArgumentException("AccessKey must be set");
+        if (credentialsProviderFactory == null) {
+            if (accessKeyId == null || accessKeyId.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "AccessKeyId or CredentialsProviderFactory must be set");
+            }
+            if (accessKey == null || accessKey.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "AccessKey or CredentialsProviderFactory must be set");
+            }
+            credentialsProviderFactory =
+                    new StaticCredentialsProviderFactory(accessKeyId, accessKey);
+        } else {
+            configProps.remove(ConfigConstants.LOG_ACCESSKEYID);
+            configProps.remove(ConfigConstants.LOG_ACCESSKEY);
         }
         configProps.setProperty(ConfigConstants.LOG_PROJECT, project);
         configProps.setProperty(ConfigConstants.LOG_LOGSTORE, logstore);
         return new AliyunLogSource<>(
                 project, logstore, deserializer,
-                configProps, splitAssigner, accessKeyId, accessKey);
+                configProps, splitAssigner, credentialsProviderFactory);
     }
 }

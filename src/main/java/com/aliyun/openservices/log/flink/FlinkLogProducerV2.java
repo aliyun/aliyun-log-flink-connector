@@ -3,6 +3,9 @@ package com.aliyun.openservices.log.flink;
 import com.aliyun.openservices.aliyun.log.producer.*;
 import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.common.auth.CredentialsProvider;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.SinkRecord;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchemaV2;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
@@ -34,6 +37,7 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
     private final String logstore;
     private final ConfigParser configParser;
     private SinkCollector<T> sinkCollector;
+    private LogCredentialsProviderFactory credentialsProviderFactory;
 
     public FlinkLogProducerV2(final LogSerializationSchemaV2<T> schema, Properties configProps) {
         if (schema == null) {
@@ -46,6 +50,27 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
         this.configParser = new ConfigParser(configProps);
         this.project = configParser.getString(ConfigConstants.LOG_PROJECT);
         this.logstore = configParser.getString(ConfigConstants.LOG_LOGSTORE);
+    }
+
+    /**
+     * Sets a serializable factory that creates the SLS credentials provider at runtime.
+     *
+     * @param credentialsProviderFactory runtime credentials provider factory
+     * @return this producer
+     */
+    public FlinkLogProducerV2<T> setCredentialsProviderFactory(
+            LogCredentialsProviderFactory credentialsProviderFactory) {
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        if (producer != null) {
+            throw new IllegalStateException(
+                    "CredentialsProviderFactory cannot be changed after the producer is created");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
+        this.configParser.remove(ConfigConstants.LOG_ACCESSKEYID);
+        this.configParser.remove(ConfigConstants.LOG_ACCESSKEY);
+        return this;
     }
 
     private Producer createProducer(ConfigParser parser) {
@@ -73,13 +98,46 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
         } else {
             producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V1);
         }
+        CredentialsProvider credentialsProvider =
+                getCredentialsProviderFactory(parser).createCredentialsProvider();
+        if (credentialsProvider == null) {
+            throw new IllegalStateException("CredentialsProviderFactory returned null");
+        }
         Producer producer = new LogProducer(producerConfig);
-        ProjectConfig config = new ProjectConfig(project,
-                parser.getString(ConfigConstants.LOG_ENDPOINT),
+        try {
+            ProjectConfig config = new ProjectConfig(
+                    project,
+                    parser.getString(ConfigConstants.LOG_ENDPOINT),
+                    credentialsProvider,
+                    null);
+            producer.putProjectConfig(config);
+            return producer;
+        } catch (RuntimeException | Error e) {
+            closeAfterInitializationFailure(producer, e);
+            throw e;
+        }
+    }
+
+    private static void closeAfterInitializationFailure(
+            Producer producer,
+            Throwable initializationFailure) {
+        try {
+            producer.close();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            initializationFailure.addSuppressed(e);
+        } catch (ProducerException e) {
+            initializationFailure.addSuppressed(e);
+        }
+    }
+
+    private LogCredentialsProviderFactory getCredentialsProviderFactory(ConfigParser parser) {
+        if (credentialsProviderFactory != null) {
+            return credentialsProviderFactory;
+        }
+        return new StaticCredentialsProviderFactory(
                 parser.getString(ConfigConstants.LOG_ACCESSKEYID),
                 parser.getString(ConfigConstants.LOG_ACCESSKEY));
-        producer.putProjectConfig(config);
-        return producer;
     }
 
     @Override

@@ -1,5 +1,7 @@
 package com.aliyun.openservices.log.flink;
 
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.*;
 import com.aliyun.openservices.log.flink.util.*;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
@@ -46,6 +48,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private final CheckpointMode checkpointMode;
     private ShardAssigner shardAssigner = LogDataFetcher.DEFAULT_SHARD_ASSIGNER;
     private final MemoryLimiter memoryLimiter;
+    private LogCredentialsProviderFactory credentialsProviderFactory;
 
     @Deprecated
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -146,12 +149,43 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         clientConfig.setSignatureVersion(signVersion);
         logClient = new LogClientProxy(
                 parser.getString(ConfigConstants.LOG_ENDPOINT),
-                parser.getString(ConfigConstants.LOG_ACCESSKEYID),
-                parser.getString(ConfigConstants.LOG_ACCESSKEY),
+                getCredentialsProviderFactory(parser).createCredentialsProvider(),
                 getOrCreateUserAgent(indexOfSubTask),
                 retryPolicy,
                 memoryLimiter,
                 clientConfig);
+    }
+
+    /**
+     * Sets a serializable factory that creates the SLS credentials provider at runtime.
+     *
+     * <p>This method must be called before the source is submitted to Flink.
+     *
+     * @param credentialsProviderFactory runtime credentials provider factory
+     * @return this consumer
+     */
+    public FlinkLogConsumer<T> setCredentialsProviderFactory(
+            LogCredentialsProviderFactory credentialsProviderFactory) {
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        if (logClient != null) {
+            throw new IllegalStateException(
+                    "CredentialsProviderFactory cannot be changed after the client is created");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
+        this.configProps.remove(ConfigConstants.LOG_ACCESSKEYID);
+        this.configProps.remove(ConfigConstants.LOG_ACCESSKEY);
+        return this;
+    }
+
+    private LogCredentialsProviderFactory getCredentialsProviderFactory(ConfigParser parser) {
+        if (credentialsProviderFactory != null) {
+            return credentialsProviderFactory;
+        }
+        return new StaticCredentialsProviderFactory(
+                parser.getString(ConfigConstants.LOG_ACCESSKEYID),
+                parser.getString(ConfigConstants.LOG_ACCESSKEY));
     }
 
     public void setShardAssigner(ShardAssigner shardAssigner) {

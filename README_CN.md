@@ -62,6 +62,17 @@ DataStream<RawLogGroupList> logTestStream = env.addSource(
         new FlinkLogConsumer<RawLogGroupList>(deserializer， configProps));
 ```
 上面是一个简单的消费示例，我们使用java.util.Properties作为配置工具，所有Consumer的配置都可以在ConfigConstants中找到。
+
+如果凭证需要在运行期获取和自动刷新，可以不设置 `LOG_ACCESSKEYID`、`LOG_ACCESSKEY`，改为注入可序列化的凭证工厂：
+
+```java
+FlinkLogConsumer<RawLogGroupList> consumer =
+        new FlinkLogConsumer<RawLogGroupList>(deserializer, configProps)
+                .setCredentialsProviderFactory(new RoleCredentialsFactory(roleArn));
+```
+
+`RoleCredentialsFactory` 需实现 `LogCredentialsProviderFactory`，并在 `createCredentialsProvider()` 中创建 SLS SDK `CredentialsProvider`。工厂会随作业序列化，Provider 和临时凭证只在 TaskManager 运行期创建。旧版 `FlinkLogProducer` 和 `FlinkLogProducerV2` 也提供同名设置方法。
+
 > 注意，Flink Task 数量和日志服务LogStore中的shard数量是独立的，如果shard数量多于子任务数量，每个子任务不重复的消费多个shard，如果少于，
 那么部分子任务就会空闲，除非新的shard产生。
 #### 1.2 设置消费起始位置

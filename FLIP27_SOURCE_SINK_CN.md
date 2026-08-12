@@ -52,7 +52,8 @@ DataStream<MyRecord> stream = env.fromSource(
 | `setProject(String project)` | 是 | 无 | 要消费的日志服务 Project。 |
 | `setLogStore(String logstore)` | 是 | 无 | 要消费的 Logstore。 |
 | `setEndpoint(String endpoint)` | 是 | 无 | 日志服务 Endpoint，例如 `cn-hangzhou.log.aliyuncs.com`。 |
-| `setCredentials(String accessKeyId, String accessKey)` | 是 | 无 | 访问日志服务的 AccessKey ID 和 AccessKey Secret。 |
+| `setCredentials(String accessKeyId, String accessKey)` | 与动态凭证工厂二选一 | 无 | 使用固定 AccessKey ID 和 AccessKey Secret。 |
+| `setCredentialsProviderFactory(LogCredentialsProviderFactory factory)` | 与固定 AccessKey 二选一 | 无 | 在 Flink 运行进程内创建 SLS SDK `CredentialsProvider`，适用于自动刷新的 STS 或其他动态凭证。 |
 | `setDeserializer(AliyunLogDeserializationSchema<T> deserializer)` | 是 | 无 | 将 SLS 拉取结果转换成 Flink 记录的反序列化器。 |
 | `setConsumerGroup(String consumerGroup)` | 否 | 无 | 日志服务 ConsumerGroup 名称，用于读取或提交服务端 checkpoint。使用 checkpoint 起始位置或需要服务端消费进度时应设置。 |
 | `setStartingPosition(StartingPosition)` / `setStartingPosition(String)` | 否 | `earliest` | 消费起始位置。支持 `earliest`、`latest`、`checkpoint` 或 Unix 秒级时间戳；兼容 `begin_cursor`、`end_cursor`、`consumer_from_checkpoint`。 |
@@ -79,6 +80,36 @@ DataStream<MyRecord> stream = env.fromSource(
 | `ConfigConstants.PROXY_PASSWORD` (`proxy.password`) | 否 | 无 | HTTP 代理密码。 |
 | `ConfigConstants.PROXY_DOMAIN` (`proxy.domain`) | 否 | 无 | NTLM 代理域。 |
 | `ConfigConstants.PROXY_WORKSTATION` (`proxy.workstation`) | 否 | 无 | NTLM 代理工作站。 |
+
+### 动态凭证
+
+动态凭证模式只把可序列化的工厂及其非敏感配置放入 JobGraph。Source Enumerator、Source Reader 和 Sink Writer 在各自运行进程内调用工厂创建 SLS SDK `CredentialsProvider`；凭证缓存和刷新由该 Provider 负责。
+
+```java
+public final class RoleCredentialsFactory
+        implements LogCredentialsProviderFactory {
+    private final String roleArn;
+
+    public RoleCredentialsFactory(String roleArn) {
+        this.roleArn = roleArn;
+    }
+
+    @Override
+    public CredentialsProvider createCredentialsProvider() {
+        return MyCredentialProviders.forRole(roleArn);
+    }
+}
+
+AliyunLogSource<MyRecord> source = AliyunLogSource.<MyRecord>builder()
+        .setProject("your-project")
+        .setLogStore("your-logstore")
+        .setEndpoint("cn-hangzhou.log.aliyuncs.com")
+        .setCredentialsProviderFactory(new RoleCredentialsFactory(roleArn))
+        .setDeserializer(new MyDeserializer())
+        .build();
+```
+
+工厂必须可序列化，但不应持有已创建的 Provider、临时 AccessKey、SecurityToken、线程或网络客户端。Provider 应线程安全，并在 `getCredentials()` 中返回有效凭证。固定 AccessKey 与动态凭证工厂不能同时配置；后调用的 Builder 方法会覆盖前一种模式。
 
 ### 自定义 Deserializer 示例
 
@@ -347,7 +378,8 @@ stream.sinkTo(sink).name("aliyun-log-sink");
 | `setProject(String project)` | 是 | 无 | 写入目标 Project。 |
 | `setLogStore(String logstore)` | 是 | 无 | 默认写入目标 Logstore。单条 `SinkRecord` 设置了 logstore 时会覆盖该默认值。 |
 | `setEndpoint(String endpoint)` | 是 | 无 | 日志服务 Endpoint。 |
-| `setCredentials(String accessKeyId, String accessKey)` | 是 | 无 | 访问日志服务的 AccessKey ID 和 AccessKey Secret。 |
+| `setCredentials(String accessKeyId, String accessKey)` | 与动态凭证工厂二选一 | 无 | 使用固定 AccessKey ID 和 AccessKey Secret。 |
+| `setCredentialsProviderFactory(LogCredentialsProviderFactory factory)` | 与固定 AccessKey 二选一 | 无 | 在每个 Sink Writer 中创建可自动刷新的 SLS SDK `CredentialsProvider`。 |
 | `setSerializer(AliyunLogSerializationSchema<T> serializer)` | 是 | 无 | 将 Flink 记录转换为 `SinkRecord` 的序列化器。 |
 | `setProperty(String key, String value)` / `setProperties(Properties properties)` | 否 | 无 | 设置 Producer 高级参数。 |
 | `ConfigConstants.FLUSH_INTERVAL_MS` (`flush.interval.ms`) | 否 | Producer SDK 默认值 | 日志在客户端缓存后等待发送的最长时间。 |
@@ -502,6 +534,26 @@ CREATE TABLE sls_sink (
 );
 ```
 
+### SQL 动态凭证示例
+
+SQL 使用的工厂类必须有 `public` 无参构造方法；需要接收参数时还必须实现 `ConfigurableLogCredentialsProviderFactory`。Connector 会去掉 `credentials.provider.param.` 前缀后调用 `configure(Properties)`。
+
+```sql
+CREATE TABLE sls_logs_with_dynamic_credentials (
+  message STRING
+) WITH (
+  'connector' = 'aliyun-log',
+  'endpoint' = 'cn-wulanchabu.log.aliyuncs.com',
+  'project' = 'your-project',
+  'logstore' = 'your-logstore',
+  'credentials.provider.factory.class' = 'com.example.RoleCredentialsFactory',
+  'credentials.provider.param.roleArn' = 'acs:ram::1234567890123456:role/example-role',
+  'scan.startup.mode' = 'checkpoint'
+);
+```
+
+不要通过 `credentials.provider.param.*` 传入临时 AK、SK 或 SecurityToken；这些参数会作为作业配置序列化。动态工厂类及其依赖必须位于 Flink 作业类路径中。
+
 ### SQL WITH 参数
 
 | SQL 参数 | 适用方向 | 是否必填 | 默认值 | 含义 |
@@ -510,8 +562,10 @@ CREATE TABLE sls_sink (
 | `endpoint` | Source / Sink | 是 | 无 | 日志服务 Endpoint，例如 `cn-hangzhou.log.aliyuncs.com`。 |
 | `project` | Source / Sink | 是 | 无 | 日志服务 Project。 |
 | `logstore` | Source / Sink | 是 | 无 | Source 读取或 Sink 默认写入的 Logstore。 |
-| `access.key.id` | Source / Sink | 是 | 无 | 访问日志服务的 AccessKey ID。 |
-| `access.key.secret` | Source / Sink | 是 | 无 | 访问日志服务的 AccessKey Secret。 |
+| `access.key.id` | Source / Sink | 与动态凭证工厂二选一 | 无 | 固定 AccessKey ID，必须与 `access.key.secret` 同时配置。 |
+| `access.key.secret` | Source / Sink | 与动态凭证工厂二选一 | 无 | 固定 AccessKey Secret，必须与 `access.key.id` 同时配置。 |
+| `credentials.provider.factory.class` | Source / Sink | 与固定 AccessKey 二选一 | 无 | `LogCredentialsProviderFactory` 实现类的全限定名。 |
+| `credentials.provider.param.*` | Source / Sink | 否 | 无 | 传给可配置工厂的非敏感参数，调用工厂前会移除固定前缀。 |
 | `consumer-group` | Source | 否 | 无 | ConsumerGroup 名称，用于读取或提交服务端 checkpoint。 |
 | `scan.startup.mode` | Source | 否 | `earliest` | 消费起始位置。支持 `earliest`、`latest`、`checkpoint` 或 Unix 秒级时间戳。 |
 | `scan.startup.default-position` | Source | 否 | `earliest` | 起始位置为 checkpoint 且服务端没有 checkpoint 时使用的兜底位置，不能设置为 checkpoint。 |
