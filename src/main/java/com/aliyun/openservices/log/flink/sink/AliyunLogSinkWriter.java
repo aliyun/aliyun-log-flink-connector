@@ -167,7 +167,7 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
                             project,
                             endpoint,
                             credentialsProvider,
-                            null));
+                            ProjectConfig.DEFAULT_USER_AGENT));
             return newProducer;
         } catch (RuntimeException | Error e) {
             closeAfterInitializationFailure(newProducer, e);

@@ -1,9 +1,13 @@
 package com.aliyun.openservices.log.flink.sink;
 
+import com.aliyun.openservices.aliyun.log.producer.Producer;
 import com.aliyun.openservices.log.common.auth.CredentialsProvider;
+import com.aliyun.openservices.log.flink.ProducerCredentialsInitializationTest;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
@@ -31,6 +35,25 @@ public class AliyunLogSinkWriterCredentialsTest {
         }
 
         assertEquals(threadsBefore, producerThreadNames());
+    }
+
+    @Test
+    public void testSinkWriterKeepsDefaultProducerUserAgent() throws Exception {
+        AliyunLogSinkWriter<String> writer = new AliyunLogSinkWriter<>(
+                "project",
+                "logstore",
+                "cn-hangzhou.log.aliyuncs.com",
+                new StaticCredentialsProviderFactory("id", "secret"),
+                new Properties(),
+                (element, output) -> { });
+        try {
+            Field producerField = AliyunLogSinkWriter.class.getDeclaredField("producer");
+            producerField.setAccessible(true);
+            ProducerCredentialsInitializationTest.assertDefaultProducerUserAgent(
+                    (Producer) producerField.get(writer));
+        } finally {
+            writer.close();
+        }
     }
 
     private static Set<String> producerThreadNames() {

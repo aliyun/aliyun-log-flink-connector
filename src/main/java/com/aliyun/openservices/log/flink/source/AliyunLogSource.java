@@ -66,12 +66,20 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
         this.project = project;
         this.logstore = logstore;
         this.deserializer = deserializer;
-        this.configProps = configProps;
+        this.configProps = copyPropertiesWithoutStaticCredentials(configProps);
         this.splitAssigner = splitAssigner != null ? splitAssigner : new ModuloSplitAssigner();
         if (credentialsProviderFactory == null) {
             throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
         }
         this.credentialsProviderFactory = credentialsProviderFactory;
+    }
+
+    private static Properties copyPropertiesWithoutStaticCredentials(Properties properties) {
+        Properties copied = new Properties();
+        copied.putAll(properties);
+        copied.remove(ConfigConstants.LOG_ACCESSKEYID);
+        copied.remove(ConfigConstants.LOG_ACCESSKEY);
+        return copied;
     }
 
     /**

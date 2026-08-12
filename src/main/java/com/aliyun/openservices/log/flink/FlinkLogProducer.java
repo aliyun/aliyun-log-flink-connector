@@ -50,7 +50,9 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             throw new IllegalArgumentException("configProps cannot be null");
         }
         this.schema = schema;
-        this.configParser = new ConfigParser(configProps);
+        Properties copied = new Properties();
+        copied.putAll(configProps);
+        this.configParser = new ConfigParser(copied);
         this.project = configParser.getString(ConfigConstants.LOG_PROJECT);
         this.logstore = configParser.getString(ConfigConstants.LOG_LOGSTORE);
     }
@@ -116,7 +118,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     project,
                     parser.getString(ConfigConstants.LOG_ENDPOINT),
                     credentialsProvider,
-                    null);
+                    ProjectConfig.DEFAULT_USER_AGENT);
             producer.putProjectConfig(config);
             return producer;
         } catch (RuntimeException | Error e) {

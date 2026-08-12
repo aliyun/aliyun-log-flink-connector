@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 public class LogCredentialsProviderFactoryTest {
 
@@ -135,23 +136,59 @@ public class LogCredentialsProviderFactoryTest {
     @Test
     public void testLegacyConnectorsRemoveStaticCredentialsWhenFactoryIsConfigured()
             throws Exception {
+        Properties sharedProperties = legacyProperties();
         CountingCredentialsProviderFactory factory = new CountingCredentialsProviderFactory();
+        FlinkLogConsumer<RawLogGroupList> staticConsumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                sharedProperties);
+        FlinkLogProducer<String> staticProducer = new FlinkLogProducer<>(
+                value -> new RawLogGroup(),
+                sharedProperties);
+        FlinkLogProducerV2<String> staticProducerV2 = new FlinkLogProducerV2<>(
+                (value, output) -> { },
+                sharedProperties);
         FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
                 new RawLogGroupListDeserializer(),
-                legacyProperties())
+                sharedProperties)
                 .setCredentialsProviderFactory(factory);
         FlinkLogProducer<String> producer = new FlinkLogProducer<String>(
                 value -> new RawLogGroup(),
-                legacyProperties())
+                sharedProperties)
                 .setCredentialsProviderFactory(factory);
         FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<String>(
                 (value, output) -> { },
-                legacyProperties())
+                sharedProperties)
                 .setCredentialsProviderFactory(factory);
 
+        assertEquals("legacy-access-key-id",
+                sharedProperties.getProperty(ConfigConstants.LOG_ACCESSKEYID));
+        assertEquals("legacy-access-key-secret",
+                sharedProperties.getProperty(ConfigConstants.LOG_ACCESSKEY));
+        assertSerializedFormContainsLegacyCredentials(staticConsumer);
+        assertSerializedFormContainsLegacyCredentials(staticProducer);
+        assertSerializedFormContainsLegacyCredentials(staticProducerV2);
         assertSerializedFormDoesNotContainLegacyCredentials(consumer);
         assertSerializedFormDoesNotContainLegacyCredentials(producer);
         assertSerializedFormDoesNotContainLegacyCredentials(producerV2);
+    }
+
+    @Test
+    public void testDynamicSourceConstructorCopiesAndRemovesStaticCredentials()
+            throws Exception {
+        Properties properties = legacyProperties();
+        AliyunLogSource<String> source = new AliyunLogSource<>(
+                "project",
+                "logstore",
+                new StringDeserializer(),
+                properties,
+                null,
+                new CountingCredentialsProviderFactory());
+
+        assertEquals("legacy-access-key-id",
+                properties.getProperty(ConfigConstants.LOG_ACCESSKEYID));
+        assertEquals("legacy-access-key-secret",
+                properties.getProperty(ConfigConstants.LOG_ACCESSKEY));
+        assertSerializedFormDoesNotContainLegacyCredentials(source);
     }
 
     @Test
@@ -194,6 +231,13 @@ public class LogCredentialsProviderFactoryTest {
         String serialized = new String(serialize(value), StandardCharsets.ISO_8859_1);
         assertFalse(serialized.contains("legacy-access-key-id"));
         assertFalse(serialized.contains("legacy-access-key-secret"));
+    }
+
+    private static void assertSerializedFormContainsLegacyCredentials(Serializable value)
+            throws Exception {
+        String serialized = new String(serialize(value), StandardCharsets.ISO_8859_1);
+        assertTrue(serialized.contains("legacy-access-key-id"));
+        assertTrue(serialized.contains("legacy-access-key-secret"));
     }
 
     private static Properties legacyProperties() {

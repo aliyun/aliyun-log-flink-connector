@@ -1,12 +1,19 @@
 package com.aliyun.openservices.log.flink;
 
+import com.aliyun.openservices.aliyun.log.producer.LogProducer;
+import com.aliyun.openservices.aliyun.log.producer.ProjectConfig;
+import com.aliyun.openservices.aliyun.log.producer.Producer;
+import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.auth.CredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
 import org.apache.flink.configuration.Configuration;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -35,6 +42,30 @@ public class ProducerCredentialsInitializationTest {
         assertOpenFails(producerV2, new Configuration());
 
         assertEquals(threadsBefore, producerThreadNames());
+    }
+
+    @Test
+    public void testLegacyProducersKeepDefaultProducerUserAgent() throws Exception {
+        LogCredentialsProviderFactory factory =
+                new StaticCredentialsProviderFactory("id", "secret");
+        FlinkLogProducer<String> producer = new FlinkLogProducer<String>(
+                value -> new RawLogGroup(),
+                producerProperties())
+                .setCredentialsProviderFactory(factory);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<String>(
+                (value, collector) -> { },
+                producerProperties())
+                .setCredentialsProviderFactory(factory);
+
+        try {
+            producer.open(new Configuration());
+            producerV2.open(new Configuration());
+            assertDefaultProducerUserAgent(getProducer(producer));
+            assertDefaultProducerUserAgent(getProducer(producerV2));
+        } finally {
+            producer.close();
+            producerV2.close();
+        }
     }
 
     private static Properties producerProperties() {
@@ -73,6 +104,22 @@ public class ProducerCredentialsInitializationTest {
             }
         }
         return names;
+    }
+
+    private static Producer getProducer(Object connector) throws Exception {
+        Field producerField = connector.getClass().getDeclaredField("producer");
+        producerField.setAccessible(true);
+        return (Producer) producerField.get(connector);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static void assertDefaultProducerUserAgent(Producer producer) throws Exception {
+        Field clientPoolField = LogProducer.class.getDeclaredField("clientPool");
+        clientPoolField.setAccessible(true);
+        Map<String, Client> clientPool =
+                (Map<String, Client>) clientPoolField.get(producer);
+        assertEquals(ProjectConfig.DEFAULT_USER_AGENT,
+                clientPool.get("project").getUserAgent());
     }
 
     private static final class FailingCredentialsProviderFactory
