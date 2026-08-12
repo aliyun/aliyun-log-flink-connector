@@ -10,7 +10,7 @@
 <dependency>
     <groupId>com.aliyun.openservices</groupId>
     <artifactId>flink-log-connector</artifactId>
-    <version>0.1.46</version>
+    <version>0.1.47</version>
 </dependency>
 <dependency>
     <groupId>com.google.protobuf</groupId>
