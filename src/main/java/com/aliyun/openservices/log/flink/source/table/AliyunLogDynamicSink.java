@@ -1,7 +1,6 @@
 package com.aliyun.openservices.log.flink.source.table;
 
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
-import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.sink.AliyunLogSink;
 import com.aliyun.openservices.log.flink.sink.AliyunLogSinkBuilder;
 import org.apache.flink.api.connector.sink2.Sink;
@@ -20,6 +19,8 @@ public class AliyunLogDynamicSink implements DynamicTableSink {
     private final String project;
     private final String logstore;
     private final String endpoint;
+    private final String accessKeyId;
+    private final String accessKey;
     private final LogCredentialsProviderFactory credentialsProviderFactory;
     private final Properties properties;
     private final RowType rowType;
@@ -38,15 +39,17 @@ public class AliyunLogDynamicSink implements DynamicTableSink {
             String defaultTopic,
             String defaultSource,
             Integer sinkParallelism) {
-        this(project,
-                logstore,
-                endpoint,
-                new StaticCredentialsProviderFactory(accessKeyId, accessKey),
-                properties,
-                rowType,
-                defaultTopic,
-                defaultSource,
-                sinkParallelism);
+        this.project = project;
+        this.logstore = logstore;
+        this.endpoint = endpoint;
+        this.accessKeyId = accessKeyId;
+        this.accessKey = accessKey;
+        this.credentialsProviderFactory = null;
+        this.properties = properties;
+        this.rowType = rowType;
+        this.defaultTopic = defaultTopic;
+        this.defaultSource = defaultSource;
+        this.sinkParallelism = sinkParallelism;
     }
 
     public AliyunLogDynamicSink(
@@ -62,6 +65,8 @@ public class AliyunLogDynamicSink implements DynamicTableSink {
         this.project = project;
         this.logstore = logstore;
         this.endpoint = endpoint;
+        this.accessKeyId = null;
+        this.accessKey = null;
         this.credentialsProviderFactory = credentialsProviderFactory;
         this.properties = properties;
         this.rowType = rowType;
@@ -83,9 +88,13 @@ public class AliyunLogDynamicSink implements DynamicTableSink {
                 .setProject(project)
                 .setLogStore(logstore)
                 .setEndpoint(endpoint)
-                .setCredentialsProviderFactory(credentialsProviderFactory)
                 .setSerializer(serializer)
                 .setProperties(properties);
+        if (credentialsProviderFactory == null) {
+            builder.setCredentials(accessKeyId, accessKey);
+        } else {
+            builder.setCredentialsProviderFactory(credentialsProviderFactory);
+        }
         Sink<RowData> sink = builder.build();
         if (sinkParallelism == null) {
             return SinkV2Provider.of(sink);
@@ -95,6 +104,19 @@ public class AliyunLogDynamicSink implements DynamicTableSink {
 
     @Override
     public DynamicTableSink copy() {
+        if (credentialsProviderFactory == null) {
+            return new AliyunLogDynamicSink(
+                    project,
+                    logstore,
+                    endpoint,
+                    accessKeyId,
+                    accessKey,
+                    copyProperties(properties),
+                    rowType,
+                    defaultTopic,
+                    defaultSource,
+                    sinkParallelism);
+        }
         return new AliyunLogDynamicSink(
                 project,
                 logstore,

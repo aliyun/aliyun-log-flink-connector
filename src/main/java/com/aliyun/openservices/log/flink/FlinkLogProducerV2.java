@@ -5,7 +5,6 @@ import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.auth.CredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
-import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.SinkRecord;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchemaV2;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
@@ -29,6 +28,7 @@ import static com.aliyun.openservices.log.flink.ConfigConstants.*;
 public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducerV2.class);
+    private static final long serialVersionUID = -114178204262097392L;
     private final LogSerializationSchemaV2<T> schema;
     private final AtomicLong buffered = new AtomicLong(0);
     private transient Producer producer;
@@ -47,9 +47,7 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
             throw new IllegalArgumentException("configProps cannot be null");
         }
         this.schema = schema;
-        Properties copied = new Properties();
-        copied.putAll(configProps);
-        this.configParser = new ConfigParser(copied);
+        this.configParser = new ConfigParser(configProps);
         this.project = configParser.getString(ConfigConstants.LOG_PROJECT);
         this.logstore = configParser.getString(ConfigConstants.LOG_LOGSTORE);
     }
@@ -100,19 +98,10 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
         } else {
             producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V1);
         }
-        CredentialsProvider credentialsProvider =
-                getCredentialsProviderFactory(parser).createCredentialsProvider();
-        if (credentialsProvider == null) {
-            throw new IllegalStateException("CredentialsProviderFactory returned null");
-        }
+        ProjectConfig projectConfig = createProjectConfig(parser);
         Producer producer = new LogProducer(producerConfig);
         try {
-            ProjectConfig config = new ProjectConfig(
-                    project,
-                    parser.getString(ConfigConstants.LOG_ENDPOINT),
-                    credentialsProvider,
-                    ProjectConfig.DEFAULT_USER_AGENT);
-            producer.putProjectConfig(config);
+            producer.putProjectConfig(projectConfig);
             return producer;
         } catch (RuntimeException | Error e) {
             closeAfterInitializationFailure(producer, e);
@@ -133,13 +122,25 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
         }
     }
 
-    private LogCredentialsProviderFactory getCredentialsProviderFactory(ConfigParser parser) {
-        if (credentialsProviderFactory != null) {
-            return credentialsProviderFactory;
+    private ProjectConfig createProjectConfig(ConfigParser parser) {
+        String endpoint = parser.getString(ConfigConstants.LOG_ENDPOINT);
+        if (credentialsProviderFactory == null) {
+            return new ProjectConfig(
+                    project,
+                    endpoint,
+                    parser.getString(ConfigConstants.LOG_ACCESSKEYID),
+                    parser.getString(ConfigConstants.LOG_ACCESSKEY));
         }
-        return new StaticCredentialsProviderFactory(
-                parser.getString(ConfigConstants.LOG_ACCESSKEYID),
-                parser.getString(ConfigConstants.LOG_ACCESSKEY));
+        CredentialsProvider credentialsProvider =
+                credentialsProviderFactory.createCredentialsProvider();
+        if (credentialsProvider == null) {
+            throw new IllegalStateException("CredentialsProviderFactory returned null");
+        }
+        return new ProjectConfig(
+                project,
+                endpoint,
+                credentialsProvider,
+                ProjectConfig.DEFAULT_USER_AGENT);
     }
 
     @Override

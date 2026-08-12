@@ -34,7 +34,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private static final String CURSOR_STATE_STORE_NAME = "LogStore-Shard-State";
 
-    private final Properties configProps;
+    private Properties configProps;
     private final LogDeserializationSchema<T> deserializer;
     private transient LogDataFetcher<T> fetcher;
     private volatile boolean running = true;
@@ -52,7 +52,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     @Deprecated
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
-        this.configProps = copyProperties(configProps);
+        this.configProps = configProps;
         this.deserializer = deserializer;
         this.consumerGroup = this.configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = this.configProps.getProperty(ConfigConstants.LOG_PROJECT);
@@ -69,7 +69,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         if (logstores == null || logstores.isEmpty()) {
             throw new IllegalArgumentException("The logstores is null or empty");
         }
-        this.configProps = copyProperties(configProps);
+        this.configProps = configProps;
         this.deserializer = deserializer;
         this.consumerGroup = this.configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = project;
@@ -92,7 +92,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         if (logstorePattern == null) {
             throw new IllegalArgumentException("The logstore pattern is null");
         }
-        this.configProps = copyProperties(configProps);
+        this.configProps = configProps;
         this.deserializer = deserializer;
         this.consumerGroup = this.configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = project;
@@ -101,9 +101,16 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.memoryLimiter = new MemoryLimiter(this.configProps);
     }
 
-    private static Properties copyProperties(Properties properties) {
+    private static Properties copyPropertiesWithoutStaticCredentials(Properties properties) {
         Properties copied = new Properties();
         copied.putAll(properties);
+        for (String propertyName : properties.stringPropertyNames()) {
+            if (!copied.containsKey(propertyName)) {
+                copied.setProperty(propertyName, properties.getProperty(propertyName));
+            }
+        }
+        copied.remove(ConfigConstants.LOG_ACCESSKEYID);
+        copied.remove(ConfigConstants.LOG_ACCESSKEY);
         return copied;
     }
 
@@ -181,8 +188,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                     "CredentialsProviderFactory cannot be changed after the client is created");
         }
         this.credentialsProviderFactory = credentialsProviderFactory;
-        this.configProps.remove(ConfigConstants.LOG_ACCESSKEYID);
-        this.configProps.remove(ConfigConstants.LOG_ACCESSKEY);
+        this.configProps = copyPropertiesWithoutStaticCredentials(this.configProps);
         return this;
     }
 

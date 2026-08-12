@@ -5,9 +5,22 @@ import com.aliyun.openservices.log.common.auth.DefaultCredentials;
 import com.aliyun.openservices.log.common.auth.StaticCredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.ConfigurableLogCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.ValidationException;
+import org.apache.flink.table.catalog.CatalogTable;
+import org.apache.flink.table.catalog.Column;
+import org.apache.flink.table.catalog.ObjectIdentifier;
+import org.apache.flink.table.catalog.ResolvedCatalogTable;
+import org.apache.flink.table.catalog.ResolvedSchema;
+import org.apache.flink.table.catalog.UniqueConstraint;
+import org.apache.flink.table.connector.source.DynamicTableSource;
+import org.apache.flink.table.factories.DynamicTableFactory;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -42,6 +55,19 @@ public class AliyunLogDynamicTableFactoryTest {
 
         assertEquals("id", provider.getCredentials().getAccessKeyId());
         assertEquals("secret", provider.getCredentials().getAccessKeySecret());
+    }
+
+    @Test
+    public void testStaticSqlSourceKeepsLegacyCredentialRepresentation() throws Exception {
+        Map<String, String> options = baseOptions();
+
+        DynamicTableSource source = new AliyunLogDynamicTableFactory()
+                .createDynamicTableSource(createContext(options));
+
+        assertTrue(source instanceof AliyunLogDynamicSource);
+        assertEquals("id", getField(source, "accessKeyId"));
+        assertEquals("secret", getField(source, "accessKey"));
+        assertTrue(getField(source, "credentialsProviderFactory") == null);
     }
 
     @Test
@@ -114,5 +140,62 @@ public class AliyunLogDynamicTableFactoryTest {
             return new StaticCredentialsProvider(
                     new DefaultCredentials(roleArn, "dynamic-secret"));
         }
+    }
+
+    private static Map<String, String> baseOptions() {
+        Map<String, String> options = new HashMap<>();
+        options.put("connector", AliyunLogConnectorOptions.IDENTIFIER);
+        options.put(AliyunLogConnectorOptions.ENDPOINT.key(), "endpoint");
+        options.put(AliyunLogConnectorOptions.PROJECT.key(), "project");
+        options.put(AliyunLogConnectorOptions.LOGSTORE.key(), "logstore");
+        options.put(AliyunLogConnectorOptions.ACCESS_KEY_ID.key(), "id");
+        options.put(AliyunLogConnectorOptions.ACCESS_KEY.key(), "secret");
+        return options;
+    }
+
+    private static DynamicTableFactory.Context createContext(Map<String, String> options) {
+        ResolvedSchema resolvedSchema = new ResolvedSchema(
+                Collections.singletonList(Column.physical("message", DataTypes.STRING())),
+                Collections.emptyList(),
+                (UniqueConstraint) null);
+        CatalogTable catalogTable = CatalogTable.of(
+                Schema.newBuilder().column("message", DataTypes.STRING()).build(),
+                null,
+                Collections.emptyList(),
+                options);
+        ResolvedCatalogTable resolvedCatalogTable =
+                new ResolvedCatalogTable(catalogTable, resolvedSchema);
+        return new DynamicTableFactory.Context() {
+            @Override
+            public ObjectIdentifier getObjectIdentifier() {
+                return ObjectIdentifier.of("catalog", "database", "table");
+            }
+
+            @Override
+            public ResolvedCatalogTable getCatalogTable() {
+                return resolvedCatalogTable;
+            }
+
+            @Override
+            public Configuration getConfiguration() {
+                return new Configuration();
+            }
+
+            @Override
+            public ClassLoader getClassLoader() {
+                return getClass().getClassLoader();
+            }
+
+            @Override
+            public boolean isTemporary() {
+                return false;
+            }
+        };
+    }
+
+    private static Object getField(Object value, String name) throws Exception {
+        Field field = value.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(value);
     }
 }

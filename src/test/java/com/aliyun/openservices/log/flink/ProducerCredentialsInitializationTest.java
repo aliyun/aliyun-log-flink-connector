@@ -4,6 +4,7 @@ import com.aliyun.openservices.aliyun.log.producer.LogProducer;
 import com.aliyun.openservices.aliyun.log.producer.ProjectConfig;
 import com.aliyun.openservices.aliyun.log.producer.Producer;
 import com.aliyun.openservices.log.Client;
+import com.aliyun.openservices.log.common.auth.Credentials;
 import com.aliyun.openservices.log.common.auth.CredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
@@ -68,6 +69,43 @@ public class ProducerCredentialsInitializationTest {
         }
     }
 
+    @Test
+    public void testStaticLegacyProducersResolveCredentialsWhenOpened() throws Exception {
+        Properties properties = producerProperties();
+        FlinkLogProducer<String> producer = new FlinkLogProducer<>(
+                value -> new RawLogGroup(),
+                properties);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<>(
+                (value, collector) -> { },
+                properties);
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEYID, "late-id");
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEY, "late-secret");
+
+        try {
+            producer.open(new Configuration());
+            producerV2.open(new Configuration());
+            assertProducerCredentials(getProducer(producer), "late-id", "late-secret");
+            assertProducerCredentials(getProducer(producerV2), "late-id", "late-secret");
+        } finally {
+            producer.close();
+            producerV2.close();
+        }
+    }
+
+    @Test
+    public void testStaticLegacyProducersKeepMissingCredentialFailureAtOpen()
+            throws Exception {
+        FlinkLogProducer<String> producer = new FlinkLogProducer<>(
+                value -> new RawLogGroup(),
+                producerProperties());
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<>(
+                (value, collector) -> { },
+                producerProperties());
+
+        assertStaticOpenFails(producer, new Configuration());
+        assertStaticOpenFails(producerV2, new Configuration());
+    }
+
     private static Properties producerProperties() {
         Properties properties = new Properties();
         properties.setProperty(ConfigConstants.LOG_PROJECT, "project");
@@ -112,14 +150,53 @@ public class ProducerCredentialsInitializationTest {
         return (Producer) producerField.get(connector);
     }
 
-    @SuppressWarnings("unchecked")
+    private static void assertProducerCredentials(
+            Producer producer,
+            String expectedAccessKeyId,
+            String expectedAccessKeySecret) throws Exception {
+        Field credentialsProviderField = Client.class.getDeclaredField("credentialsProvider");
+        credentialsProviderField.setAccessible(true);
+        CredentialsProvider credentialsProvider = (CredentialsProvider) credentialsProviderField.get(
+                getClient(producer));
+        Credentials credentials = credentialsProvider.getCredentials();
+        assertEquals(expectedAccessKeyId, credentials.getAccessKeyId());
+        assertEquals(expectedAccessKeySecret, credentials.getAccessKeySecret());
+    }
+
+    private static void assertStaticOpenFails(
+            FlinkLogProducer<String> producer,
+            Configuration config) throws Exception {
+        try {
+            producer.open(config);
+            fail("Expected missing static credentials to fail at open");
+        } catch (NullPointerException expected) {
+            // Matches the static ProjectConfig validation in 0.1.46.
+        }
+    }
+
+    private static void assertStaticOpenFails(
+            FlinkLogProducerV2<String> producer,
+            Configuration config) throws Exception {
+        try {
+            producer.open(config);
+            fail("Expected missing static credentials to fail at open");
+        } catch (NullPointerException expected) {
+            // Matches the static ProjectConfig validation in 0.1.46.
+        }
+    }
+
     public static void assertDefaultProducerUserAgent(Producer producer) throws Exception {
+        assertEquals(ProjectConfig.DEFAULT_USER_AGENT,
+                getClient(producer).getUserAgent());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Client getClient(Producer producer) throws Exception {
         Field clientPoolField = LogProducer.class.getDeclaredField("clientPool");
         clientPoolField.setAccessible(true);
         Map<String, Client> clientPool =
                 (Map<String, Client>) clientPoolField.get(producer);
-        assertEquals(ProjectConfig.DEFAULT_USER_AGENT,
-                clientPool.get("project").getUserAgent());
+        return clientPool.get("project");
     }
 
     private static final class FailingCredentialsProviderFactory

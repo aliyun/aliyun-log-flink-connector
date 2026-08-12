@@ -10,28 +10,15 @@ public final class StaticCredentialsProviderFactory implements LogCredentialsPro
 
     private final String accessKeyId;
     private final String accessKeySecret;
-    private final String securityToken;
 
     public StaticCredentialsProviderFactory(String accessKeyId, String accessKeySecret) {
-        this(accessKeyId, accessKeySecret, null);
-    }
-
-    public StaticCredentialsProviderFactory(
-            String accessKeyId,
-            String accessKeySecret,
-            String securityToken) {
         this.accessKeyId = accessKeyId;
         this.accessKeySecret = accessKeySecret;
-        this.securityToken = securityToken;
     }
 
     @Override
     public CredentialsProvider createCredentialsProvider() {
-        if (securityToken == null || securityToken.isEmpty()) {
-            return new StaticCredentialsProvider(
-                    new DefaultCredentials(accessKeyId, accessKeySecret));
-        }
         return new StaticCredentialsProvider(
-                new DefaultCredentials(accessKeyId, accessKeySecret, securityToken));
+                new DefaultCredentials(accessKeyId, accessKeySecret));
     }
 }

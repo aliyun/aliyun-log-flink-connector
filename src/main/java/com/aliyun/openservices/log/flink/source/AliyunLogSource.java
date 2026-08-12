@@ -38,6 +38,8 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
     private final Properties configProps;
     private final AliyunLogDeserializationSchema<T> deserializer;
     private final AliyunLogSplitAssigner splitAssigner;
+    private final String accessKeyId;
+    private final String accessKey;
     private final LogCredentialsProviderFactory credentialsProviderFactory;
 
     public AliyunLogSource(
@@ -48,12 +50,14 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
             AliyunLogSplitAssigner splitAssigner,
             String accessKeyId,
             String accessKey) {
-        this(project,
-                logstore,
-                deserializer,
-                configProps,
-                splitAssigner,
-                new StaticCredentialsProviderFactory(accessKeyId, accessKey));
+        this.project = project;
+        this.logstore = logstore;
+        this.deserializer = deserializer;
+        this.configProps = configProps;
+        this.splitAssigner = splitAssigner != null ? splitAssigner : new ModuloSplitAssigner();
+        this.accessKeyId = accessKeyId;
+        this.accessKey = accessKey;
+        this.credentialsProviderFactory = null;
     }
 
     public AliyunLogSource(
@@ -71,15 +75,29 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
         if (credentialsProviderFactory == null) {
             throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
         }
+        this.accessKeyId = null;
+        this.accessKey = null;
         this.credentialsProviderFactory = credentialsProviderFactory;
     }
 
     private static Properties copyPropertiesWithoutStaticCredentials(Properties properties) {
         Properties copied = new Properties();
         copied.putAll(properties);
+        for (String propertyName : properties.stringPropertyNames()) {
+            if (!copied.containsKey(propertyName)) {
+                copied.setProperty(propertyName, properties.getProperty(propertyName));
+            }
+        }
         copied.remove(ConfigConstants.LOG_ACCESSKEYID);
         copied.remove(ConfigConstants.LOG_ACCESSKEY);
         return copied;
+    }
+
+    private LogCredentialsProviderFactory getCredentialsProviderFactory() {
+        if (credentialsProviderFactory != null) {
+            return credentialsProviderFactory;
+        }
+        return new StaticCredentialsProviderFactory(accessKeyId, accessKey);
     }
 
     /**
@@ -112,7 +130,7 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
             AliyunLogSourceEnumState checkpoint) {
         // Pass checkpoint to enumerator constructor to restore state
         return new AliyunLogSourceEnumerator(
-                enumContext, project, logstore, credentialsProviderFactory,
+                enumContext, project, logstore, getCredentialsProviderFactory(),
                 configProps, splitAssigner, checkpoint);
     }
 
@@ -130,7 +148,7 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
     public SourceReader<T, AliyunLogSourceSplit> createReader(SourceReaderContext readerContext) {
         LogClientProxy logClient = LogClientProxy.makeClient(
                 configProps,
-                credentialsProviderFactory,
+                getCredentialsProviderFactory(),
                 readerContext.getIndexOfSubtask());
         String consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         AliyunLogSourceReaderMetrics sourceReaderMetrics =

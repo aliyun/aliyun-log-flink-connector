@@ -1,4 +1,3 @@
 .idea/*
-*.iml
 target/
 logs/loghub-client.log

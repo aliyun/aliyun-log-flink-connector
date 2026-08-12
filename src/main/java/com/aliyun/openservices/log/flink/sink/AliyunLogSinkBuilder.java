@@ -2,7 +2,6 @@ package com.aliyun.openservices.log.flink.sink;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
-import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
 
 import java.util.Properties;
@@ -82,8 +81,6 @@ public class AliyunLogSinkBuilder<T> {
         if (useConfiguredAccessKey) {
             validateRequired("accessKeyId", accessKeyId);
             validateRequired("accessKey", accessKey);
-            credentialsProviderFactory =
-                    new StaticCredentialsProviderFactory(accessKeyId, accessKey);
         }
         if (serializer == null) {
             throw new IllegalArgumentException("Serializer must be set");
@@ -102,6 +99,16 @@ public class AliyunLogSinkBuilder<T> {
             copied.remove(ConfigConstants.LOG_ACCESSKEY);
         }
 
+        if (useConfiguredAccessKey) {
+            return new AliyunLogSink<>(
+                    project,
+                    logstore,
+                    endpoint,
+                    accessKeyId,
+                    accessKey,
+                    copied,
+                    serializer);
+        }
         return new AliyunLogSink<>(
                 project,
                 logstore,

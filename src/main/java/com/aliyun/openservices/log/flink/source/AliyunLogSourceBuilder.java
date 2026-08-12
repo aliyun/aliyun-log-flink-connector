@@ -2,7 +2,6 @@ package com.aliyun.openservices.log.flink.source;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
-import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.source.deserialization.AliyunLogDeserializationSchema;
 import com.aliyun.openservices.log.flink.source.enumerator.AliyunLogSplitAssigner;
 
@@ -227,7 +226,8 @@ public class AliyunLogSourceBuilder<T> {
         if (configProps.getProperty(ConfigConstants.LOG_ENDPOINT) == null) {
             throw new IllegalArgumentException("Endpoint must be set");
         }
-        if (credentialsProviderFactory == null) {
+        boolean useConfiguredAccessKey = credentialsProviderFactory == null;
+        if (useConfiguredAccessKey) {
             if (accessKeyId == null || accessKeyId.isEmpty()) {
                 throw new IllegalArgumentException(
                         "AccessKeyId or CredentialsProviderFactory must be set");
@@ -236,14 +236,14 @@ public class AliyunLogSourceBuilder<T> {
                 throw new IllegalArgumentException(
                         "AccessKey or CredentialsProviderFactory must be set");
             }
-            credentialsProviderFactory =
-                    new StaticCredentialsProviderFactory(accessKeyId, accessKey);
-        } else {
-            configProps.remove(ConfigConstants.LOG_ACCESSKEYID);
-            configProps.remove(ConfigConstants.LOG_ACCESSKEY);
         }
         configProps.setProperty(ConfigConstants.LOG_PROJECT, project);
         configProps.setProperty(ConfigConstants.LOG_LOGSTORE, logstore);
+        if (useConfiguredAccessKey) {
+            return new AliyunLogSource<>(
+                    project, logstore, deserializer,
+                    configProps, splitAssigner, accessKeyId, accessKey);
+        }
         return new AliyunLogSource<>(
                 project, logstore, deserializer,
                 configProps, splitAssigner, credentialsProviderFactory);

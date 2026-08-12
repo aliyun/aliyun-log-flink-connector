@@ -7,7 +7,10 @@ import java.util.Properties;
 
 public class ConfigParser implements Serializable {
 
-    private final Properties props;
+    private static final long serialVersionUID = -719303713679992247L;
+
+    private Properties props;
+    private boolean ownsProperties;
 
     public ConfigParser(Properties props) {
         this.props = props;
@@ -30,6 +33,17 @@ public class ConfigParser implements Serializable {
     }
 
     public void remove(String key) {
+        if (!ownsProperties) {
+            Properties copied = new Properties();
+            copied.putAll(props);
+            for (String propertyName : props.stringPropertyNames()) {
+                if (!copied.containsKey(propertyName)) {
+                    copied.setProperty(propertyName, props.getProperty(propertyName));
+                }
+            }
+            props = copied;
+            ownsProperties = true;
+        }
         props.remove(key);
     }
 }

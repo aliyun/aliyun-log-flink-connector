@@ -1,7 +1,6 @@
 package com.aliyun.openservices.log.flink.source.table;
 
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
-import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.source.AliyunLogSource;
 import com.aliyun.openservices.log.flink.source.AliyunLogSourceBuilder;
 import org.apache.flink.api.connector.source.Source;
@@ -21,6 +20,8 @@ public class AliyunLogDynamicSource implements ScanTableSource {
     private final String project;
     private final String logstore;
     private final String endpoint;
+    private final String accessKeyId;
+    private final String accessKey;
     private final LogCredentialsProviderFactory credentialsProviderFactory;
     private final Properties properties;
     private final RowType rowType;
@@ -37,14 +38,16 @@ public class AliyunLogDynamicSource implements ScanTableSource {
             RowType rowType,
             boolean ignoreParseErrors,
             Integer sourceParallelism) {
-        this(project,
-                logstore,
-                endpoint,
-                new StaticCredentialsProviderFactory(accessKeyId, accessKey),
-                properties,
-                rowType,
-                ignoreParseErrors,
-                sourceParallelism);
+        this.project = project;
+        this.logstore = logstore;
+        this.endpoint = endpoint;
+        this.accessKeyId = accessKeyId;
+        this.accessKey = accessKey;
+        this.credentialsProviderFactory = null;
+        this.properties = properties;
+        this.rowType = rowType;
+        this.ignoreParseErrors = ignoreParseErrors;
+        this.sourceParallelism = sourceParallelism;
     }
 
     public AliyunLogDynamicSource(
@@ -59,6 +62,8 @@ public class AliyunLogDynamicSource implements ScanTableSource {
         this.project = project;
         this.logstore = logstore;
         this.endpoint = endpoint;
+        this.accessKeyId = null;
+        this.accessKey = null;
         this.credentialsProviderFactory = credentialsProviderFactory;
         this.properties = properties;
         this.rowType = rowType;
@@ -80,9 +85,13 @@ public class AliyunLogDynamicSource implements ScanTableSource {
                 .setProject(project)
                 .setLogStore(logstore)
                 .setEndpoint(endpoint)
-                .setCredentialsProviderFactory(credentialsProviderFactory)
                 .setDeserializer(deserializer)
                 .setProperties(properties);
+        if (credentialsProviderFactory == null) {
+            builder.setCredentials(accessKeyId, accessKey);
+        } else {
+            builder.setCredentialsProviderFactory(credentialsProviderFactory);
+        }
 
         Source<RowData, ?, ?> source = builder.build();
         if (sourceParallelism == null) {
@@ -93,6 +102,18 @@ public class AliyunLogDynamicSource implements ScanTableSource {
 
     @Override
     public DynamicTableSource copy() {
+        if (credentialsProviderFactory == null) {
+            return new AliyunLogDynamicSource(
+                    project,
+                    logstore,
+                    endpoint,
+                    accessKeyId,
+                    accessKey,
+                    copyProperties(properties),
+                    rowType,
+                    ignoreParseErrors,
+                    sourceParallelism);
+        }
         return new AliyunLogDynamicSource(
                 project,
                 logstore,

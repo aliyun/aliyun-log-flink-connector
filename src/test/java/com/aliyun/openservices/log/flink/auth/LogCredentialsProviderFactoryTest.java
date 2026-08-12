@@ -43,17 +43,6 @@ public class LogCredentialsProviderFactoryTest {
     }
 
     @Test
-    public void testStaticCredentialsProviderFactorySupportsSecurityToken() {
-        Credentials credentials = new StaticCredentialsProviderFactory("id", "secret", "token")
-                .createCredentialsProvider()
-                .getCredentials();
-
-        assertEquals("id", credentials.getAccessKeyId());
-        assertEquals("secret", credentials.getAccessKeySecret());
-        assertEquals("token", credentials.getSecurityToken());
-    }
-
-    @Test
     public void testReflectiveFactoryConfiguresApplicationFactoryAfterSerialization()
             throws Exception {
         Properties properties = new Properties();
@@ -192,6 +181,76 @@ public class LogCredentialsProviderFactoryTest {
     }
 
     @Test
+    public void testDynamicCredentialModeKeepsPropertiesDefaultsExceptStaticCredentials()
+            throws Exception {
+        Properties defaults = legacyProperties();
+        defaults.setProperty("inherited-config", "inherited-value");
+        Properties properties = new Properties(defaults);
+        CountingCredentialsProviderFactory factory = new CountingCredentialsProviderFactory();
+
+        FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                properties)
+                .setCredentialsProviderFactory(factory);
+        FlinkLogProducer<String> producer = new FlinkLogProducer<String>(
+                value -> new RawLogGroup(),
+                properties)
+                .setCredentialsProviderFactory(factory);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<String>(
+                (value, output) -> { },
+                properties)
+                .setCredentialsProviderFactory(factory);
+        AliyunLogSource<String> source = new AliyunLogSource<>(
+                "project",
+                "logstore",
+                new StringDeserializer(),
+                properties,
+                null,
+                factory);
+
+        assertSerializedFormContains(consumer, "inherited-config", "inherited-value");
+        assertSerializedFormContains(producer, "inherited-config", "inherited-value");
+        assertSerializedFormContains(producerV2, "inherited-config", "inherited-value");
+        assertSerializedFormContains(source, "inherited-config", "inherited-value");
+        assertSerializedFormDoesNotContainLegacyCredentials(consumer);
+        assertSerializedFormDoesNotContainLegacyCredentials(producer);
+        assertSerializedFormDoesNotContainLegacyCredentials(producerV2);
+        assertSerializedFormDoesNotContainLegacyCredentials(source);
+    }
+
+    @Test
+    public void testStaticCredentialModeKeepsLatePropertiesUpdates() throws Exception {
+        Properties properties = legacyProperties();
+        properties.remove(ConfigConstants.LOG_ACCESSKEYID);
+        properties.remove(ConfigConstants.LOG_ACCESSKEY);
+        FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                properties);
+        FlinkLogProducer<String> producer = new FlinkLogProducer<>(
+                value -> new RawLogGroup(),
+                properties);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<>(
+                (value, output) -> { },
+                properties);
+        AliyunLogSource<String> source = new AliyunLogSource<>(
+                "project",
+                "logstore",
+                new StringDeserializer(),
+                properties,
+                null,
+                "legacy-access-key-id",
+                "legacy-access-key-secret");
+
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEYID, "late-access-key-id");
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEY, "late-access-key-secret");
+
+        assertSerializedFormContains(consumer, "late-access-key-id", "late-access-key-secret");
+        assertSerializedFormContains(producer, "late-access-key-id", "late-access-key-secret");
+        assertSerializedFormContains(producerV2, "late-access-key-id", "late-access-key-secret");
+        assertSerializedFormContains(source, "late-access-key-id", "late-access-key-secret");
+    }
+
+    @Test
     public void testLogClientProxyCreatesProviderAtRuntime() {
         Properties properties = new Properties();
         properties.setProperty(
@@ -235,9 +294,17 @@ public class LogCredentialsProviderFactoryTest {
 
     private static void assertSerializedFormContainsLegacyCredentials(Serializable value)
             throws Exception {
+        assertSerializedFormContains(
+                value, "legacy-access-key-id", "legacy-access-key-secret");
+    }
+
+    private static void assertSerializedFormContains(
+            Serializable value,
+            String... expectedValues) throws Exception {
         String serialized = new String(serialize(value), StandardCharsets.ISO_8859_1);
-        assertTrue(serialized.contains("legacy-access-key-id"));
-        assertTrue(serialized.contains("legacy-access-key-secret"));
+        for (String expectedValue : expectedValues) {
+            assertTrue(serialized.contains(expectedValue));
+        }
     }
 
     private static Properties legacyProperties() {

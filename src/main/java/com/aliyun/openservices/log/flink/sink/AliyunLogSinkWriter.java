@@ -10,7 +10,6 @@ import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
 import com.aliyun.openservices.log.common.auth.CredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
-import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.SinkRecord;
 import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
@@ -48,6 +47,8 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
     private final String project;
     private final String logstore;
     private final String endpoint;
+    private final String accessKeyId;
+    private final String accessKey;
     private final LogCredentialsProviderFactory credentialsProviderFactory;
     private final AliyunLogSerializationSchema<T> schema;
     private final AtomicLong pendingRequests = new AtomicLong(0);
@@ -64,12 +65,17 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
             String accessKey,
             Properties properties,
             AliyunLogSerializationSchema<T> schema) {
-        this(project,
-                logstore,
-                endpoint,
-                new StaticCredentialsProviderFactory(accessKeyId, accessKey),
-                properties,
-                schema);
+        this.project = project;
+        this.logstore = logstore;
+        this.endpoint = endpoint;
+        this.accessKeyId = accessKeyId;
+        this.accessKey = accessKey;
+        this.credentialsProviderFactory = null;
+        this.schema = schema;
+        this.producer = createProducer(properties);
+        this.callback = new ProducerCallback();
+        this.collector = new ProducerCollector();
+        LOG.info("Created AliyunLogSinkWriter for project={}, logstore={}", project, logstore);
     }
 
     AliyunLogSinkWriter(
@@ -82,6 +88,8 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
         this.project = project;
         this.logstore = logstore;
         this.endpoint = endpoint;
+        this.accessKeyId = null;
+        this.accessKey = null;
         this.credentialsProviderFactory = credentialsProviderFactory;
         this.schema = schema;
         this.producer = createProducer(properties);
@@ -155,24 +163,31 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
             producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V1);
         }
 
-        CredentialsProvider credentialsProvider =
-                credentialsProviderFactory.createCredentialsProvider();
-        if (credentialsProvider == null) {
-            throw new IllegalStateException("CredentialsProviderFactory returned null");
-        }
+        ProjectConfig projectConfig = createProjectConfig();
         Producer newProducer = new LogProducer(producerConfig);
         try {
-            newProducer.putProjectConfig(
-                    new ProjectConfig(
-                            project,
-                            endpoint,
-                            credentialsProvider,
-                            ProjectConfig.DEFAULT_USER_AGENT));
+            newProducer.putProjectConfig(projectConfig);
             return newProducer;
         } catch (RuntimeException | Error e) {
             closeAfterInitializationFailure(newProducer, e);
             throw e;
         }
+    }
+
+    private ProjectConfig createProjectConfig() {
+        if (credentialsProviderFactory == null) {
+            return new ProjectConfig(project, endpoint, accessKeyId, accessKey);
+        }
+        CredentialsProvider credentialsProvider =
+                credentialsProviderFactory.createCredentialsProvider();
+        if (credentialsProvider == null) {
+            throw new IllegalStateException("CredentialsProviderFactory returned null");
+        }
+        return new ProjectConfig(
+                project,
+                endpoint,
+                credentialsProvider,
+                ProjectConfig.DEFAULT_USER_AGENT);
     }
 
     private static void closeAfterInitializationFailure(
