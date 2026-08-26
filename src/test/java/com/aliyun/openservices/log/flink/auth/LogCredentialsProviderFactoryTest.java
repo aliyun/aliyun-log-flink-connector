@@ -26,6 +26,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -274,6 +276,39 @@ public class LogCredentialsProviderFactoryTest {
         assertInvalidEndpointDoesNotCreateCredentialsProvider(null);
         assertInvalidEndpointDoesNotCreateCredentialsProvider("");
         assertInvalidEndpointDoesNotCreateCredentialsProvider("127.0.0.1");
+    }
+
+    @Test
+    public void testLegacyConsumerValidatesEndpointBeforeCreatingProvider() throws Exception {
+        assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider(null);
+        assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider("");
+        assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider("127.0.0.1");
+    }
+
+    private static void assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider(
+            String endpoint) throws Exception {
+        Properties properties = legacyProperties();
+        if (endpoint == null) {
+            properties.remove(ConfigConstants.LOG_ENDPOINT);
+        } else {
+            properties.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
+        }
+        FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                properties)
+                .setCredentialsProviderFactory(new CountingCredentialsProviderFactory());
+        Method createClient = FlinkLogConsumer.class.getDeclaredMethod(
+                "createClientIfNeeded",
+                int.class);
+        createClient.setAccessible(true);
+
+        try {
+            createClient.invoke(consumer, 0);
+            fail("Expected invalid consumer endpoint to fail validation");
+        } catch (InvocationTargetException expected) {
+            assertTrue(expected.getCause() instanceof IllegalArgumentException);
+            assertEquals(0, CountingCredentialsProviderFactory.CREATED.get());
+        }
     }
 
     private static void assertInvalidEndpointDoesNotCreateCredentialsProvider(

@@ -148,8 +148,10 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             clientConfig.setRegion(regionId);
         }
         clientConfig.setSignatureVersion(signVersion);
+        String endpoint = parser.getString(ConfigConstants.LOG_ENDPOINT);
+        LogUtil.validateEndpoint(endpoint);
         logClient = new LogClientProxy(
-                parser.getString(ConfigConstants.LOG_ENDPOINT),
+                endpoint,
                 getCredentialsProviderFactory(parser).createCredentialsProvider(),
                 getOrCreateUserAgent(indexOfSubTask),
                 retryPolicy,

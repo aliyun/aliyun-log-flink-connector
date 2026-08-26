@@ -61,7 +61,12 @@ public final class LogUtil {
         return SignVersion.V1; // default v1
     }
 
-    static void validateEndpoint(String endpoint) {
+    /**
+     * Validates an SLS endpoint using the same rules as the pinned SLS SDK.
+     *
+     * @param endpoint SLS endpoint
+     */
+    public static void validateEndpoint(String endpoint) {
         Args.notNullOrEmpty(endpoint, "endpoint");
         String normalizedEndpoint = endpoint.trim();
         String hostName;
