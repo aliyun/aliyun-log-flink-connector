@@ -119,8 +119,10 @@ public class LogClientProxy implements Serializable {
         clientConfig.setSignatureVersion(signVersion);
         MemoryLimiter memoryLimiter = new MemoryLimiter(configProps);
         String userAgent = resolveUserAgent(configProps, subtaskIndex);
+        String endpoint = parser.getString(ConfigConstants.LOG_ENDPOINT);
+        LogUtil.validateEndpoint(endpoint);
         return new LogClientProxy(
-                parser.getString(ConfigConstants.LOG_ENDPOINT),
+                endpoint,
                 credentialsProviderFactory.createCredentialsProvider(),
                 userAgent,
                 retryPolicy,

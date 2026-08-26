@@ -51,6 +51,17 @@ public class ProducerCredentialsInitializationTest {
     }
 
     @Test
+    public void testInvalidProducerTargetDoesNotCreateCredentialsProvider() {
+        assertInvalidProducerTargetDoesNotCreateCredentialsProvider(
+                null,
+                "cn-hangzhou.log.aliyuncs.com");
+        assertInvalidProducerTargetDoesNotCreateCredentialsProvider("project", null);
+        assertInvalidProducerTargetDoesNotCreateCredentialsProvider(
+                "project",
+                "127.0.0.1");
+    }
+
+    @Test
     public void testLegacyProducersDoNotStartThreadsWhenCredentialsFactoryFails()
             throws Exception {
         Properties properties = producerProperties();
@@ -162,6 +173,24 @@ public class ProducerCredentialsInitializationTest {
         properties.setProperty(ConfigConstants.LOG_LOGSTORE, "logstore");
         properties.setProperty(ConfigConstants.LOG_ENDPOINT, "cn-hangzhou.log.aliyuncs.com");
         return properties;
+    }
+
+    private static void assertInvalidProducerTargetDoesNotCreateCredentialsProvider(
+            String project,
+            String endpoint) {
+        AtomicInteger providerCreations = new AtomicInteger();
+        LogCredentialsProviderFactory factory = () -> {
+            providerCreations.incrementAndGet();
+            return new StaticCredentialsProvider(
+                    new DefaultCredentials("id", "secret"));
+        };
+
+        try {
+            ProducerFactory.create(project, endpoint, producerProperties(), factory);
+            fail("Expected invalid producer target to fail validation");
+        } catch (IllegalArgumentException | NullPointerException expected) {
+            assertEquals(0, providerCreations.get());
+        }
     }
 
     private static void assertOpenFails(FlinkLogProducer<String> producer, Configuration config)

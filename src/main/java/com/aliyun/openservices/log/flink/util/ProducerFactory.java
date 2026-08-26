@@ -10,6 +10,7 @@ import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
 import com.aliyun.openservices.log.http.signer.SignVersion;
 import org.apache.commons.lang3.StringUtils;
 
+import java.util.Objects;
 import java.util.Properties;
 
 import static com.aliyun.openservices.log.flink.ConfigConstants.BASE_RETRY_BACK_OFF_TIME_MS;
@@ -49,6 +50,9 @@ public final class ProducerFactory {
         }
 
         ProducerConfig producerConfig = createProducerConfig(properties);
+        Objects.requireNonNull(project, "project cannot be null");
+        Objects.requireNonNull(endpoint, "endpoint cannot be null");
+        LogUtil.validateEndpoint(endpoint);
         CredentialsProvider credentialsProvider =
                 credentialsProviderFactory.createCredentialsProvider();
         if (credentialsProvider == null) {

@@ -34,6 +34,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class LogCredentialsProviderFactoryTest {
 
@@ -265,6 +266,31 @@ public class LogCredentialsProviderFactoryTest {
             assertEquals(1, CountingCredentialsProviderFactory.CREATED.get());
         } finally {
             client.close();
+        }
+    }
+
+    @Test
+    public void testLogClientProxyValidatesEndpointBeforeCreatingProvider() {
+        assertInvalidEndpointDoesNotCreateCredentialsProvider(null);
+        assertInvalidEndpointDoesNotCreateCredentialsProvider("");
+        assertInvalidEndpointDoesNotCreateCredentialsProvider("127.0.0.1");
+    }
+
+    private static void assertInvalidEndpointDoesNotCreateCredentialsProvider(
+            String endpoint) {
+        Properties properties = new Properties();
+        if (endpoint != null) {
+            properties.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
+        }
+
+        try {
+            LogClientProxy.makeClient(
+                    properties,
+                    new CountingCredentialsProviderFactory(),
+                    0);
+            fail("Expected invalid endpoint to fail validation");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(0, CountingCredentialsProviderFactory.CREATED.get());
         }
     }
 
