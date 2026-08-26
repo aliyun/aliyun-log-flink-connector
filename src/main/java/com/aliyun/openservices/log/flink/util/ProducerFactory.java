@@ -48,6 +48,7 @@ public final class ProducerFactory {
             throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
         }
 
+        ProducerConfig producerConfig = createProducerConfig(properties);
         CredentialsProvider credentialsProvider =
                 credentialsProviderFactory.createCredentialsProvider();
         if (credentialsProvider == null) {
@@ -59,7 +60,7 @@ public final class ProducerFactory {
                 credentialsProvider,
                 ProjectConfig.DEFAULT_USER_AGENT);
 
-        Producer producer = new LogProducer(createProducerConfig(properties));
+        Producer producer = new LogProducer(producerConfig);
         try {
             producer.putProjectConfig(projectConfig);
             return producer;

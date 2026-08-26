@@ -6,9 +6,12 @@ import com.aliyun.openservices.aliyun.log.producer.Producer;
 import com.aliyun.openservices.log.Client;
 import com.aliyun.openservices.log.common.auth.Credentials;
 import com.aliyun.openservices.log.common.auth.CredentialsProvider;
+import com.aliyun.openservices.log.common.auth.DefaultCredentials;
+import com.aliyun.openservices.log.common.auth.StaticCredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
+import com.aliyun.openservices.log.flink.util.ProducerFactory;
 import org.apache.flink.configuration.Configuration;
 import org.junit.Test;
 
@@ -17,11 +20,35 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 public class ProducerCredentialsInitializationTest {
+
+    @Test
+    public void testInvalidProducerConfigDoesNotCreateCredentialsProvider() {
+        Properties properties = producerProperties();
+        properties.setProperty(ConfigConstants.SIGNATURE_VERSION, "v4");
+        AtomicInteger providerCreations = new AtomicInteger();
+        LogCredentialsProviderFactory factory = () -> {
+            providerCreations.incrementAndGet();
+            return new StaticCredentialsProvider(
+                    new DefaultCredentials("id", "secret"));
+        };
+
+        try {
+            ProducerFactory.create(
+                    "project",
+                    properties.getProperty(ConfigConstants.LOG_ENDPOINT),
+                    properties,
+                    factory);
+            fail("Expected missing region.id to fail producer configuration validation");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(0, providerCreations.get());
+        }
+    }
 
     @Test
     public void testLegacyProducersDoNotStartThreadsWhenCredentialsFactoryFails()
