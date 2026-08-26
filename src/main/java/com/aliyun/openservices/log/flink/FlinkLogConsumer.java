@@ -101,19 +101,6 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         this.memoryLimiter = new MemoryLimiter(this.configProps);
     }
 
-    private static Properties copyPropertiesWithoutStaticCredentials(Properties properties) {
-        Properties copied = new Properties();
-        copied.putAll(properties);
-        for (String propertyName : properties.stringPropertyNames()) {
-            if (!copied.containsKey(propertyName)) {
-                copied.setProperty(propertyName, properties.getProperty(propertyName));
-            }
-        }
-        copied.remove(ConfigConstants.LOG_ACCESSKEYID);
-        copied.remove(ConfigConstants.LOG_ACCESSKEY);
-        return copied;
-    }
-
     private String getOrCreateUserAgent(int indexOfSubTask) {
         String userAgent = configProps.getProperty(ConfigConstants.LOG_USER_AGENT);
         if (userAgent != null && !userAgent.isEmpty()) {
@@ -188,7 +175,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
                     "CredentialsProviderFactory cannot be changed after the client is created");
         }
         this.credentialsProviderFactory = credentialsProviderFactory;
-        this.configProps = copyPropertiesWithoutStaticCredentials(this.configProps);
+        this.configProps = ConfigProperties.sanitizedCopyWithoutCredentials(this.configProps);
         return this;
     }
 

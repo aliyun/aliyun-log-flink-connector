@@ -9,8 +9,7 @@ public class ConfigParser implements Serializable {
 
     private static final long serialVersionUID = -719303713679992247L;
 
-    private Properties props;
-    private boolean ownsProperties;
+    private final Properties props;
 
     public ConfigParser(Properties props) {
         this.props = props;
@@ -32,18 +31,7 @@ public class ConfigParser implements Serializable {
         return props.getProperty(key);
     }
 
-    public void remove(String key) {
-        if (!ownsProperties) {
-            Properties copied = new Properties();
-            copied.putAll(props);
-            for (String propertyName : props.stringPropertyNames()) {
-                if (!copied.containsKey(propertyName)) {
-                    copied.setProperty(propertyName, props.getProperty(propertyName));
-                }
-            }
-            props = copied;
-            ownsProperties = true;
-        }
-        props.remove(key);
+    public Properties copyProperties() {
+        return ConfigProperties.copy(props);
     }
 }

@@ -56,6 +56,26 @@ public class AliyunLogSinkWriterCredentialsTest {
         }
     }
 
+    @Test
+    public void testStaticSinkWriterKeepsDefaultProducerUserAgent() throws Exception {
+        AliyunLogSinkWriter<String> writer = new AliyunLogSinkWriter<>(
+                "project",
+                "logstore",
+                "cn-hangzhou.log.aliyuncs.com",
+                "id",
+                "secret",
+                new Properties(),
+                (element, output) -> { });
+        try {
+            Field producerField = AliyunLogSinkWriter.class.getDeclaredField("producer");
+            producerField.setAccessible(true);
+            ProducerCredentialsInitializationTest.assertDefaultProducerUserAgent(
+                    (Producer) producerField.get(writer));
+        } finally {
+            writer.close();
+        }
+    }
+
     private static Set<String> producerThreadNames() {
         Set<String> names = new HashSet<>();
         for (Thread thread : Thread.getAllStackTraces().keySet()) {

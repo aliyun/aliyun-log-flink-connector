@@ -70,6 +70,29 @@ public class ProducerCredentialsInitializationTest {
     }
 
     @Test
+    public void testStaticLegacyProducersKeepDefaultProducerUserAgent() throws Exception {
+        Properties properties = producerProperties();
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEYID, "id");
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEY, "secret");
+        FlinkLogProducer<String> producer = new FlinkLogProducer<>(
+                value -> new RawLogGroup(),
+                properties);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<>(
+                (value, collector) -> { },
+                properties);
+
+        try {
+            producer.open(new Configuration());
+            producerV2.open(new Configuration());
+            assertDefaultProducerUserAgent(getProducer(producer));
+            assertDefaultProducerUserAgent(getProducer(producerV2));
+        } finally {
+            producer.close();
+            producerV2.close();
+        }
+    }
+
+    @Test
     public void testStaticLegacyProducersResolveCredentialsWhenOpened() throws Exception {
         Properties properties = producerProperties();
         FlinkLogProducer<String> producer = new FlinkLogProducer<>(

@@ -3,6 +3,7 @@ package com.aliyun.openservices.log.flink.sink;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
+import com.aliyun.openservices.log.flink.util.ConfigProperties;
 
 import java.util.Properties;
 
@@ -86,18 +87,10 @@ public class AliyunLogSinkBuilder<T> {
             throw new IllegalArgumentException("Serializer must be set");
         }
 
-        Properties copied = new Properties();
-        copied.putAll(properties);
+        Properties copied = ConfigProperties.sanitizedCopyWithoutCredentials(properties);
         copied.setProperty(ConfigConstants.LOG_PROJECT, project);
         copied.setProperty(ConfigConstants.LOG_LOGSTORE, logstore);
         copied.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
-        if (useConfiguredAccessKey) {
-            copied.setProperty(ConfigConstants.LOG_ACCESSKEYID, accessKeyId);
-            copied.setProperty(ConfigConstants.LOG_ACCESSKEY, accessKey);
-        } else {
-            copied.remove(ConfigConstants.LOG_ACCESSKEYID);
-            copied.remove(ConfigConstants.LOG_ACCESSKEY);
-        }
 
         if (useConfiguredAccessKey) {
             return new AliyunLogSink<>(

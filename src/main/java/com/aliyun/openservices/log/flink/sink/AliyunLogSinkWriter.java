@@ -1,20 +1,15 @@
 package com.aliyun.openservices.log.flink.sink;
 
 import com.aliyun.openservices.aliyun.log.producer.Callback;
-import com.aliyun.openservices.aliyun.log.producer.LogProducer;
 import com.aliyun.openservices.aliyun.log.producer.Producer;
-import com.aliyun.openservices.aliyun.log.producer.ProducerConfig;
-import com.aliyun.openservices.aliyun.log.producer.ProjectConfig;
 import com.aliyun.openservices.aliyun.log.producer.Result;
 import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
-import com.aliyun.openservices.log.common.auth.CredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.SinkRecord;
 import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
-import com.aliyun.openservices.log.flink.util.ConfigParser;
-import com.aliyun.openservices.log.flink.util.LogUtil;
-import com.aliyun.openservices.log.http.signer.SignVersion;
+import com.aliyun.openservices.log.flink.util.ProducerFactory;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.util.Collector;
@@ -26,18 +21,6 @@ import java.util.Properties;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static com.aliyun.openservices.log.flink.ConfigConstants.BASE_RETRY_BACK_OFF_TIME_MS;
-import static com.aliyun.openservices.log.flink.ConfigConstants.BUCKETS;
-import static com.aliyun.openservices.log.flink.ConfigConstants.FLUSH_INTERVAL_MS;
-import static com.aliyun.openservices.log.flink.ConfigConstants.IO_THREAD_NUM;
-import static com.aliyun.openservices.log.flink.ConfigConstants.MAX_BLOCK_TIME_MS;
-import static com.aliyun.openservices.log.flink.ConfigConstants.MAX_RETRIES;
-import static com.aliyun.openservices.log.flink.ConfigConstants.MAX_RETRY_BACK_OFF_TIME_MS;
-import static com.aliyun.openservices.log.flink.ConfigConstants.PRODUCER_ADJUST_SHARD_HASH;
-import static com.aliyun.openservices.log.flink.ConfigConstants.REGION_ID;
-import static com.aliyun.openservices.log.flink.ConfigConstants.SIGNATURE_VERSION;
-import static com.aliyun.openservices.log.flink.ConfigConstants.TOTAL_SIZE_IN_BYTES;
-
 /**
  * Sink writer backed by Aliyun Log Producer.
  */
@@ -46,10 +29,6 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
 
     private final String project;
     private final String logstore;
-    private final String endpoint;
-    private final String accessKeyId;
-    private final String accessKey;
-    private final LogCredentialsProviderFactory credentialsProviderFactory;
     private final AliyunLogSerializationSchema<T> schema;
     private final AtomicLong pendingRequests = new AtomicLong(0);
     private final AtomicReference<IOException> asyncFailure = new AtomicReference<>();
@@ -65,17 +44,13 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
             String accessKey,
             Properties properties,
             AliyunLogSerializationSchema<T> schema) {
-        this.project = project;
-        this.logstore = logstore;
-        this.endpoint = endpoint;
-        this.accessKeyId = accessKeyId;
-        this.accessKey = accessKey;
-        this.credentialsProviderFactory = null;
-        this.schema = schema;
-        this.producer = createProducer(properties);
-        this.callback = new ProducerCallback();
-        this.collector = new ProducerCollector();
-        LOG.info("Created AliyunLogSinkWriter for project={}, logstore={}", project, logstore);
+        this(
+                project,
+                logstore,
+                endpoint,
+                new StaticCredentialsProviderFactory(accessKeyId, accessKey),
+                properties,
+                schema);
     }
 
     AliyunLogSinkWriter(
@@ -87,12 +62,15 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
             AliyunLogSerializationSchema<T> schema) {
         this.project = project;
         this.logstore = logstore;
-        this.endpoint = endpoint;
-        this.accessKeyId = null;
-        this.accessKey = null;
-        this.credentialsProviderFactory = credentialsProviderFactory;
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
         this.schema = schema;
-        this.producer = createProducer(properties);
+        this.producer = ProducerFactory.create(
+                project,
+                endpoint,
+                properties,
+                credentialsProviderFactory);
         this.callback = new ProducerCallback();
         this.collector = new ProducerCollector();
         LOG.info("Created AliyunLogSinkWriter for project={}, logstore={}", project, logstore);
@@ -132,75 +110,6 @@ public class AliyunLogSinkWriter<T> implements SinkWriter<T> {
             producer.close();
         }
         LOG.info("Closed AliyunLogSinkWriter for project={}, logstore={}", project, logstore);
-    }
-
-    private Producer createProducer(Properties properties) {
-        ConfigParser parser = new ConfigParser(properties);
-        ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.setLingerMs(parser.getInt(FLUSH_INTERVAL_MS, ProducerConfig.DEFAULT_LINGER_MS));
-        producerConfig.setRetries(parser.getInt(MAX_RETRIES, ProducerConfig.DEFAULT_RETRIES));
-        producerConfig.setBaseRetryBackoffMs(
-                parser.getLong(BASE_RETRY_BACK_OFF_TIME_MS, ProducerConfig.DEFAULT_BASE_RETRY_BACKOFF_MS));
-        producerConfig.setMaxRetryBackoffMs(
-                parser.getLong(MAX_RETRY_BACK_OFF_TIME_MS, ProducerConfig.DEFAULT_MAX_RETRY_BACKOFF_MS));
-        producerConfig.setMaxBlockMs(parser.getLong(MAX_BLOCK_TIME_MS, ProducerConfig.DEFAULT_MAX_BLOCK_MS));
-        producerConfig.setIoThreadCount(parser.getInt(IO_THREAD_NUM, ProducerConfig.DEFAULT_IO_THREAD_COUNT));
-        producerConfig.setBuckets(parser.getInt(BUCKETS, ProducerConfig.DEFAULT_BUCKETS));
-        producerConfig.setTotalSizeInBytes(
-                parser.getInt(TOTAL_SIZE_IN_BYTES, ProducerConfig.DEFAULT_TOTAL_SIZE_IN_BYTES));
-        producerConfig.setAdjustShardHash(parser.getBool(PRODUCER_ADJUST_SHARD_HASH, true));
-
-        SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(SIGNATURE_VERSION));
-        if (signVersion == SignVersion.V4) {
-            String regionId = parser.getString(REGION_ID);
-            if (StringUtils.isBlank(regionId)) {
-                throw new IllegalArgumentException(
-                        "The " + REGION_ID + " was not specified for signature " + signVersion.name() + ".");
-            }
-            producerConfig.setRegion(regionId);
-            producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V4);
-        } else {
-            producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V1);
-        }
-
-        ProjectConfig projectConfig = createProjectConfig();
-        Producer newProducer = new LogProducer(producerConfig);
-        try {
-            newProducer.putProjectConfig(projectConfig);
-            return newProducer;
-        } catch (RuntimeException | Error e) {
-            closeAfterInitializationFailure(newProducer, e);
-            throw e;
-        }
-    }
-
-    private ProjectConfig createProjectConfig() {
-        if (credentialsProviderFactory == null) {
-            return new ProjectConfig(project, endpoint, accessKeyId, accessKey);
-        }
-        CredentialsProvider credentialsProvider =
-                credentialsProviderFactory.createCredentialsProvider();
-        if (credentialsProvider == null) {
-            throw new IllegalStateException("CredentialsProviderFactory returned null");
-        }
-        return new ProjectConfig(
-                project,
-                endpoint,
-                credentialsProvider,
-                ProjectConfig.DEFAULT_USER_AGENT);
-    }
-
-    private static void closeAfterInitializationFailure(
-            Producer producer,
-            Throwable initializationFailure) {
-        try {
-            producer.close();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            initializationFailure.addSuppressed(e);
-        } catch (ProducerException e) {
-            initializationFailure.addSuppressed(e);
-        }
     }
 
     private void send(SinkRecord record) throws IOException, InterruptedException {

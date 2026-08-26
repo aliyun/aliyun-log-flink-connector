@@ -1,17 +1,18 @@
 package com.aliyun.openservices.log.flink;
 
-import com.aliyun.openservices.aliyun.log.producer.*;
+import com.aliyun.openservices.aliyun.log.producer.Callback;
+import com.aliyun.openservices.aliyun.log.producer.Producer;
+import com.aliyun.openservices.aliyun.log.producer.Result;
 import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
-import com.aliyun.openservices.log.common.auth.CredentialsProvider;
 import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.RawLog;
 import com.aliyun.openservices.log.flink.data.RawLogGroup;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchema;
+import com.aliyun.openservices.log.flink.util.ConfigProperties;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
-import com.aliyun.openservices.log.flink.util.LogUtil;
-import com.aliyun.openservices.log.http.signer.SignVersion;
-import org.apache.commons.lang3.StringUtils;
+import com.aliyun.openservices.log.flink.util.ProducerFactory;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
@@ -39,7 +40,7 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
     private final String project;
     private final String logstore;
     private final AtomicLong buffered = new AtomicLong(0);
-    private final ConfigParser configParser;
+    private ConfigParser configParser;
     private LogCredentialsProviderFactory credentialsProviderFactory;
 
     public FlinkLogProducer(final LogSerializationSchema<T> schema, Properties configProps) {
@@ -75,79 +76,19 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
                     "CredentialsProviderFactory cannot be changed after the producer is created");
         }
         this.credentialsProviderFactory = credentialsProviderFactory;
-        this.configParser.remove(ConfigConstants.LOG_ACCESSKEYID);
-        this.configParser.remove(ConfigConstants.LOG_ACCESSKEY);
+        this.configParser = new ConfigParser(
+                ConfigProperties.sanitizedCopyWithoutCredentials(
+                        this.configParser.copyProperties()));
         return this;
     }
 
-    private Producer createProducer(ConfigParser parser) {
-        ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.setLingerMs(parser.getInt(FLUSH_INTERVAL_MS, ProducerConfig.DEFAULT_LINGER_MS));
-        producerConfig.setRetries(parser.getInt(MAX_RETRIES, ProducerConfig.DEFAULT_RETRIES));
-        producerConfig.setBaseRetryBackoffMs(
-                parser.getLong(BASE_RETRY_BACK_OFF_TIME_MS, ProducerConfig.DEFAULT_BASE_RETRY_BACKOFF_MS));
-        producerConfig.setMaxRetryBackoffMs(
-                parser.getLong(MAX_RETRY_BACK_OFF_TIME_MS, ProducerConfig.DEFAULT_MAX_RETRY_BACKOFF_MS));
-        producerConfig.setMaxBlockMs(
-                parser.getLong(MAX_BLOCK_TIME_MS, ProducerConfig.DEFAULT_MAX_BLOCK_MS));
-        producerConfig.setIoThreadCount(parser.getInt(IO_THREAD_NUM, ProducerConfig.DEFAULT_IO_THREAD_COUNT));
-        producerConfig.setBuckets(parser.getInt(BUCKETS, ProducerConfig.DEFAULT_BUCKETS));
-        producerConfig.setTotalSizeInBytes(parser.getInt(TOTAL_SIZE_IN_BYTES, ProducerConfig.DEFAULT_TOTAL_SIZE_IN_BYTES));
-        producerConfig.setAdjustShardHash(parser.getBool(PRODUCER_ADJUST_SHARD_HASH, true));
-        SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(SIGNATURE_VERSION));
-        if (signVersion == SignVersion.V4) {
-            String regionId = parser.getString(REGION_ID);
-            if (StringUtils.isBlank(regionId)) {
-                throw new IllegalArgumentException("The " + REGION_ID + " was not specified for signature " + signVersion.name() + ".");
-            }
-            producerConfig.setRegion(regionId);
-            producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V4);
-        } else {
-            producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V1);
+    private LogCredentialsProviderFactory getCredentialsProviderFactory(ConfigParser parser) {
+        if (credentialsProviderFactory != null) {
+            return credentialsProviderFactory;
         }
-        ProjectConfig projectConfig = createProjectConfig(parser);
-        Producer producer = new LogProducer(producerConfig);
-        try {
-            producer.putProjectConfig(projectConfig);
-            return producer;
-        } catch (RuntimeException | Error e) {
-            closeAfterInitializationFailure(producer, e);
-            throw e;
-        }
-    }
-
-    private static void closeAfterInitializationFailure(
-            Producer producer,
-            Throwable initializationFailure) {
-        try {
-            producer.close();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            initializationFailure.addSuppressed(e);
-        } catch (ProducerException e) {
-            initializationFailure.addSuppressed(e);
-        }
-    }
-
-    private ProjectConfig createProjectConfig(ConfigParser parser) {
-        String endpoint = parser.getString(ConfigConstants.LOG_ENDPOINT);
-        if (credentialsProviderFactory == null) {
-            return new ProjectConfig(
-                    project,
-                    endpoint,
-                    parser.getString(ConfigConstants.LOG_ACCESSKEYID),
-                    parser.getString(ConfigConstants.LOG_ACCESSKEY));
-        }
-        CredentialsProvider credentialsProvider =
-                credentialsProviderFactory.createCredentialsProvider();
-        if (credentialsProvider == null) {
-            throw new IllegalStateException("CredentialsProviderFactory returned null");
-        }
-        return new ProjectConfig(
-                project,
-                endpoint,
-                credentialsProvider,
-                ProjectConfig.DEFAULT_USER_AGENT);
+        return new StaticCredentialsProviderFactory(
+                parser.getString(ConfigConstants.LOG_ACCESSKEYID),
+                parser.getString(ConfigConstants.LOG_ACCESSKEY));
     }
 
     @Override
@@ -162,7 +103,11 @@ public class FlinkLogProducer<T> extends RichSinkFunction<T> implements Checkpoi
             callback = new ProducerCallback(buffered);
         }
         if (producer == null) {
-            producer = createProducer(configParser);
+            producer = ProducerFactory.create(
+                    project,
+                    configParser.getString(ConfigConstants.LOG_ENDPOINT),
+                    configParser.copyProperties(),
+                    getCredentialsProviderFactory(configParser));
         }
     }
 
