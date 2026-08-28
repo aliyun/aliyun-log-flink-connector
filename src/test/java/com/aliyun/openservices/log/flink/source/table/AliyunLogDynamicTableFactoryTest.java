@@ -17,6 +17,7 @@ import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.catalog.UniqueConstraint;
+import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.factories.DynamicTableFactory;
 import org.apache.flink.table.types.logical.RowType;
@@ -104,6 +105,18 @@ public class AliyunLogDynamicTableFactoryTest {
         new AliyunLogDynamicTableFactory()
                 .createDynamicTableSource(createContext(options));
 
+        assertEquals(0, PlanningOnlyFactory.CREATED.get());
+    }
+
+    @Test
+    public void testSqlSinkPlanningValidatesFactoryWithoutInstantiatingIt() {
+        PlanningOnlyFactory.CREATED.set(0);
+        Map<String, String> options = dynamicOptions(PlanningOnlyFactory.class.getName());
+
+        DynamicTableSink sink = new AliyunLogDynamicTableFactory()
+                .createDynamicTableSink(createContext(options));
+
+        assertTrue(sink instanceof AliyunLogDynamicSink);
         assertEquals(0, PlanningOnlyFactory.CREATED.get());
     }
 
