@@ -1,0 +1,431 @@
+package com.aliyun.openservices.log.flink.auth;
+
+import com.aliyun.openservices.log.common.auth.Credentials;
+import com.aliyun.openservices.log.common.auth.CredentialsProvider;
+import com.aliyun.openservices.log.common.auth.DefaultCredentials;
+import com.aliyun.openservices.log.common.auth.StaticCredentialsProvider;
+import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.FlinkLogConsumer;
+import com.aliyun.openservices.log.flink.FlinkLogProducer;
+import com.aliyun.openservices.log.flink.FlinkLogProducerV2;
+import com.aliyun.openservices.log.flink.data.RawLogGroup;
+import com.aliyun.openservices.log.flink.data.RawLogGroupList;
+import com.aliyun.openservices.log.flink.data.RawLogGroupListDeserializer;
+import com.aliyun.openservices.log.flink.model.PullLogsResult;
+import com.aliyun.openservices.log.flink.sink.AliyunLogSink;
+import com.aliyun.openservices.log.flink.source.AliyunLogSource;
+import com.aliyun.openservices.log.flink.source.deserialization.AliyunLogDeserializationSchema;
+import com.aliyun.openservices.log.flink.util.LogClientProxy;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.util.Collector;
+import org.junit.After;
+import org.junit.Test;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+public class LogCredentialsProviderFactoryTest {
+
+    @After
+    public void resetCounter() {
+        CountingCredentialsProviderFactory.CREATED.set(0);
+    }
+
+    @Test
+    public void testReflectiveFactoryConfiguresApplicationFactoryAfterSerialization()
+            throws Exception {
+        Properties properties = new Properties();
+        properties.setProperty("roleArn", "test-role");
+        ReflectiveLogCredentialsProviderFactory original =
+                new ReflectiveLogCredentialsProviderFactory(
+                        ConfigurableTestFactory.class.getName(),
+                        properties);
+
+        ReflectiveLogCredentialsProviderFactory restored = roundTrip(original);
+        Credentials credentials = restored.createCredentialsProvider().getCredentials();
+
+        assertEquals("test-role", credentials.getAccessKeyId());
+        assertEquals("dynamic-secret", credentials.getAccessKeySecret());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testReflectiveFactoryRejectsParametersForNonConfigurableFactory() {
+        Properties properties = new Properties();
+        properties.setProperty("roleArn", "test-role");
+        new ReflectiveLogCredentialsProviderFactory(
+                CountingCredentialsProviderFactory.class.getName(),
+                properties)
+                .createCredentialsProvider();
+    }
+
+    @Test
+    public void testSourceAndSinkDoNotCreateProviderWhileBuildingOrSerializing()
+            throws Exception {
+        CountingCredentialsProviderFactory factory = new CountingCredentialsProviderFactory();
+        AliyunLogSource<String> source = AliyunLogSource.<String>builder()
+                .setProject("project")
+                .setLogStore("logstore")
+                .setEndpoint("cn-hangzhou.log.aliyuncs.com")
+                .setCredentialsProviderFactory(factory)
+                .setDeserializer(new StringDeserializer())
+                .build();
+        AliyunLogSink<String> sink = AliyunLogSink.<String>builder()
+                .setProject("project")
+                .setLogStore("logstore")
+                .setEndpoint("cn-hangzhou.log.aliyuncs.com")
+                .setCredentialsProviderFactory(factory)
+                .setSerializer((element, output) -> { })
+                .build();
+
+        assertNotNull(roundTrip(source));
+        assertNotNull(roundTrip(sink));
+        assertEquals(0, CountingCredentialsProviderFactory.CREATED.get());
+    }
+
+    @Test
+    public void testDynamicCredentialModeRemovesStaticCredentialsFromSerializedConnectors()
+            throws Exception {
+        Properties legacyProperties = new Properties();
+        legacyProperties.setProperty(ConfigConstants.LOG_ACCESSKEYID, "legacy-access-key-id");
+        legacyProperties.setProperty(ConfigConstants.LOG_ACCESSKEY, "legacy-access-key-secret");
+        CountingCredentialsProviderFactory factory = new CountingCredentialsProviderFactory();
+
+        AliyunLogSource<String> source = AliyunLogSource.<String>builder()
+                .setProject("project")
+                .setLogStore("logstore")
+                .setEndpoint("cn-hangzhou.log.aliyuncs.com")
+                .setCredentialsProviderFactory(factory)
+                .setProperties(legacyProperties)
+                .setDeserializer(new StringDeserializer())
+                .build();
+        AliyunLogSink<String> sink = AliyunLogSink.<String>builder()
+                .setProject("project")
+                .setLogStore("logstore")
+                .setEndpoint("cn-hangzhou.log.aliyuncs.com")
+                .setCredentialsProviderFactory(factory)
+                .setProperties(legacyProperties)
+                .setSerializer((element, output) -> { })
+                .build();
+
+        assertSerializedFormDoesNotContainLegacyCredentials(source);
+        assertSerializedFormDoesNotContainLegacyCredentials(sink);
+    }
+
+    @Test
+    public void testLegacyConnectorsRemoveStaticCredentialsWhenFactoryIsConfigured()
+            throws Exception {
+        Properties sharedProperties = legacyProperties();
+        CountingCredentialsProviderFactory factory = new CountingCredentialsProviderFactory();
+        FlinkLogConsumer<RawLogGroupList> staticConsumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                sharedProperties);
+        FlinkLogProducer<String> staticProducer = new FlinkLogProducer<>(
+                value -> new RawLogGroup(),
+                sharedProperties);
+        FlinkLogProducerV2<String> staticProducerV2 = new FlinkLogProducerV2<>(
+                (value, output) -> { },
+                sharedProperties);
+        FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                sharedProperties)
+                .setCredentialsProviderFactory(factory);
+        FlinkLogProducer<String> producer = new FlinkLogProducer<String>(
+                value -> new RawLogGroup(),
+                sharedProperties)
+                .setCredentialsProviderFactory(factory);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<String>(
+                (value, output) -> { },
+                sharedProperties)
+                .setCredentialsProviderFactory(factory);
+
+        assertEquals("legacy-access-key-id",
+                sharedProperties.getProperty(ConfigConstants.LOG_ACCESSKEYID));
+        assertEquals("legacy-access-key-secret",
+                sharedProperties.getProperty(ConfigConstants.LOG_ACCESSKEY));
+        assertSerializedFormContainsLegacyCredentials(staticConsumer);
+        assertSerializedFormContainsLegacyCredentials(staticProducer);
+        assertSerializedFormContainsLegacyCredentials(staticProducerV2);
+        assertSerializedFormDoesNotContainLegacyCredentials(consumer);
+        assertSerializedFormDoesNotContainLegacyCredentials(producer);
+        assertSerializedFormDoesNotContainLegacyCredentials(producerV2);
+    }
+
+    @Test
+    public void testDynamicSourceConstructorCopiesAndRemovesStaticCredentials()
+            throws Exception {
+        Properties properties = legacyProperties();
+        AliyunLogSource<String> source = new AliyunLogSource<>(
+                "project",
+                "logstore",
+                new StringDeserializer(),
+                properties,
+                null,
+                new CountingCredentialsProviderFactory());
+
+        assertEquals("legacy-access-key-id",
+                properties.getProperty(ConfigConstants.LOG_ACCESSKEYID));
+        assertEquals("legacy-access-key-secret",
+                properties.getProperty(ConfigConstants.LOG_ACCESSKEY));
+        assertSerializedFormDoesNotContainLegacyCredentials(source);
+    }
+
+    @Test
+    public void testDynamicCredentialModeKeepsPropertiesDefaultsExceptStaticCredentials()
+            throws Exception {
+        Properties defaults = legacyProperties();
+        defaults.setProperty("inherited-config", "inherited-value");
+        Properties properties = new Properties(defaults);
+        CountingCredentialsProviderFactory factory = new CountingCredentialsProviderFactory();
+
+        FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                properties)
+                .setCredentialsProviderFactory(factory);
+        FlinkLogProducer<String> producer = new FlinkLogProducer<String>(
+                value -> new RawLogGroup(),
+                properties)
+                .setCredentialsProviderFactory(factory);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<String>(
+                (value, output) -> { },
+                properties)
+                .setCredentialsProviderFactory(factory);
+        AliyunLogSource<String> source = new AliyunLogSource<>(
+                "project",
+                "logstore",
+                new StringDeserializer(),
+                properties,
+                null,
+                factory);
+
+        assertSerializedFormContains(consumer, "inherited-config", "inherited-value");
+        assertSerializedFormContains(producer, "inherited-config", "inherited-value");
+        assertSerializedFormContains(producerV2, "inherited-config", "inherited-value");
+        assertSerializedFormContains(source, "inherited-config", "inherited-value");
+        assertSerializedFormDoesNotContainLegacyCredentials(consumer);
+        assertSerializedFormDoesNotContainLegacyCredentials(producer);
+        assertSerializedFormDoesNotContainLegacyCredentials(producerV2);
+        assertSerializedFormDoesNotContainLegacyCredentials(source);
+    }
+
+    @Test
+    public void testStaticCredentialModeKeepsLatePropertiesUpdates() throws Exception {
+        Properties properties = legacyProperties();
+        properties.remove(ConfigConstants.LOG_ACCESSKEYID);
+        properties.remove(ConfigConstants.LOG_ACCESSKEY);
+        FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                properties);
+        FlinkLogProducer<String> producer = new FlinkLogProducer<>(
+                value -> new RawLogGroup(),
+                properties);
+        FlinkLogProducerV2<String> producerV2 = new FlinkLogProducerV2<>(
+                (value, output) -> { },
+                properties);
+        AliyunLogSource<String> source = new AliyunLogSource<>(
+                "project",
+                "logstore",
+                new StringDeserializer(),
+                properties,
+                null,
+                "legacy-access-key-id",
+                "legacy-access-key-secret");
+
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEYID, "late-access-key-id");
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEY, "late-access-key-secret");
+
+        assertSerializedFormContains(consumer, "late-access-key-id", "late-access-key-secret");
+        assertSerializedFormContains(producer, "late-access-key-id", "late-access-key-secret");
+        assertSerializedFormContains(producerV2, "late-access-key-id", "late-access-key-secret");
+        assertSerializedFormContains(source, "late-access-key-id", "late-access-key-secret");
+    }
+
+    @Test
+    public void testLogClientProxyCreatesProviderAtRuntime() {
+        Properties properties = new Properties();
+        properties.setProperty(
+                ConfigConstants.LOG_ENDPOINT,
+                "cn-hangzhou.log.aliyuncs.com");
+
+        LogClientProxy client = LogClientProxy.makeClient(
+                properties,
+                new CountingCredentialsProviderFactory(),
+                0);
+        try {
+            assertEquals(1, CountingCredentialsProviderFactory.CREATED.get());
+        } finally {
+            client.close();
+        }
+    }
+
+    @Test
+    public void testLogClientProxyValidatesEndpointBeforeCreatingProvider() {
+        assertInvalidEndpointDoesNotCreateCredentialsProvider(null);
+        assertInvalidEndpointDoesNotCreateCredentialsProvider("");
+        assertInvalidEndpointDoesNotCreateCredentialsProvider("127.0.0.1");
+    }
+
+    @Test
+    public void testLegacyConsumerValidatesEndpointBeforeCreatingProvider() throws Exception {
+        assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider(null);
+        assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider("");
+        assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider("127.0.0.1");
+    }
+
+    private static void assertInvalidConsumerEndpointDoesNotCreateCredentialsProvider(
+            String endpoint) throws Exception {
+        Properties properties = legacyProperties();
+        if (endpoint == null) {
+            properties.remove(ConfigConstants.LOG_ENDPOINT);
+        } else {
+            properties.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
+        }
+        FlinkLogConsumer<RawLogGroupList> consumer = new FlinkLogConsumer<>(
+                new RawLogGroupListDeserializer(),
+                properties)
+                .setCredentialsProviderFactory(new CountingCredentialsProviderFactory());
+        Method createClient = FlinkLogConsumer.class.getDeclaredMethod(
+                "createClientIfNeeded",
+                int.class);
+        createClient.setAccessible(true);
+
+        try {
+            createClient.invoke(consumer, 0);
+            fail("Expected invalid consumer endpoint to fail validation");
+        } catch (InvocationTargetException expected) {
+            assertTrue(expected.getCause() instanceof IllegalArgumentException);
+            assertEquals(0, CountingCredentialsProviderFactory.CREATED.get());
+        }
+    }
+
+    private static void assertInvalidEndpointDoesNotCreateCredentialsProvider(
+            String endpoint) {
+        Properties properties = new Properties();
+        if (endpoint != null) {
+            properties.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
+        }
+
+        try {
+            LogClientProxy.makeClient(
+                    properties,
+                    new CountingCredentialsProviderFactory(),
+                    0);
+            fail("Expected invalid endpoint to fail validation");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(0, CountingCredentialsProviderFactory.CREATED.get());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Serializable> T roundTrip(T value) throws Exception {
+        byte[] serialized = serialize(value);
+        try (ObjectInputStream input = new ObjectInputStream(
+                new ByteArrayInputStream(serialized))) {
+            return (T) input.readObject();
+        }
+    }
+
+    private static byte[] serialize(Serializable value) throws Exception {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        try (ObjectOutputStream output = new ObjectOutputStream(buffer)) {
+            output.writeObject(value);
+        }
+        return buffer.toByteArray();
+    }
+
+    private static void assertSerializedFormDoesNotContainLegacyCredentials(Serializable value)
+            throws Exception {
+        String serialized = new String(serialize(value), StandardCharsets.ISO_8859_1);
+        assertFalse(serialized.contains("legacy-access-key-id"));
+        assertFalse(serialized.contains("legacy-access-key-secret"));
+    }
+
+    private static void assertSerializedFormContainsLegacyCredentials(Serializable value)
+            throws Exception {
+        assertSerializedFormContains(
+                value, "legacy-access-key-id", "legacy-access-key-secret");
+    }
+
+    private static void assertSerializedFormContains(
+            Serializable value,
+            String... expectedValues) throws Exception {
+        String serialized = new String(serialize(value), StandardCharsets.ISO_8859_1);
+        for (String expectedValue : expectedValues) {
+            assertTrue(serialized.contains(expectedValue));
+        }
+    }
+
+    private static Properties legacyProperties() {
+        Properties properties = new Properties();
+        properties.setProperty(ConfigConstants.LOG_ENDPOINT, "cn-hangzhou.log.aliyuncs.com");
+        properties.setProperty(ConfigConstants.LOG_PROJECT, "project");
+        properties.setProperty(ConfigConstants.LOG_LOGSTORE, "logstore");
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEYID, "legacy-access-key-id");
+        properties.setProperty(ConfigConstants.LOG_ACCESSKEY, "legacy-access-key-secret");
+        return properties;
+    }
+
+    public static class ConfigurableTestFactory
+            implements ConfigurableLogCredentialsProviderFactory {
+        private static final long serialVersionUID = 1L;
+
+        private String roleArn;
+
+        public ConfigurableTestFactory() {
+        }
+
+        @Override
+        public void configure(Properties properties) {
+            roleArn = properties.getProperty("roleArn");
+        }
+
+        @Override
+        public CredentialsProvider createCredentialsProvider() {
+            return new StaticCredentialsProvider(
+                    new DefaultCredentials(roleArn, "dynamic-secret"));
+        }
+    }
+
+    public static class CountingCredentialsProviderFactory
+            implements LogCredentialsProviderFactory {
+        private static final long serialVersionUID = 1L;
+        private static final AtomicInteger CREATED = new AtomicInteger();
+
+        public CountingCredentialsProviderFactory() {
+        }
+
+        @Override
+        public CredentialsProvider createCredentialsProvider() {
+            CREATED.incrementAndGet();
+            return new StaticCredentialsProvider(
+                    new DefaultCredentials("dynamic-id", "dynamic-secret"));
+        }
+    }
+
+    private static class StringDeserializer
+            implements AliyunLogDeserializationSchema<String> {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public void deserialize(PullLogsResult record, Collector<String> out) {
+        }
+
+        @Override
+        public TypeInformation<String> getProducedType() {
+            return TypeInformation.of(String.class);
+        }
+    }
+}

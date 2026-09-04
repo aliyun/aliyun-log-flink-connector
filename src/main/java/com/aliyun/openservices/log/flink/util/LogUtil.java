@@ -3,6 +3,9 @@ package com.aliyun.openservices.log.flink.util;
 import com.aliyun.openservices.log.flink.ConfigConstants;
 import com.aliyun.openservices.log.flink.model.CheckpointMode;
 import com.aliyun.openservices.log.http.signer.SignVersion;
+import com.aliyun.openservices.log.util.Args;
+import com.aliyun.openservices.log.util.NetworkUtils;
+import com.aliyun.openservices.log.util.Utils;
 import org.apache.flink.util.PropertiesUtil;
 
 import java.util.Properties;
@@ -56,5 +59,30 @@ public final class LogUtil {
             }
         }
         return SignVersion.V1; // default v1
+    }
+
+    /**
+     * Validates an SLS endpoint using the same rules as the pinned SLS SDK.
+     *
+     * @param endpoint SLS endpoint
+     */
+    public static void validateEndpoint(String endpoint) {
+        Args.notNullOrEmpty(endpoint, "endpoint");
+        String normalizedEndpoint = endpoint.trim();
+        String hostName;
+        if (normalizedEndpoint.startsWith("http://")) {
+            hostName = normalizedEndpoint.substring("http://".length());
+        } else if (normalizedEndpoint.startsWith("https://")) {
+            hostName = normalizedEndpoint.substring("https://".length());
+        } else {
+            hostName = normalizedEndpoint;
+        }
+        hostName = Utils.normalizeHostName(hostName);
+        if (hostName == null) {
+            throw new IllegalArgumentException("Invalid endpoint:" + normalizedEndpoint);
+        }
+        if (NetworkUtils.isIPAddr(hostName)) {
+            throw new IllegalArgumentException("The ip address is not supported");
+        }
     }
 }

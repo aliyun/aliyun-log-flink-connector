@@ -7,6 +7,8 @@ import java.util.Properties;
 
 public class ConfigParser implements Serializable {
 
+    private static final long serialVersionUID = -719303713679992247L;
+
     private final Properties props;
 
     public ConfigParser(Properties props) {
@@ -27,5 +29,9 @@ public class ConfigParser implements Serializable {
 
     public String getString(String key) {
         return props.getProperty(key);
+    }
+
+    public Properties copyProperties() {
+        return ConfigProperties.copy(props);
     }
 }

@@ -1,7 +1,9 @@
 package com.aliyun.openservices.log.flink.sink;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
+import com.aliyun.openservices.log.flink.util.ConfigProperties;
 
 import java.util.Properties;
 
@@ -14,6 +16,7 @@ public class AliyunLogSinkBuilder<T> {
     private String endpoint;
     private String accessKeyId;
     private String accessKey;
+    private LogCredentialsProviderFactory credentialsProviderFactory;
     private Properties properties = new Properties();
     private AliyunLogSerializationSchema<T> serializer;
 
@@ -35,6 +38,24 @@ public class AliyunLogSinkBuilder<T> {
     public AliyunLogSinkBuilder<T> setCredentials(String accessKeyId, String accessKey) {
         this.accessKeyId = accessKeyId;
         this.accessKey = accessKey;
+        this.credentialsProviderFactory = null;
+        return this;
+    }
+
+    /**
+     * Set a serializable factory that creates an SLS credentials provider in each sink writer.
+     *
+     * @param credentialsProviderFactory runtime credentials provider factory
+     * @return this builder for method chaining
+     */
+    public AliyunLogSinkBuilder<T> setCredentialsProviderFactory(
+            LogCredentialsProviderFactory credentialsProviderFactory) {
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
+        this.accessKeyId = null;
+        this.accessKey = null;
         return this;
     }
 
@@ -57,26 +78,35 @@ public class AliyunLogSinkBuilder<T> {
         validateRequired("project", project);
         validateRequired("logstore", logstore);
         validateRequired("endpoint", endpoint);
-        validateRequired("accessKeyId", accessKeyId);
-        validateRequired("accessKey", accessKey);
+        boolean useConfiguredAccessKey = credentialsProviderFactory == null;
+        if (useConfiguredAccessKey) {
+            validateRequired("accessKeyId", accessKeyId);
+            validateRequired("accessKey", accessKey);
+        }
         if (serializer == null) {
             throw new IllegalArgumentException("Serializer must be set");
         }
 
-        Properties copied = new Properties();
-        copied.putAll(properties);
+        Properties copied = ConfigProperties.sanitizedCopyWithoutCredentials(properties);
         copied.setProperty(ConfigConstants.LOG_PROJECT, project);
         copied.setProperty(ConfigConstants.LOG_LOGSTORE, logstore);
         copied.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
-        copied.setProperty(ConfigConstants.LOG_ACCESSKEYID, accessKeyId);
-        copied.setProperty(ConfigConstants.LOG_ACCESSKEY, accessKey);
 
+        if (useConfiguredAccessKey) {
+            return new AliyunLogSink<>(
+                    project,
+                    logstore,
+                    endpoint,
+                    accessKeyId,
+                    accessKey,
+                    copied,
+                    serializer);
+        }
         return new AliyunLogSink<>(
                 project,
                 logstore,
                 endpoint,
-                accessKeyId,
-                accessKey,
+                credentialsProviderFactory,
                 copied,
                 serializer);
     }

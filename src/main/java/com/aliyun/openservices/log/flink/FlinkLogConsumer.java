@@ -1,5 +1,7 @@
 package com.aliyun.openservices.log.flink;
 
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.*;
 import com.aliyun.openservices.log.flink.util.*;
 import com.aliyun.openservices.log.http.client.ClientConfiguration;
@@ -32,7 +34,7 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
 
     private static final String CURSOR_STATE_STORE_NAME = "LogStore-Shard-State";
 
-    private final Properties configProps;
+    private Properties configProps;
     private final LogDeserializationSchema<T> deserializer;
     private transient LogDataFetcher<T> fetcher;
     private volatile boolean running = true;
@@ -46,16 +48,18 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
     private final CheckpointMode checkpointMode;
     private ShardAssigner shardAssigner = LogDataFetcher.DEFAULT_SHARD_ASSIGNER;
     private final MemoryLimiter memoryLimiter;
+    private LogCredentialsProviderFactory credentialsProviderFactory;
 
     @Deprecated
     public FlinkLogConsumer(LogDeserializationSchema<T> deserializer, Properties configProps) {
         this.configProps = configProps;
         this.deserializer = deserializer;
-        this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
-        this.project = configProps.getProperty(ConfigConstants.LOG_PROJECT);
-        this.logstores = Collections.singletonList(configProps.getProperty(ConfigConstants.LOG_LOGSTORE));
-        this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
-        this.memoryLimiter = new MemoryLimiter(configProps);
+        this.consumerGroup = this.configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
+        this.project = this.configProps.getProperty(ConfigConstants.LOG_PROJECT);
+        this.logstores = Collections.singletonList(
+                this.configProps.getProperty(ConfigConstants.LOG_LOGSTORE));
+        this.checkpointMode = LogUtil.parseCheckpointMode(this.configProps);
+        this.memoryLimiter = new MemoryLimiter(this.configProps);
     }
 
     public FlinkLogConsumer(String project, List<String> logstores, LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -67,11 +71,11 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
         this.configProps = configProps;
         this.deserializer = deserializer;
-        this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
+        this.consumerGroup = this.configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = project;
         this.logstores = logstores;
-        this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
-        this.memoryLimiter = new MemoryLimiter(configProps);
+        this.checkpointMode = LogUtil.parseCheckpointMode(this.configProps);
+        this.memoryLimiter = new MemoryLimiter(this.configProps);
     }
 
     public FlinkLogConsumer(String project, String logstore, LogDeserializationSchema<T> deserializer, Properties configProps) {
@@ -90,11 +94,11 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
         }
         this.configProps = configProps;
         this.deserializer = deserializer;
-        this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
+        this.consumerGroup = this.configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         this.project = project;
         this.logstorePattern = logstorePattern;
-        this.checkpointMode = LogUtil.parseCheckpointMode(configProps);
-        this.memoryLimiter = new MemoryLimiter(configProps);
+        this.checkpointMode = LogUtil.parseCheckpointMode(this.configProps);
+        this.memoryLimiter = new MemoryLimiter(this.configProps);
     }
 
     private String getOrCreateUserAgent(int indexOfSubTask) {
@@ -144,14 +148,46 @@ public class FlinkLogConsumer<T> extends RichParallelSourceFunction<T> implement
             clientConfig.setRegion(regionId);
         }
         clientConfig.setSignatureVersion(signVersion);
+        String endpoint = parser.getString(ConfigConstants.LOG_ENDPOINT);
+        LogUtil.validateEndpoint(endpoint);
         logClient = new LogClientProxy(
-                parser.getString(ConfigConstants.LOG_ENDPOINT),
-                parser.getString(ConfigConstants.LOG_ACCESSKEYID),
-                parser.getString(ConfigConstants.LOG_ACCESSKEY),
+                endpoint,
+                getCredentialsProviderFactory(parser).createCredentialsProvider(),
                 getOrCreateUserAgent(indexOfSubTask),
                 retryPolicy,
                 memoryLimiter,
                 clientConfig);
+    }
+
+    /**
+     * Sets a serializable factory that creates the SLS credentials provider at runtime.
+     *
+     * <p>This method must be called before the source is submitted to Flink.
+     *
+     * @param credentialsProviderFactory runtime credentials provider factory
+     * @return this consumer
+     */
+    public FlinkLogConsumer<T> setCredentialsProviderFactory(
+            LogCredentialsProviderFactory credentialsProviderFactory) {
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        if (logClient != null) {
+            throw new IllegalStateException(
+                    "CredentialsProviderFactory cannot be changed after the client is created");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
+        this.configProps = ConfigProperties.sanitizedCopyWithoutCredentials(this.configProps);
+        return this;
+    }
+
+    private LogCredentialsProviderFactory getCredentialsProviderFactory(ConfigParser parser) {
+        if (credentialsProviderFactory != null) {
+            return credentialsProviderFactory;
+        }
+        return new StaticCredentialsProviderFactory(
+                parser.getString(ConfigConstants.LOG_ACCESSKEYID),
+                parser.getString(ConfigConstants.LOG_ACCESSKEY));
     }
 
     public void setShardAssigner(ShardAssigner shardAssigner) {

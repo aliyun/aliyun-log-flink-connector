@@ -1,8 +1,12 @@
 package com.aliyun.openservices.log.flink.source.table;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.ReflectiveLogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ReadableConfig;
+import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.factories.DynamicTableSinkFactory;
@@ -12,6 +16,7 @@ import org.apache.flink.table.types.logical.RowType;
 
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -31,15 +36,16 @@ public class AliyunLogDynamicTableFactory implements DynamicTableSourceFactory, 
         return new HashSet<>(Arrays.asList(
                 AliyunLogConnectorOptions.ENDPOINT,
                 AliyunLogConnectorOptions.PROJECT,
-                AliyunLogConnectorOptions.LOGSTORE,
-                AliyunLogConnectorOptions.ACCESS_KEY_ID,
-                AliyunLogConnectorOptions.ACCESS_KEY));
+                AliyunLogConnectorOptions.LOGSTORE));
     }
 
     @Override
     public Set<ConfigOption<?>> optionalOptions() {
         return new HashSet<>(Arrays.asList(
                 FactoryUtil.SOURCE_PARALLELISM,
+                AliyunLogConnectorOptions.ACCESS_KEY_ID,
+                AliyunLogConnectorOptions.ACCESS_KEY,
+                AliyunLogConnectorOptions.CREDENTIALS_PROVIDER_FACTORY_CLASS,
                 AliyunLogConnectorOptions.CONSUMER_GROUP,
                 AliyunLogConnectorOptions.BEGIN_POSITION,
                 AliyunLogConnectorOptions.DEFAULT_POSITION,
@@ -69,14 +75,15 @@ public class AliyunLogDynamicTableFactory implements DynamicTableSourceFactory, 
     @Override
     public DynamicTableSource createDynamicTableSource(Context context) {
         FactoryUtil.TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, context);
-        helper.validate();
+        helper.validateExcept(AliyunLogConnectorOptions.CREDENTIALS_PROVIDER_PARAMETER_PREFIX);
 
         ReadableConfig options = helper.getOptions();
         String project = options.get(AliyunLogConnectorOptions.PROJECT);
         String logstore = options.get(AliyunLogConnectorOptions.LOGSTORE);
         String endpoint = options.get(AliyunLogConnectorOptions.ENDPOINT);
-        String accessKeyId = options.get(AliyunLogConnectorOptions.ACCESS_KEY_ID);
-        String accessKey = options.get(AliyunLogConnectorOptions.ACCESS_KEY);
+        Map<String, String> catalogOptions = context.getCatalogTable().getOptions();
+        LogCredentialsProviderFactory credentialsProviderFactory =
+                createCredentialsProviderFactory(catalogOptions, context.getClassLoader());
         RowType rowType = (RowType) context.getCatalogTable()
                 .getResolvedSchema()
                 .toPhysicalRowDataType()
@@ -102,8 +109,7 @@ public class AliyunLogDynamicTableFactory implements DynamicTableSourceFactory, 
                 project,
                 logstore,
                 endpoint,
-                accessKeyId,
-                accessKey,
+                credentialsProviderFactory,
                 properties,
                 rowType,
                 options.get(AliyunLogConnectorOptions.IGNORE_PARSE_ERRORS),
@@ -113,14 +119,15 @@ public class AliyunLogDynamicTableFactory implements DynamicTableSourceFactory, 
     @Override
     public DynamicTableSink createDynamicTableSink(Context context) {
         FactoryUtil.TableFactoryHelper helper = FactoryUtil.createTableFactoryHelper(this, context);
-        helper.validate();
+        helper.validateExcept(AliyunLogConnectorOptions.CREDENTIALS_PROVIDER_PARAMETER_PREFIX);
 
         ReadableConfig options = helper.getOptions();
         String project = options.get(AliyunLogConnectorOptions.PROJECT);
         String logstore = options.get(AliyunLogConnectorOptions.LOGSTORE);
         String endpoint = options.get(AliyunLogConnectorOptions.ENDPOINT);
-        String accessKeyId = options.get(AliyunLogConnectorOptions.ACCESS_KEY_ID);
-        String accessKey = options.get(AliyunLogConnectorOptions.ACCESS_KEY);
+        Map<String, String> catalogOptions = context.getCatalogTable().getOptions();
+        LogCredentialsProviderFactory credentialsProviderFactory =
+                createCredentialsProviderFactory(catalogOptions, context.getClassLoader());
         RowType rowType = (RowType) context.getCatalogTable()
                 .getResolvedSchema()
                 .toPhysicalRowDataType()
@@ -130,8 +137,6 @@ public class AliyunLogDynamicTableFactory implements DynamicTableSourceFactory, 
         properties.setProperty(ConfigConstants.LOG_PROJECT, project);
         properties.setProperty(ConfigConstants.LOG_LOGSTORE, logstore);
         properties.setProperty(ConfigConstants.LOG_ENDPOINT, endpoint);
-        properties.setProperty(ConfigConstants.LOG_ACCESSKEYID, accessKeyId);
-        properties.setProperty(ConfigConstants.LOG_ACCESSKEY, accessKey);
         putOptional(properties, ConfigConstants.REGION_ID, options, AliyunLogConnectorOptions.REGION_ID);
         putOptional(properties, ConfigConstants.SIGNATURE_VERSION, options, AliyunLogConnectorOptions.SIGNATURE_VERSION);
         putOptional(properties, ConfigConstants.FLUSH_INTERVAL_MS, options, AliyunLogConnectorOptions.FLUSH_INTERVAL);
@@ -148,13 +153,78 @@ public class AliyunLogDynamicTableFactory implements DynamicTableSourceFactory, 
                 project,
                 logstore,
                 endpoint,
-                accessKeyId,
-                accessKey,
+                credentialsProviderFactory,
                 properties,
                 rowType,
                 options.get(AliyunLogConnectorOptions.SINK_TOPIC),
                 options.getOptional(AliyunLogConnectorOptions.SINK_SOURCE).orElse(null),
                 options.getOptional(AliyunLogConnectorOptions.SINK_PARALLELISM).orElse(null));
+    }
+
+    static LogCredentialsProviderFactory createCredentialsProviderFactory(
+            Map<String, String> options) {
+        return createCredentialsProviderFactory(
+                options,
+                AliyunLogDynamicTableFactory.class.getClassLoader());
+    }
+
+    private static LogCredentialsProviderFactory createCredentialsProviderFactory(
+            Map<String, String> options,
+            ClassLoader userCodeClassLoader) {
+        Optional<String> accessKeyId = Optional.ofNullable(
+                options.get(AliyunLogConnectorOptions.ACCESS_KEY_ID.key()));
+        Optional<String> accessKey = Optional.ofNullable(
+                options.get(AliyunLogConnectorOptions.ACCESS_KEY.key()));
+        Optional<String> factoryClass = Optional.ofNullable(
+                options.get(AliyunLogConnectorOptions.CREDENTIALS_PROVIDER_FACTORY_CLASS.key()));
+
+        boolean hasAccessKeyId = isPresent(accessKeyId);
+        boolean hasAccessKey = isPresent(accessKey);
+        boolean hasFactoryClass = isPresent(factoryClass);
+        if (hasAccessKeyId != hasAccessKey) {
+            throw new ValidationException(
+                    "Options 'access.key.id' and 'access.key.secret' must be configured together");
+        }
+        if (hasFactoryClass == hasAccessKeyId) {
+            throw new ValidationException(
+                    "Configure exactly one credential mode: both static access key options, "
+                            + "or 'credentials.provider.factory.class'");
+        }
+        Properties providerProperties = new Properties();
+        for (Map.Entry<String, String> entry : options.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith(AliyunLogConnectorOptions.CREDENTIALS_PROVIDER_PARAMETER_PREFIX)) {
+                String providerKey = key.substring(
+                        AliyunLogConnectorOptions.CREDENTIALS_PROVIDER_PARAMETER_PREFIX.length());
+                if (providerKey.isEmpty()) {
+                    throw new ValidationException(
+                            "Credentials provider parameter name must not be empty");
+                }
+                providerProperties.setProperty(providerKey, entry.getValue());
+            }
+        }
+        if (hasAccessKeyId) {
+            if (!providerProperties.isEmpty()) {
+                throw new ValidationException(
+                        "Options with prefix 'credentials.provider.param.' require "
+                                + "'credentials.provider.factory.class'");
+            }
+            return new StaticCredentialsProviderFactory(accessKeyId.get(), accessKey.get());
+        }
+        ReflectiveLogCredentialsProviderFactory reflectiveFactory =
+                new ReflectiveLogCredentialsProviderFactory(
+                        factoryClass.get(),
+                        providerProperties);
+        try {
+            reflectiveFactory.validateFactoryClass(userCodeClassLoader);
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException(e.getMessage(), e);
+        }
+        return reflectiveFactory;
+    }
+
+    private static boolean isPresent(Optional<String> value) {
+        return value.isPresent() && !value.get().trim().isEmpty();
     }
 
     private static <T> void putOptional(

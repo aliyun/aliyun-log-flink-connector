@@ -39,6 +39,16 @@ public final class AliyunLogConnectorOptions {
                     .noDefaultValue()
                     .withDescription("Aliyun access key secret.");
 
+    public static final ConfigOption<String> CREDENTIALS_PROVIDER_FACTORY_CLASS =
+            ConfigOptions.key("credentials.provider.factory.class")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Class name of a LogCredentialsProviderFactory used instead of static access keys.");
+
+    public static final String CREDENTIALS_PROVIDER_PARAMETER_PREFIX =
+            "credentials.provider.param.";
+
     public static final ConfigOption<String> CONSUMER_GROUP =
             ConfigOptions.key("consumer-group")
                     .stringType()

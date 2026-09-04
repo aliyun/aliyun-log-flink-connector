@@ -1,14 +1,17 @@
 package com.aliyun.openservices.log.flink;
 
-import com.aliyun.openservices.aliyun.log.producer.*;
+import com.aliyun.openservices.aliyun.log.producer.Callback;
+import com.aliyun.openservices.aliyun.log.producer.Producer;
+import com.aliyun.openservices.aliyun.log.producer.Result;
 import com.aliyun.openservices.aliyun.log.producer.errors.ProducerException;
 import com.aliyun.openservices.log.common.LogItem;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.data.SinkRecord;
 import com.aliyun.openservices.log.flink.model.LogSerializationSchemaV2;
+import com.aliyun.openservices.log.flink.util.ConfigProperties;
 import com.aliyun.openservices.log.flink.util.ConfigParser;
-import com.aliyun.openservices.log.flink.util.LogUtil;
-import com.aliyun.openservices.log.http.signer.SignVersion;
-import org.apache.commons.lang3.StringUtils;
+import com.aliyun.openservices.log.flink.util.ProducerFactory;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
@@ -26,14 +29,16 @@ import static com.aliyun.openservices.log.flink.ConfigConstants.*;
 public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements CheckpointedFunction {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkLogProducerV2.class);
+    private static final long serialVersionUID = -114178204262097392L;
     private final LogSerializationSchemaV2<T> schema;
     private final AtomicLong buffered = new AtomicLong(0);
     private transient Producer producer;
     private transient ProducerCallback callback;
     private final String project;
     private final String logstore;
-    private final ConfigParser configParser;
+    private ConfigParser configParser;
     private SinkCollector<T> sinkCollector;
+    private LogCredentialsProviderFactory credentialsProviderFactory;
 
     public FlinkLogProducerV2(final LogSerializationSchemaV2<T> schema, Properties configProps) {
         if (schema == null) {
@@ -48,38 +53,35 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
         this.logstore = configParser.getString(ConfigConstants.LOG_LOGSTORE);
     }
 
-    private Producer createProducer(ConfigParser parser) {
-        ProducerConfig producerConfig = new ProducerConfig();
-        producerConfig.setLingerMs(parser.getInt(FLUSH_INTERVAL_MS, ProducerConfig.DEFAULT_LINGER_MS));
-        producerConfig.setRetries(parser.getInt(MAX_RETRIES, ProducerConfig.DEFAULT_RETRIES));
-        producerConfig.setBaseRetryBackoffMs(
-                parser.getLong(BASE_RETRY_BACK_OFF_TIME_MS, ProducerConfig.DEFAULT_BASE_RETRY_BACKOFF_MS));
-        producerConfig.setMaxRetryBackoffMs(
-                parser.getLong(MAX_RETRY_BACK_OFF_TIME_MS, ProducerConfig.DEFAULT_MAX_RETRY_BACKOFF_MS));
-        producerConfig.setMaxBlockMs(
-                parser.getLong(MAX_BLOCK_TIME_MS, ProducerConfig.DEFAULT_MAX_BLOCK_MS));
-        producerConfig.setIoThreadCount(parser.getInt(IO_THREAD_NUM, ProducerConfig.DEFAULT_IO_THREAD_COUNT));
-        producerConfig.setBuckets(parser.getInt(BUCKETS, ProducerConfig.DEFAULT_BUCKETS));
-        producerConfig.setTotalSizeInBytes(parser.getInt(TOTAL_SIZE_IN_BYTES, ProducerConfig.DEFAULT_TOTAL_SIZE_IN_BYTES));
-        producerConfig.setAdjustShardHash(parser.getBool(PRODUCER_ADJUST_SHARD_HASH, true));
-        SignVersion signVersion = LogUtil.parseSignVersion(parser.getString(SIGNATURE_VERSION));
-        if (signVersion == SignVersion.V4) {
-            String regionId = parser.getString(REGION_ID);
-            if (StringUtils.isBlank(regionId)) {
-                throw new IllegalArgumentException("The " + REGION_ID + " was not specified for signature " + signVersion.name() + ".");
-            }
-            producerConfig.setRegion(regionId);
-            producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V4);
-        } else {
-            producerConfig.setSignVersion(com.aliyun.openservices.log.http.signer.SignVersion.V1);
+    /**
+     * Sets a serializable factory that creates the SLS credentials provider at runtime.
+     *
+     * @param credentialsProviderFactory runtime credentials provider factory
+     * @return this producer
+     */
+    public FlinkLogProducerV2<T> setCredentialsProviderFactory(
+            LogCredentialsProviderFactory credentialsProviderFactory) {
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
         }
-        Producer producer = new LogProducer(producerConfig);
-        ProjectConfig config = new ProjectConfig(project,
-                parser.getString(ConfigConstants.LOG_ENDPOINT),
+        if (producer != null) {
+            throw new IllegalStateException(
+                    "CredentialsProviderFactory cannot be changed after the producer is created");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
+        this.configParser = new ConfigParser(
+                ConfigProperties.sanitizedCopyWithoutCredentials(
+                        this.configParser.copyProperties()));
+        return this;
+    }
+
+    private LogCredentialsProviderFactory getCredentialsProviderFactory(ConfigParser parser) {
+        if (credentialsProviderFactory != null) {
+            return credentialsProviderFactory;
+        }
+        return new StaticCredentialsProviderFactory(
                 parser.getString(ConfigConstants.LOG_ACCESSKEYID),
                 parser.getString(ConfigConstants.LOG_ACCESSKEY));
-        producer.putProjectConfig(config);
-        return producer;
     }
 
     @Override
@@ -90,7 +92,11 @@ public class FlinkLogProducerV2<T> extends RichSinkFunction<T> implements Checkp
             callback = new ProducerCallback(buffered);
         }
         if (producer == null) {
-            producer = createProducer(configParser);
+            producer = ProducerFactory.create(
+                    project,
+                    configParser.getString(ConfigConstants.LOG_ENDPOINT),
+                    configParser.copyProperties(),
+                    getCredentialsProviderFactory(configParser));
             LOG.debug("Producer created successfully for project={}, logstore={}", project, logstore);
         }
         this.sinkCollector = new SinkCollector<>(buffered, producer, callback, project, logstore);

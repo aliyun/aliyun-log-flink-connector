@@ -1,6 +1,9 @@
 package com.aliyun.openservices.log.flink.sink;
 
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.AliyunLogSerializationSchema;
+import com.aliyun.openservices.log.flink.util.ConfigProperties;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 
@@ -16,11 +19,12 @@ import java.util.Properties;
  * claim exactly-once semantics.
  */
 public class AliyunLogSink<T> implements Sink<T> {
+    private static final long serialVersionUID = 2934392388906379793L;
+
     private final String project;
     private final String logstore;
     private final String endpoint;
-    private final String accessKeyId;
-    private final String accessKey;
+    private final LogCredentialsProviderFactory credentialsProviderFactory;
     private final Properties properties;
     private final AliyunLogSerializationSchema<T> schema;
 
@@ -35,9 +39,27 @@ public class AliyunLogSink<T> implements Sink<T> {
         this.project = project;
         this.logstore = logstore;
         this.endpoint = endpoint;
-        this.accessKeyId = accessKeyId;
-        this.accessKey = accessKey;
-        this.properties = copyProperties(properties);
+        this.credentialsProviderFactory =
+                new StaticCredentialsProviderFactory(accessKeyId, accessKey);
+        this.properties = ConfigProperties.sanitizedCopyWithoutCredentials(properties);
+        this.schema = schema;
+    }
+
+    AliyunLogSink(
+            String project,
+            String logstore,
+            String endpoint,
+            LogCredentialsProviderFactory credentialsProviderFactory,
+            Properties properties,
+            AliyunLogSerializationSchema<T> schema) {
+        this.project = project;
+        this.logstore = logstore;
+        this.endpoint = endpoint;
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
+        this.properties = ConfigProperties.sanitizedCopyWithoutCredentials(properties);
         this.schema = schema;
     }
 
@@ -55,17 +77,8 @@ public class AliyunLogSink<T> implements Sink<T> {
                 project,
                 logstore,
                 endpoint,
-                accessKeyId,
-                accessKey,
-                copyProperties(properties),
+                credentialsProviderFactory,
+                ConfigProperties.copy(properties),
                 schema);
-    }
-
-    private static Properties copyProperties(Properties source) {
-        Properties copy = new Properties();
-        if (source != null) {
-            copy.putAll(source);
-        }
-        return copy;
     }
 }

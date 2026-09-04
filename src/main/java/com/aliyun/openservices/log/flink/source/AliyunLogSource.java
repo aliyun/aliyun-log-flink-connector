@@ -1,6 +1,8 @@
 package com.aliyun.openservices.log.flink.source;
 
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.PullLogsResult;
 import com.aliyun.openservices.log.flink.source.deserialization.AliyunLogDeserializationSchema;
 import com.aliyun.openservices.log.flink.source.enumerator.AliyunLogSplitAssigner;
@@ -14,6 +16,7 @@ import com.aliyun.openservices.log.flink.source.reader.AliyunLogSplitReader;
 import com.aliyun.openservices.log.flink.source.reader.fetcher.AliyunLogSourceFetcherManager;
 import com.aliyun.openservices.log.flink.source.split.AliyunLogSourceSplit;
 import com.aliyun.openservices.log.flink.source.split.AliyunLogSourceSplitSerializer;
+import com.aliyun.openservices.log.flink.util.ConfigProperties;
 import com.aliyun.openservices.log.flink.util.LogClientProxy;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.*;
@@ -36,8 +39,7 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
     private final Properties configProps;
     private final AliyunLogDeserializationSchema<T> deserializer;
     private final AliyunLogSplitAssigner splitAssigner;
-    private final String accessKeyId;
-    private final String accessKey;
+    private final LogCredentialsProviderFactory credentialsProviderFactory;
 
     public AliyunLogSource(
             String project,
@@ -52,8 +54,26 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
         this.deserializer = deserializer;
         this.configProps = configProps;
         this.splitAssigner = splitAssigner != null ? splitAssigner : new ModuloSplitAssigner();
-        this.accessKeyId = accessKeyId;
-        this.accessKey = accessKey;
+        this.credentialsProviderFactory =
+                new StaticCredentialsProviderFactory(accessKeyId, accessKey);
+    }
+
+    public AliyunLogSource(
+            String project,
+            String logstore,
+            AliyunLogDeserializationSchema<T> deserializer,
+            Properties configProps,
+            AliyunLogSplitAssigner splitAssigner,
+            LogCredentialsProviderFactory credentialsProviderFactory) {
+        this.project = project;
+        this.logstore = logstore;
+        this.deserializer = deserializer;
+        this.configProps = ConfigProperties.sanitizedCopyWithoutCredentials(configProps);
+        this.splitAssigner = splitAssigner != null ? splitAssigner : new ModuloSplitAssigner();
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
     }
 
     /**
@@ -86,7 +106,7 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
             AliyunLogSourceEnumState checkpoint) {
         // Pass checkpoint to enumerator constructor to restore state
         return new AliyunLogSourceEnumerator(
-                enumContext, project, logstore, accessKeyId, accessKey,
+                enumContext, project, logstore, credentialsProviderFactory,
                 configProps, splitAssigner, checkpoint);
     }
 
@@ -102,7 +122,10 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
 
     @Override
     public SourceReader<T, AliyunLogSourceSplit> createReader(SourceReaderContext readerContext) {
-        LogClientProxy logClient = LogClientProxy.makeClient(configProps, accessKeyId, accessKey, readerContext.getIndexOfSubtask());
+        LogClientProxy logClient = LogClientProxy.makeClient(
+                configProps,
+                credentialsProviderFactory,
+                readerContext.getIndexOfSubtask());
         String consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
         AliyunLogSourceReaderMetrics sourceReaderMetrics =
                 new AliyunLogSourceReaderMetrics(readerContext.metricGroup());
@@ -124,4 +147,3 @@ public class AliyunLogSource<T> implements Source<T, AliyunLogSourceSplit, Aliyu
         return deserializer.getProducedType();
     }
 }
-

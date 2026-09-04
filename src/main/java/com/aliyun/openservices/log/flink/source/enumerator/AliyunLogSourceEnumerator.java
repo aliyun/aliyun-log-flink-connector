@@ -2,6 +2,8 @@ package com.aliyun.openservices.log.flink.source.enumerator;
 
 import com.aliyun.openservices.log.common.Shard;
 import com.aliyun.openservices.log.flink.ConfigConstants;
+import com.aliyun.openservices.log.flink.auth.LogCredentialsProviderFactory;
+import com.aliyun.openservices.log.flink.auth.StaticCredentialsProviderFactory;
 import com.aliyun.openservices.log.flink.model.LogstoreShardMeta;
 import com.aliyun.openservices.log.flink.source.StartingPosition;
 import com.aliyun.openservices.log.flink.source.enumerator.assigner.ModuloSplitAssigner;
@@ -28,8 +30,7 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
     private final SplitEnumeratorContext<AliyunLogSourceSplit> context;
     private final String project;
     private final String logstore;
-    private final String accessKeyId;
-    private final String accessKey;
+    private final LogCredentialsProviderFactory credentialsProviderFactory;
     private final Properties configProps;
     private LogClientProxy logClient;
     private final AliyunLogSplitAssigner splitAssigner;
@@ -57,11 +58,30 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
             Properties configProps,
             AliyunLogSplitAssigner splitAssigner,
             @Nullable AliyunLogSourceEnumState checkpoint) {
+        this(context,
+                project,
+                logstore,
+                new StaticCredentialsProviderFactory(accessKeyId, accessKey),
+                configProps,
+                splitAssigner,
+                checkpoint);
+    }
+
+    public AliyunLogSourceEnumerator(
+            SplitEnumeratorContext<AliyunLogSourceSplit> context,
+            String project,
+            String logstore,
+            LogCredentialsProviderFactory credentialsProviderFactory,
+            Properties configProps,
+            AliyunLogSplitAssigner splitAssigner,
+            @Nullable AliyunLogSourceEnumState checkpoint) {
         this.context = context;
         this.project = project;
         this.logstore = logstore;
-        this.accessKeyId = accessKeyId;
-        this.accessKey = accessKey;
+        if (credentialsProviderFactory == null) {
+            throw new IllegalArgumentException("CredentialsProviderFactory must not be null");
+        }
+        this.credentialsProviderFactory = credentialsProviderFactory;
         this.configProps = configProps;
         this.splitAssigner = splitAssigner != null ? splitAssigner : new ModuloSplitAssigner();
         this.consumerGroup = configProps.getProperty(ConfigConstants.LOG_CONSUMERGROUP);
@@ -117,7 +137,10 @@ public class AliyunLogSourceEnumerator implements SplitEnumerator<AliyunLogSourc
     @Override
     public void start() {
         LOG.info("Starting AliyunLogSourceEnumerator");
-        this.logClient = LogClientProxy.makeClient(configProps, accessKeyId, accessKey, context.currentParallelism());
+        this.logClient = LogClientProxy.makeClient(
+                configProps,
+                credentialsProviderFactory,
+                context.currentParallelism());
         createConsumerGroupIfConfigured();
         // If we restored from checkpoint, we need to reassign splits to registered readers
         // Otherwise, discover and assign new splits
